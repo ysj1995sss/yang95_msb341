@@ -6,6 +6,12 @@ from docx import Document
 
 from resume_tailorer.models import CareerTruthProfile, WorkExperience, EducationEntry
 
+# Constants for extraction heuristics
+NAME_SEARCH_LINES = 5  # Number of first lines to check for name
+MAX_SKILLS = 20  # Maximum number of skills to extract
+ACCOMPLISHMENT_PATTERN = r'\d+[%K$M]'  # Pattern to identify accomplishments (contains numbers with %, K, $, M)
+MIN_TITLE_LENGTH = 3  # Minimum length for job title
+
 class ResumeParser:
     """
     Parses PDF/DOCX resumes and extracts a CareerTruthProfile.
@@ -87,7 +93,7 @@ class ResumeParser:
 
         # Name: typically first line or top section
         lines = text.split("\n")
-        for line in lines[:5]:  # Check first 5 lines
+        for line in lines[:NAME_SEARCH_LINES]:  # Check first N lines
             if line.strip() and len(line.split()) <= 4 and not re.search(r"@|\d", line):
                 contact_info["name"] = line.strip()
                 break
@@ -102,29 +108,52 @@ class ResumeParser:
         # Look for EDUCATION section
         if "education" in text.lower():
             edu_match = re.search(
-                r"education[:]*\s*\n(.*?)(?:\n(?:TECHNICAL|SKILLS|WORK|EXPERIENCE|CERTIFICATIONS|$))",
+                r"education[:]*\s*\n(.*?)(?:\n(?:TECHNICAL|SKILLS|WORK|EXPERIENCE|CERTIFICATIONS|[A-Z]{2,}[\s:]*$))",
                 text,
-                re.IGNORECASE | re.DOTALL
+                re.IGNORECASE | re.DOTALL | re.MULTILINE
             )
 
             if edu_match:
-                edu_section = edu_match.group(1)
+                edu_section = edu_match.group(1).strip()
 
-                # Split education entries by looking for degree patterns at start of line
-                entries = re.split(r'\n(?=[A-Z])', edu_section)
+                # Split education entries by looking for patterns with degrees
+                # Look for lines that start with degree abbreviations
+                degree_lines = re.findall(
+                    r"((?:B\.?S\.?|M\.?S\.?|B\.?A\.?|M\.?A\.?|Ph\.?D\.?|MBA)\s+.+?)(?:\n(?:[A-Z][a-zA-Z\s,\.0-9&-]*?\s*\|?\s*\d{4})?)",
+                    edu_section,
+                    re.IGNORECASE
+                )
+
+                # Process each potential education entry
+                entries = edu_section.split('\n\n')  # Split by double newline first
+                if len(entries) == 1:
+                    # If no double newlines, try to extract based on degree pattern
+                    lines = edu_section.split('\n')
+                    entries = []
+                    current_entry = []
+                    for line in lines:
+                        if re.match(r"^(B\.?S\.?|M\.?S\.?|B\.?A\.?|M\.?A\.?|Ph\.?D\.?|MBA)\b", line, re.IGNORECASE):
+                            if current_entry:
+                                entries.append('\n'.join(current_entry))
+                            current_entry = [line]
+                        else:
+                            current_entry.append(line)
+                    if current_entry:
+                        entries.append('\n'.join(current_entry))
 
                 for entry in entries:
                     if not entry.strip():
                         continue
 
-                    lines = entry.strip().split('\n')
+                    lines = [l.strip() for l in entry.strip().split('\n') if l.strip()]
+                    if not lines:
+                        continue
 
-                    # First line should contain degree and field
                     degree_line = lines[0]
 
-                    # Look for degree patterns: BS, MS, BA, MA, PhD, MBA
+                    # Extract degree and field from first line
                     degree_match = re.search(
-                        r"(B\.?S\.?|M\.?S\.?|B\.?A\.?|M\.?A\.?|Ph\.?D\.?|MBA)\s*(?:in|of|Computer)?\s*([^,\n|–—]*?)(?:\n|$)",
+                        r"(B\.?S\.?|M\.?S\.?|B\.?A\.?|M\.?A\.?|Ph\.?D\.?|MBA)\s+(.+?)$",
                         degree_line,
                         re.IGNORECASE
                     )
@@ -133,22 +162,22 @@ class ResumeParser:
                         degree = degree_match.group(1).strip()
                         field = degree_match.group(2).strip()
 
-                        # Get institution and year from second line if available
+                        # Get institution and year from remaining lines
                         institution = "Unknown"
                         year = None
 
-                        if len(lines) > 1:
-                            detail_line = lines[1]
+                        for i in range(1, len(lines)):
+                            detail_line = lines[i]
 
                             # Extract year (4 digits)
                             year_match = re.search(r'(\d{4})', detail_line)
                             if year_match:
                                 year = int(year_match.group(1))
 
-                            # Extract institution (everything before year/pipe)
-                            inst_match = re.search(r'^([^|–—\d]+?)(?:\s*[|–—]|\s*\d{4}|$)', detail_line)
-                            if inst_match:
-                                institution = inst_match.group(1).strip()
+                            # Extract institution (everything before year or pipe)
+                            inst_part = detail_line.split('|')[0].strip()
+                            if inst_part and inst_part != str(year):
+                                institution = inst_part
 
                         if year:
                             education.append(
@@ -159,29 +188,6 @@ class ResumeParser:
                                     year=year,
                                 )
                             )
-
-        # Fallback: Look for patterns in full text
-        if not education:
-            patterns = [
-                r"(B\.?S\.?|M\.?S\.?|B\.?A\.?|M\.?A\.?|Ph\.?D\.?|MBA)\s*(?:in|of)?\s*([^,\n]+)\s*(?:from|at)?\s*([^,\n]+?)(?:\s*,?\s*(\d{4}))?",
-            ]
-
-            for pattern in patterns:
-                for match in re.finditer(pattern, text, re.IGNORECASE):
-                    degree = match.group(1)
-                    field = match.group(2).strip()
-                    institution = match.group(3).strip() if match.group(3) else "Unknown"
-                    year = int(match.group(4)) if match.group(4) else None
-
-                    if year:
-                        education.append(
-                            EducationEntry(
-                                degree=degree,
-                                field=field,
-                                institution=institution,
-                                year=year,
-                            )
-                        )
 
         return education
 
@@ -228,7 +234,7 @@ class ResumeParser:
                     title_line = lines[0].strip()
 
                     # Skip if line is too short or looks like a bullet point
-                    if len(title_line) < 3 or title_line.startswith('•') or title_line.startswith('-'):
+                    if len(title_line) < MIN_TITLE_LENGTH or title_line.startswith('•') or title_line.startswith('-'):
                         continue
 
                     # Extract title (remove bold/italic markers if any)
@@ -253,7 +259,7 @@ class ResumeParser:
                             text_content = line.lstrip('•-').strip()
 
                             # Heuristic: if it contains numbers/percentages, it's likely an accomplishment
-                            if re.search(r'\d+[%K$M]', text_content):
+                            if re.search(ACCOMPLISHMENT_PATTERN, text_content):
                                 accomplishments.append(text_content)
                             else:
                                 responsibilities.append(text_content)
@@ -278,20 +284,35 @@ class ResumeParser:
         # Look for a "Skills" section
         skills = []
         if "skills" in text.lower():
-            # Simple heuristic: find the Skills section and extract comma-separated items
+            # Find the Skills section and extract items
             skills_section = re.search(
-                r"(?:skills?|technical\s+skills?)[:]*\s*\n(.*?)(?:\n\n|(?=[A-Z]\w+\s*[:]))",
+                r"(?:technical\s+)?skills?[:]*\s*\n(.*?)(?:\n(?:TOOLS?|CERTIFICATIONS?|LANGUAGES?|EDUCATION|EXPERIENCE|WORK|[A-Z]{2,}[\s:]*$)|\Z)",
                 text,
-                re.IGNORECASE | re.DOTALL,
+                re.IGNORECASE | re.DOTALL | re.MULTILINE,
             )
             if skills_section:
                 items = skills_section.group(1)
-                # Split by comma, newline, or bullet
-                skills = [
-                    s.strip() for s in re.split(r"[,•\n]", items) if s.strip()
-                ][:20]  # Cap at 20 for MVP
+                # Split by comma, newline, pipe, or bullet
+                # First split by newline to get lines
+                lines = items.split('\n')
+                for line in lines:
+                    if line.strip():
+                        # Split each line by comma or colon (for "Languages: Python, Java, etc.")
+                        line_items = re.split(r'[:,]', line)
+                        for item in line_items:
+                            clean_item = item.strip().lstrip('•-').strip()
+                            if clean_item and len(clean_item) > 1:  # Skip single characters
+                                skills.append(clean_item)
 
-        return skills
+        # Remove duplicates while preserving order
+        seen = set()
+        unique_skills = []
+        for skill in skills:
+            if skill not in seen:
+                seen.add(skill)
+                unique_skills.append(skill)
+
+        return unique_skills[:MAX_SKILLS]  # Cap at max for MVP
 
     def _extract_tools(self, text: str) -> list[str]:
         """Extract tools/technologies (databases, frameworks, etc.)."""
@@ -302,9 +323,11 @@ class ResumeParser:
         """Extract certifications."""
         certifications = []
         # Look for patterns like "AWS Solutions Architect", "CPA", etc.
+        # Use explicit allowlist of known certification acronyms to avoid false positives
         patterns = [
             r"((?:AWS|Azure|Google Cloud|Kubernetes|Docker|Certified)\s+[^,\n]+)",
-            r"(C[A-Z]{1,2}|PMP|CISSP|CCNA)\b",
+            # Known certification acronyms (CPA, PMP, CISSP, CCNA, etc.)
+            r"\b(CPA|CFA|CFP|PMP|CISSP|CCNA|CCNP|CHES|CAPM|CSM|ACP|ITIL)\b",
         ]
         for pattern in patterns:
             for match in re.finditer(pattern, text):
