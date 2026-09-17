@@ -350,13 +350,22 @@ Provide the tailored resume content now:"""
 
         return "\n".join(lines)
 
-    def _refine_resume(self, current_resume: str, improvement_prompt: str) -> str:
+    def _refine_resume(
+        self,
+        current_resume: str,
+        improvement_prompt: str,
+        profile: CareerTruthProfile,
+    ) -> str:
         """
         Refine a tailored resume iteratively to improve alignment.
 
         Args:
             current_resume: The current version of the tailored resume
             improvement_prompt: Instructions for how to improve the resume
+            profile: The Career Truth Profile (source of all truth). Passed
+                through so refinement has access to the FULL profile, not
+                just whatever happens to already be in the current resume
+                text -- matching the guardrail scope used by tailor().
 
         Returns:
             Refined resume text
@@ -366,7 +375,7 @@ Provide the tailored resume content now:"""
         while staying true to the Career Truth Profile.
         """
         system_prompt = self._build_refinement_system_prompt()
-        user_prompt = self._build_refinement_user_prompt(current_resume, improvement_prompt)
+        user_prompt = self._build_refinement_user_prompt(current_resume, improvement_prompt, profile)
 
         response = self.client.messages.create(
             model=self.model,
@@ -394,13 +403,13 @@ Provide the tailored resume content now:"""
         return """You are a professional resume refinement specialist.
 
 YOUR CORE CONSTRAINT - CRITICAL FOR SAFETY:
-You may ONLY rewrite resume content using information already present in the resume.
+You may ONLY rewrite resume content using information from the Career Truth Profile provided.
 You must NEVER fabricate, invent, or add:
-- New experience not currently described
-- Skills not already mentioned
-- Certifications not in the resume
-- Numbers, metrics, or accomplishments not already stated
-- Dates, employers, titles not in the resume
+- Experience not in the profile
+- Skills not listed in the profile
+- Certifications not in the profile
+- Numbers, metrics, or accomplishments not explicitly stated
+- Dates, employers, titles, or employment types not in the profile
 
 ALLOWED TRANSFORMATIONS:
 - Rephrase existing bullets to better match job description language
@@ -411,17 +420,17 @@ ALLOWED TRANSFORMATIONS:
 - Highlight relevant skills in more prominent positions
 
 FORBIDDEN TRANSFORMATIONS:
-- Adding new experience, skills, or accomplishments
+- Adding new experience, skills, or accomplishments not in the Career Truth Profile
 - Inventing metrics or achievements
 - Changing dates, employers, or titles
-- Adding technologies or tools not mentioned
+- Adding technologies or tools not in the Career Truth Profile
 - Exaggerating or misrepresenting experience
 
 Your task is to refine the resume iteratively to improve keyword and qualification alignment
-while maintaining 100% truthfulness to the existing resume content."""
+while maintaining 100% truthfulness to the Career Truth Profile."""
 
     def _build_refinement_user_prompt(
-        self, current_resume: str, improvement_prompt: str
+        self, current_resume: str, improvement_prompt: str, profile: CareerTruthProfile
     ) -> str:
         """
         Build the user prompt for resume refinement.
@@ -429,11 +438,17 @@ while maintaining 100% truthfulness to the existing resume content."""
         Args:
             current_resume: The current tailored resume text
             improvement_prompt: Specific instructions for improvement
+            profile: The Career Truth Profile (source of all truth)
 
         Returns:
             Formatted user prompt for Claude
         """
+        profile_str = self._profile_to_string(profile)
+
         return f"""Please refine the following resume to improve job alignment.
+
+CAREER TRUTH PROFILE (Source of all truth - do NOT add anything beyond this):
+{profile_str}
 
 CURRENT RESUME:
 {current_resume}
@@ -445,7 +460,7 @@ REFINEMENT GUIDELINES:
 1. Review the current resume for areas that could be better aligned with the job requirements
 2. Reorganize and rephrase existing content to be more compelling and job-relevant
 3. Highlight accomplishments and skills that may not be prominent enough
-4. NEVER add experience, skills, or accomplishments not in the current resume
+4. NEVER add experience, skills, or accomplishments not in the Career Truth Profile
 5. NEVER change dates, employers, titles, or employment types
 6. Maintain all factual accuracy while improving presentation
 7. Output ONLY the refined resume content, preserving the structure but with improved wording and organization

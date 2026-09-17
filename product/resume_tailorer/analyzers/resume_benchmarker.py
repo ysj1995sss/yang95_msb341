@@ -1,6 +1,7 @@
 from dataclasses import dataclass
 from resume_tailorer.models import CareerTruthProfile
 from resume_tailorer.analyzers.job_analyzer import JobAnalysis
+from resume_tailorer.utils.scoring import calculate_keyword_alignment
 
 
 @dataclass
@@ -59,16 +60,13 @@ class ResumeBenchmarker:
         return " ".join(parts).lower()
 
     def _match_keywords(self, resume_text: str, job_keywords: list[str]) -> tuple[list[str], list[str]]:
-        """Find which job keywords are already in the resume."""
-        matched = []
-        missing = []
+        """Find which job keywords are already in the resume.
 
-        for keyword in job_keywords:
-            if keyword.lower() in resume_text:
-                matched.append(keyword)
-            else:
-                missing.append(keyword)
-
+        Uses calculate_keyword_alignment's word-boundary regex matching
+        (rather than bare substring matching) so that, e.g., a job requiring
+        "Go" does not falsely match inside a resume mentioning "Django".
+        """
+        _, matched, missing = calculate_keyword_alignment(resume_text, job_keywords)
         return matched, missing
 
     def _match_qualifications(self, profile: CareerTruthProfile, job_analysis: JobAnalysis) -> tuple[list[str], list[str]]:

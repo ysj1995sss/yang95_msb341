@@ -18,6 +18,7 @@ sys.modules['anthropic'] = mock_anthropic_module
 
 from resume_tailorer.models import CareerTruthProfile, WorkExperience, EducationEntry
 from resume_tailorer.analyzers import JobAnalyzer
+from resume_tailorer.analyzers.gap_analyzer import GapReport, GapItem, GapCategory
 from resume_tailorer.tailorer.optimizer import (
     ResumeTailoringOptimizer,
     OptimizationResult,
@@ -104,6 +105,35 @@ def sample_job_analysis():
     return analyzer.analyze(job_desc)
 
 
+@pytest.fixture
+def sample_gap_report():
+    """A sample gap report with a Category E ("never add") item, used to
+    verify the optimizer excludes D/E items from its improvement targets."""
+    return GapReport(
+        items=[
+            GapItem(
+                requirement="Python",
+                category=GapCategory.A,
+                reason="Already on resume",
+                candidate_evidence="Software Engineer experience",
+            ),
+            GapItem(
+                requirement="Kubernetes",
+                category=GapCategory.B,
+                reason="Supported but missing",
+                candidate_evidence="Led migration to Kubernetes",
+            ),
+            GapItem(
+                requirement="NoSQL",
+                category=GapCategory.E,
+                reason="Not found in profile; do not add",
+                candidate_evidence="None",
+            ),
+        ],
+        summary="Found 1 aligned, 1 supported but missing, 1 truly missing requirements.",
+    )
+
+
 def setup_anthropic_mock():
     """Setup mocked Anthropic client for tests."""
     mock_client = MagicMock()
@@ -169,6 +199,49 @@ def test_optimizer_score_resume_uses_keyword_alignment(sample_job_analysis):
     assert len(matched) + len(missing) == total_keywords
 
 
+def test_optimizer_excludes_category_e_from_improvement_targets(
+    sample_profile, sample_job_analysis, sample_gap_report
+):
+    """C2 verification: a Category E ("never add") gap item must never
+    appear in the "missing keywords to address" list passed to
+    _build_improvement_prompt(). sample_gap_report marks "NoSQL" as
+    Category E; the optimizer must filter it out of the refinement target
+    list even though it may legitimately be a "missing" keyword by pure
+    keyword-alignment scoring.
+    """
+    mock_client = setup_anthropic_mock()
+
+    mock_response = MagicMock()
+    mock_response.content = [MagicMock()]
+    mock_response.content[0].text = "Refined resume text"
+    mock_client.messages.create.return_value = mock_response
+
+    optimizer = ResumeTailoringOptimizer(max_iterations=1)
+
+    captured_prompts = []
+    original_build = optimizer._build_improvement_prompt
+
+    def spy_build(current_resume, job_analysis, missing_keywords):
+        captured_prompts.append(missing_keywords)
+        return original_build(current_resume, job_analysis, missing_keywords)
+
+    optimizer._build_improvement_prompt = spy_build
+
+    # A resume missing everything so the first-iteration score is low and
+    # refinement (and therefore _build_improvement_prompt) definitely runs.
+    initial_tailored = "Generic resume with no relevant keywords"
+
+    optimizer.optimize(sample_profile, sample_job_analysis, initial_tailored, sample_gap_report)
+
+    assert captured_prompts, "Improvement prompt should have been built at least once"
+    # sample_job_analysis title-cases skills (e.g. "nosql" -> "Nosql"), so
+    # compare case-insensitively against the Category E requirement.
+    for missing_keywords in captured_prompts:
+        assert not any(kw.lower() == "nosql" for kw in missing_keywords), (
+            "Category E item 'NoSQL' must be excluded from improvement targets"
+        )
+
+
 def test_optimizer_build_improvement_prompt():
     """Test that improvement prompt is built correctly."""
     setup_anthropic_mock()
@@ -207,7 +280,9 @@ def test_optimizer_respects_no_fabrication_in_prompt():
     )
 
 
-def test_optimizer_optimize_returns_optimization_result(sample_profile, sample_job_analysis):
+def test_optimizer_optimize_returns_optimization_result(
+    sample_profile, sample_job_analysis, sample_gap_report
+):
     """Test that optimize returns OptimizationResult."""
     mock_client = setup_anthropic_mock()
 
@@ -220,7 +295,9 @@ def test_optimizer_optimize_returns_optimization_result(sample_profile, sample_j
     optimizer = ResumeTailoringOptimizer(max_iterations=1)
     initial_tailored = "Python engineer with Docker experience"
 
-    result = optimizer.optimize(sample_profile, sample_job_analysis, initial_tailored)
+    result = optimizer.optimize(
+        sample_profile, sample_job_analysis, initial_tailored, sample_gap_report
+    )
 
     assert isinstance(result, OptimizationResult)
     assert isinstance(result.tailored_resume, str)
@@ -230,9 +307,20 @@ def test_optimizer_optimize_returns_optimization_result(sample_profile, sample_j
     assert isinstance(result.missing_qualifications, list)
 
 
-def test_optimizer_stops_at_target_score(sample_profile, sample_job_analysis):
-    """Test that optimizer stops when reaching target score."""
+def test_optimizer_stops_at_target_score(sample_profile, sample_job_analysis, sample_gap_report):
+    """Test that optimizer stops when reaching target score (or plateaus)."""
     mock_client = setup_anthropic_mock()
+
+    # In case refinement is invoked (score doesn't clear target on the first
+    # pass, since scoring now blends keyword + qualification alignment),
+    # make sure _refine_resume gets back a real string, not an unconfigured
+    # MagicMock, so subsequent scoring passes don't choke on non-str text.
+    mock_response = MagicMock()
+    mock_response.content = [MagicMock()]
+    mock_response.content[0].text = (
+        "Python Go Docker Kubernetes PostgreSQL AWS microservices architecture REST APIs"
+    )
+    mock_client.messages.create.return_value = mock_response
 
     # Create a resume that already has high alignment
     high_alignment_resume = (
@@ -241,13 +329,18 @@ def test_optimizer_stops_at_target_score(sample_profile, sample_job_analysis):
     )
 
     optimizer = ResumeTailoringOptimizer(max_iterations=3)
-    result = optimizer.optimize(sample_profile, sample_job_analysis, high_alignment_resume)
+    result = optimizer.optimize(
+        sample_profile, sample_job_analysis, high_alignment_resume, sample_gap_report
+    )
 
-    # Score should be at or near target (85%)
+    # Score should be at or near target (85%), or the optimizer should have
+    # detected a plateau before reaching it.
     assert result.final_score >= optimizer.target_score or result.ceiling_reached
 
 
-def test_optimizer_limits_iterations_to_max(sample_profile, sample_job_analysis):
+def test_optimizer_limits_iterations_to_max(
+    sample_profile, sample_job_analysis, sample_gap_report
+):
     """Test that optimizer respects max_iterations limit."""
     mock_client = setup_anthropic_mock()
 
@@ -260,7 +353,9 @@ def test_optimizer_limits_iterations_to_max(sample_profile, sample_job_analysis)
     optimizer = ResumeTailoringOptimizer(max_iterations=2)
     initial_tailored = "Python experience"
 
-    result = optimizer.optimize(sample_profile, sample_job_analysis, initial_tailored)
+    result = optimizer.optimize(
+        sample_profile, sample_job_analysis, initial_tailored, sample_gap_report
+    )
 
     # Iterations should not exceed max_iterations
     assert result.iterations <= optimizer.max_iterations
@@ -280,6 +375,8 @@ def test_optimizer_detects_plateau():
     # Create a resume with 50% keyword match
     initial_resume = "Python Docker"  # 50% match
 
+    empty_gap_report = GapReport(items=[], summary="No gaps found.")
+
     # Mock _refine_resume to return similar content (no improvement)
     with patch.object(
         optimizer.tailorer,
@@ -287,7 +384,7 @@ def test_optimizer_detects_plateau():
         return_value="Python Docker experience",
     ):
         result = optimizer.optimize(
-            MagicMock(), job_analysis, initial_resume
+            MagicMock(), job_analysis, initial_resume, empty_gap_report
         )
 
         # Should detect plateau and ceiling_reached should be True
@@ -295,7 +392,14 @@ def test_optimizer_detects_plateau():
 
 
 def test_optimizer_calculates_correct_score():
-    """Test that optimizer correctly calculates alignment score."""
+    """Test that optimizer correctly calculates alignment score.
+
+    _score_resume now blends keyword alignment (60%) with qualification
+    alignment (40%), the same methodology ResumeBenchmarker.benchmark()
+    uses (see I1 fix), so the two scores are directly comparable. With no
+    required qualifications configured, the qualification component is 0,
+    so the ceiling is keyword_score * 0.6 rather than 1.0.
+    """
     setup_anthropic_mock()
 
     optimizer = ResumeTailoringOptimizer()
@@ -304,18 +408,19 @@ def test_optimizer_calculates_correct_score():
     job_analysis = MagicMock()
     job_analysis.skills_required = ["Python", "Go"]
     job_analysis.tools_required = ["Docker", "Kubernetes"]
+    job_analysis.required_qualifications = []
 
-    # Test perfect match
+    # Test perfect keyword match (qualification component is 0 -> 0.6 ceiling)
     perfect_resume = "Python Go Docker Kubernetes"
     score, matched, missing = optimizer._score_resume(perfect_resume, job_analysis)
-    assert score == 1.0
+    assert score == pytest.approx(0.6)
     assert len(matched) == 4
     assert len(missing) == 0
 
     # Test partial match
     partial_resume = "Python Docker"
     score, matched, missing = optimizer._score_resume(partial_resume, job_analysis)
-    assert score == 0.5
+    assert score == pytest.approx(0.3)
     assert len(matched) == 2
     assert len(missing) == 2
 

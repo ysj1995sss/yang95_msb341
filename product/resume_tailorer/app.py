@@ -140,7 +140,7 @@ def main():
     try:
         with st.spinner("Optimizing tailored resume for alignment..."):
             optimization_result = ResumeTailoringOptimizer().optimize(
-                profile, job_analysis, tailored_text
+                profile, job_analysis, tailored_text, gap_report
             )
     except Exception as exc:
         st.error(f"Optimization failed: {exc}")

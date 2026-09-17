@@ -30,6 +30,21 @@ class JobAnalyzer:
     for more nuanced analysis.
     """
 
+    # Common stopwords excluded from the non-technical fallback keyword
+    # extraction (see _extract_fallback_keywords). Not exhaustive -- just
+    # enough to keep the fallback list meaningful rather than noise.
+    _FALLBACK_STOPWORDS = {
+        "about", "above", "after", "again", "against", "because", "before",
+        "being", "below", "between", "candidate", "could", "during", "each",
+        "experience", "further", "having", "other", "overall", "please",
+        "responsibilities", "should", "strong", "their", "there", "these",
+        "those", "through", "where", "which", "while", "would", "years",
+        "you'll", "your", "ability", "looking", "working", "within",
+        "across", "various", "ensure", "ensuring", "including", "include",
+        "position", "opportunity", "team", "teams", "role", "roles",
+        "company", "someone",
+    }
+
     def analyze(self, job_description: str) -> JobAnalysis:
         """Parse a job description and return a JobAnalysis."""
         # Extract sections
@@ -40,6 +55,18 @@ class JobAnalyzer:
         # Extract skills and tools
         skills = self._extract_skills(job_description, required_qual)
         tools = self._extract_tools(job_description)
+
+        # Non-technical job descriptions (marketing, sales, etc.) won't
+        # match the software-only whitelist above. Rather than let both
+        # lists come back empty -- which cascades into a degenerate 0%
+        # keyword-alignment score downstream -- fall back to extracting
+        # significant keywords directly from the requirements/responsibilities
+        # text. The whitelist stays the primary/preferred path for technical
+        # jobs; this only kicks in when it yields nothing.
+        if not skills and not tools:
+            skills = self._extract_fallback_keywords(
+                required_qual, preferred_qual, responsibilities
+            )
 
         # Extract education and experience requirements
         education = self._extract_education_requirement(job_description)
@@ -119,6 +146,41 @@ class JobAnalyzer:
                 found_tools.append(tool.title())
 
         return found_tools
+
+    def _extract_fallback_keywords(
+        self,
+        required_qual: list[str],
+        preferred_qual: list[str],
+        responsibilities: list[str],
+        limit: int = 15,
+    ) -> list[str]:
+        """
+        Fallback keyword extraction for job descriptions that don't use any
+        of the hardcoded software-skill whitelist (e.g. marketing, sales,
+        non-technical roles).
+
+        Pulls significant words (longer than 4 characters, i.e. 5+ chars,
+        minus common stopwords) directly out of the required/preferred
+        qualifications and responsibilities sections, deduplicated and
+        capped at `limit`, so downstream keyword-alignment scoring has a
+        meaningful, non-empty target set instead of collapsing to 0%.
+        """
+        combined_text = " ".join(required_qual + preferred_qual + responsibilities)
+        words = re.findall(r"\b[A-Za-z][A-Za-z\-]{4,}\b", combined_text)
+
+        found = []
+        seen_lower = set()
+        for word in words:
+            cleaned = word.strip("-")
+            lower = cleaned.lower()
+            if not cleaned or lower in self._FALLBACK_STOPWORDS or lower in seen_lower:
+                continue
+            seen_lower.add(lower)
+            found.append(cleaned)
+            if len(found) >= limit:
+                break
+
+        return found
 
     def _extract_education_requirement(self, text: str) -> Optional[str]:
         """Extract education requirement (e.g., 'BS in Computer Science')."""

@@ -197,7 +197,9 @@ class TestMockedEndToEndPipeline:
         # Stage 6: optimize (Claude call mocked, capped to 1 iteration so
         # the test stays fast and deterministic).
         optimizer = ResumeTailoringOptimizer(max_iterations=1)
-        optimization_result = optimizer.optimize(profile, job_analysis, tailored_text)
+        optimization_result = optimizer.optimize(
+            profile, job_analysis, tailored_text, gap_report
+        )
         assert isinstance(optimization_result, OptimizationResult)
         assert isinstance(optimization_result.tailored_resume, str)
         assert isinstance(optimization_result.final_score, float)

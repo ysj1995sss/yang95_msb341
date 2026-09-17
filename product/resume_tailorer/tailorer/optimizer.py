@@ -9,8 +9,9 @@ scores it, and iteratively refines it to reach an 85% alignment target
 from dataclasses import dataclass
 from resume_tailorer.models import CareerTruthProfile
 from resume_tailorer.analyzers import JobAnalysis
+from resume_tailorer.analyzers.gap_analyzer import GapReport, GapCategory
 from resume_tailorer.tailorer.resume_tailorer import ResumeTailorer
-from resume_tailorer.utils.scoring import calculate_keyword_alignment
+from resume_tailorer.utils.scoring import calculate_keyword_alignment, calculate_qualification_alignment
 
 
 @dataclass
@@ -60,20 +61,39 @@ class ResumeTailoringOptimizer:
         profile: CareerTruthProfile,
         job_analysis: JobAnalysis,
         initial_tailored: str,
+        gap_report: GapReport,
     ) -> OptimizationResult:
         """
         Optimize the tailored resume iteratively.
 
         Args:
-            profile: Career Truth Profile (used for context)
+            profile: Career Truth Profile (source of truth passed through to
+                the refinement prompt so it has the same guardrail scope as
+                the initial tailor() call)
             job_analysis: Job description analysis
             initial_tailored: Initial tailored resume text
+            gap_report: Gap analysis classifying each requirement A-E. Used
+                to exclude Category D ("needs confirmation") and Category E
+                ("truly missing / never add") items from the "missing
+                keywords to address" list handed to the refinement prompt,
+                so the optimizer never asks Claude to "better address"
+                something the candidate doesn't actually have.
 
         Returns:
             OptimizationResult with final resume, score, iterations, and status
         """
         current_tailored = initial_tailored
         previous_score = 0.0
+
+        # Requirements the candidate truly doesn't have (E) or that need
+        # human confirmation (D) must never be surfaced as improvement
+        # targets -- doing so would push the refinement prompt toward
+        # fabrication.
+        excluded_keywords = {
+            item.requirement.lower()
+            for item in gap_report.items
+            if item.category in (GapCategory.D, GapCategory.E)
+        }
 
         for iteration in range(self.max_iterations):
             # Score current version
@@ -101,12 +121,16 @@ class ResumeTailoringOptimizer:
 
             previous_score = score
 
-            # Improve: identify gaps and ask Claude to refine
+            # Improve: identify gaps and ask Claude to refine, excluding
+            # anything classified as Category D/E in the gap report.
+            addressable_missing = [
+                keyword for keyword in missing if keyword.lower() not in excluded_keywords
+            ]
             improvement_prompt = self._build_improvement_prompt(
-                current_tailored, job_analysis, missing
+                current_tailored, job_analysis, addressable_missing
             )
             current_tailored = self.tailorer._refine_resume(
-                current_tailored, improvement_prompt
+                current_tailored, improvement_prompt, profile
             )
 
         # Max iterations reached
@@ -125,6 +149,11 @@ class ResumeTailoringOptimizer:
         """
         Score the resume against job requirements.
 
+        Uses the SAME methodology as ResumeBenchmarker.benchmark() (keyword
+        alignment weighted 60%, qualification alignment weighted 40%, top-5
+        required qualifications) so that OptimizationResult.final_score is
+        directly comparable to ResumeBenchmark.original_match_score.
+
         Args:
             resume_text: The resume text to score
             job_analysis: Job description analysis with requirements
@@ -133,7 +162,13 @@ class ResumeTailoringOptimizer:
             Tuple of (score, matched_keywords, missing_keywords)
         """
         all_keywords = job_analysis.skills_required + job_analysis.tools_required
-        score, matched, missing = calculate_keyword_alignment(resume_text, all_keywords)
+        keyword_score, matched, missing = calculate_keyword_alignment(resume_text, all_keywords)
+
+        qual_score, _covered, _missing_quals = calculate_qualification_alignment(
+            resume_text, job_analysis.required_qualifications[:5]
+        )
+
+        score = (keyword_score * 0.6) + (qual_score * 0.4)
         return score, matched, missing
 
     def _build_improvement_prompt(
