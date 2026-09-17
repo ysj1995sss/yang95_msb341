@@ -349,3 +349,105 @@ Provide the tailored resume content now:"""
             lines.append(f"\nExperience: {job_analysis.experience_required}")
 
         return "\n".join(lines)
+
+    def _refine_resume(self, current_resume: str, improvement_prompt: str) -> str:
+        """
+        Refine a tailored resume iteratively to improve alignment.
+
+        Args:
+            current_resume: The current version of the tailored resume
+            improvement_prompt: Instructions for how to improve the resume
+
+        Returns:
+            Refined resume text
+
+        This method follows the same safety pattern as tailor(): it uses Claude
+        with strict fabrication guardrails to iteratively improve the resume
+        while staying true to the Career Truth Profile.
+        """
+        system_prompt = self._build_refinement_system_prompt()
+        user_prompt = self._build_refinement_user_prompt(current_resume, improvement_prompt)
+
+        response = self.client.messages.create(
+            model=self.model,
+            max_tokens=2000,
+            messages=[
+                {
+                    "role": "user",
+                    "content": user_prompt,
+                }
+            ],
+            system=system_prompt,
+        )
+
+        # Extract refined resume text from response
+        return response.content[0].text
+
+    def _build_refinement_system_prompt(self) -> str:
+        """
+        Build the system prompt for resume refinement (iteration step).
+
+        This uses the same fabrication guardrails as the initial tailor() method.
+        It constrains Claude to ONLY reorganize, rephrase, and prioritize existing
+        content without adding new experience, skills, or achievements.
+        """
+        return """You are a professional resume refinement specialist.
+
+YOUR CORE CONSTRAINT - CRITICAL FOR SAFETY:
+You may ONLY rewrite resume content using information already present in the resume.
+You must NEVER fabricate, invent, or add:
+- New experience not currently described
+- Skills not already mentioned
+- Certifications not in the resume
+- Numbers, metrics, or accomplishments not already stated
+- Dates, employers, titles not in the resume
+
+ALLOWED TRANSFORMATIONS:
+- Rephrase existing bullets to better match job description language
+- Reorganize sections to prioritize job-relevant experience
+- Reorder bullet points by relevance
+- Expand existing accomplishments (but never add new achievements)
+- Change bullet structure or formatting
+- Highlight relevant skills in more prominent positions
+
+FORBIDDEN TRANSFORMATIONS:
+- Adding new experience, skills, or accomplishments
+- Inventing metrics or achievements
+- Changing dates, employers, or titles
+- Adding technologies or tools not mentioned
+- Exaggerating or misrepresenting experience
+
+Your task is to refine the resume iteratively to improve keyword and qualification alignment
+while maintaining 100% truthfulness to the existing resume content."""
+
+    def _build_refinement_user_prompt(
+        self, current_resume: str, improvement_prompt: str
+    ) -> str:
+        """
+        Build the user prompt for resume refinement.
+
+        Args:
+            current_resume: The current tailored resume text
+            improvement_prompt: Specific instructions for improvement
+
+        Returns:
+            Formatted user prompt for Claude
+        """
+        return f"""Please refine the following resume to improve job alignment.
+
+CURRENT RESUME:
+{current_resume}
+
+IMPROVEMENT INSTRUCTIONS:
+{improvement_prompt}
+
+REFINEMENT GUIDELINES:
+1. Review the current resume for areas that could be better aligned with the job requirements
+2. Reorganize and rephrase existing content to be more compelling and job-relevant
+3. Highlight accomplishments and skills that may not be prominent enough
+4. NEVER add experience, skills, or accomplishments not in the current resume
+5. NEVER change dates, employers, titles, or employment types
+6. Maintain all factual accuracy while improving presentation
+7. Output ONLY the refined resume content, preserving the structure but with improved wording and organization
+
+Provide the refined resume content now:"""
