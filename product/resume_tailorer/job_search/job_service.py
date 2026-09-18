@@ -3,6 +3,7 @@
 Coordinates: user goals → scraper selection → scraping → deduplication → database storage.
 """
 
+from datetime import datetime
 from typing import List, Optional, Tuple
 from resume_tailorer.job_search.models import SearchGoals, JobPosting, JobSource
 from resume_tailorer.job_search.database import JobDatabase
@@ -130,7 +131,8 @@ class JobService:
             profile: CareerTruthProfile for scoring
 
         Returns:
-            Tuple of (JobPosting, fit_score) or None if job not found
+            Optional[Tuple[JobPosting, float]]: Tuple of (JobPosting, fit_score),
+            or None if no job matches job_id.
         """
         job = self.db.get_job_posting(job_id)
         if job is None:
@@ -176,7 +178,3 @@ class JobService:
         if scraper_class:
             return scraper_class()
         return None
-
-
-# Import datetime for sorting
-from datetime import datetime

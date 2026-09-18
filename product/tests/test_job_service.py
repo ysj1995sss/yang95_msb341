@@ -1,8 +1,6 @@
 """Tests for job service orchestrator."""
 
 import pytest
-import tempfile
-from pathlib import Path
 from datetime import datetime
 from unittest import mock
 
