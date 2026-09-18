@@ -9,7 +9,7 @@ Scoring: Weighted average of skills (40%), experience (30%), education (20%), sp
 """
 
 import re
-from typing import List, Optional, Tuple
+from typing import List, Optional
 from resume_tailorer.models.career_profile import CareerTruthProfile
 from resume_tailorer.job_search.models import JobPosting
 
@@ -47,7 +47,7 @@ class CandidateFitScorer:
         "communication", "collaboration",
     }
 
-    def score_fit(self, profile: CareerTruthProfile, job: JobPosting) -> int:
+    def score_fit(self, profile: CareerTruthProfile, job: JobPosting) -> float:
         """
         Score how well candidate's qualifications match job requirements (0-100).
 
