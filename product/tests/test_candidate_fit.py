@@ -264,8 +264,8 @@ def test_fit_returns_0_to_100(sample_profile, sample_job, junior_profile, junior
         assert 0 <= score <= 100, f"Score should be between 0 and 100, got {score}"
 
 
-def test_fit_score_is_integer():
-    """Score should be returned as an integer."""
+def test_fit_score_is_float():
+    """Score should be returned as an actual float (e.g. 85.0, not 85)."""
     scorer = CandidateFitScorer()
     profile = CareerTruthProfile(
         contact_info={"name": "Test", "email": "test@example.com"},
@@ -287,5 +287,5 @@ def test_fit_score_is_integer():
     )
 
     score = scorer.score_fit(profile, job)
-    assert isinstance(score, (int, float)), f"Score should be numeric, got {type(score)}"
+    assert isinstance(score, float), f"Score should be a float, got {type(score)}"
     assert 0 <= score <= 100

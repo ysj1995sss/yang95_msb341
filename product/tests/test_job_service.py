@@ -90,8 +90,21 @@ def test_job_service_initialization(temp_db):
     service.close()
 
 
-def test_job_service_initialization_default_db():
-    """JobService can be initialized with default db_path."""
+def test_job_service_initialization_default_db(tmp_path, monkeypatch):
+    """JobService defaults db_path to 'job_search.db' without polluting the real CWD.
+
+    We verify the default value via the constructor's signature (so we don't
+    depend on actually creating a file named job_search.db in whatever
+    directory the test runner happens to be in), and separately confirm that
+    a JobService can be constructed successfully when relying on that default
+    by chdir'ing into a throwaway tmp_path first.
+    """
+    import inspect
+
+    default_db_path = inspect.signature(JobService.__init__).parameters["db_path"].default
+    assert default_db_path == "job_search.db"
+
+    monkeypatch.chdir(tmp_path)
     service = JobService()
     assert service is not None
     assert service.db is not None
@@ -298,7 +311,7 @@ def test_get_job_with_fit_score(temp_db, sample_goals, sample_profile):
 
     assert retrieved_job is not None
     assert retrieved_job.company == "Tech Corp"
-    assert isinstance(fit_score, (int, float))
+    assert isinstance(fit_score, float)
     assert 0 <= fit_score <= 100
 
     service.close()

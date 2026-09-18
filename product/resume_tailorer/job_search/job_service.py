@@ -43,8 +43,7 @@ class JobService:
     def search_and_store(
         self,
         goals: SearchGoals,
-        sources: List[JobSource],
-        career_profile: Optional[CareerTruthProfile] = None
+        sources: List[JobSource]
     ) -> int:
         """Search for jobs and store in database.
 
@@ -63,7 +62,6 @@ class JobService:
         Args:
             goals: SearchGoals object with search criteria
             sources: List of JobSource enum values to scrape
-            career_profile: Optional CareerTruthProfile for fit scoring
 
         Returns:
             Count of jobs stored in database

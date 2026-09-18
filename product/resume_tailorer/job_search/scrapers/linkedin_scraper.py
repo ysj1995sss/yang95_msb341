@@ -1,5 +1,6 @@
 """LinkedIn job scraper."""
 
+import uuid
 from typing import List
 from datetime import datetime, timedelta
 from resume_tailorer.job_search.models import SearchGoals, JobPosting, JobSource
@@ -100,7 +101,7 @@ class LinkedInScraper(BaseScraper):
 
             job = JobPosting(
                 source=JobSource.LINKEDIN,
-                source_id=f"linkedin_{i+1}",
+                source_id=f"linkedin_{i+1}_{uuid.uuid4().hex[:8]}",
                 company=companies[i % len(companies)],
                 title=job_titles[i % len(job_titles)],
                 location=locations[i % len(locations)],

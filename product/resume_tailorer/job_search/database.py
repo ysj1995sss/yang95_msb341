@@ -48,6 +48,7 @@ class JobDatabase:
                 url TEXT,
                 ats_platform TEXT,
                 raw_json TEXT,
+                alternative_sources TEXT,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 UNIQUE(source, source_id)
             )
@@ -102,14 +103,19 @@ class JobDatabase:
         # Serialize raw_json to JSON string
         raw_json_str = json.dumps(job.raw_json) if job.raw_json else None
 
+        # Serialize alternative_sources to JSON string
+        alternative_sources_str = (
+            json.dumps(job.alternative_sources) if job.alternative_sources else None
+        )
+
         cursor = self.connection.cursor()
         cursor.execute("""
             INSERT OR REPLACE INTO job_postings
             (id, source, source_id, company, title, location, description,
              posted_date, application_deadline, salary_min, salary_max,
              experience_required, education_required, sponsorship_available,
-             work_mode, url, ats_platform, raw_json)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+             work_mode, url, ats_platform, raw_json, alternative_sources)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (
             job_id,
             job.source.value,
@@ -128,7 +134,8 @@ class JobDatabase:
             job.work_mode,
             job.url,
             job.ats_platform,
-            raw_json_str
+            raw_json_str,
+            alternative_sources_str
         ))
 
         self.connection.commit()
@@ -308,6 +315,15 @@ class JobDatabase:
             except (json.JSONDecodeError, TypeError):
                 raw_json = {}
 
+        # Deserialize alternative_sources from string to list
+        alternative_sources = []
+        row_keys = row.keys() if hasattr(row, "keys") else []
+        if "alternative_sources" in row_keys and row["alternative_sources"]:
+            try:
+                alternative_sources = json.loads(row["alternative_sources"])
+            except (json.JSONDecodeError, TypeError):
+                alternative_sources = []
+
         # Get JobSource enum from string value
         source = JobSource(row["source"])
 
@@ -328,7 +344,8 @@ class JobDatabase:
             work_mode=row["work_mode"],
             url=row["url"],
             ats_platform=row["ats_platform"],
-            raw_json=raw_json
+            raw_json=raw_json,
+            alternative_sources=alternative_sources
         )
 
     def close(self) -> None:

@@ -27,6 +27,11 @@ from resume_tailorer.job_search.ui_helpers import (
     format_job_for_display,
 )
 
+# Session-state key used to look up the user's CareerTruthProfile, if one has
+# been built elsewhere in the app (e.g. via the resume tailorer flow). Fit
+# scoring is skipped gracefully when no profile is present.
+CAREER_PROFILE_SESSION_KEY = "career_profile"
+
 st.set_page_config(page_title="Job Search", page_icon="\U0001F50D", layout="wide")
 
 DB_PATH = "job_search.db"
@@ -145,7 +150,7 @@ def _render_search_button(form_data: dict, sources: list) -> None:
         try:
             with st.spinner("Searching for jobs..."):
                 count = service.search_and_store(goals, sources)
-            st.success(f"Found and stored {count} new job posting(s).")
+            st.success(f"Stored {count} job posting(s).")
             st.session_state.last_search_goals = goals
         except Exception as exc:
             st.error(f"Search failed: {exc}")
@@ -184,9 +189,22 @@ def _render_job_dashboard() -> None:
 
     st.caption(f"Showing {len(filtered_jobs)} of {len(jobs)} job(s).")
 
+    career_profile = st.session_state.get(CAREER_PROFILE_SESSION_KEY)
+
     for job in filtered_jobs:
         job_id = f"{job.source.value}_{job.source_id}"
-        display = format_job_for_display(job)
+
+        fit_score = None
+        if career_profile is not None:
+            try:
+                result = service.get_job_with_fit_score(job_id, career_profile)
+                if result is not None:
+                    _, fit_score = result
+            except Exception:
+                # Fit scoring is best-effort; never block the dashboard on it.
+                fit_score = None
+
+        display = format_job_for_display(job, fit_score)
 
         with st.expander(f"{display['Title']} — {display['Company']} ({display['Location']})"):
             st.write(f"**Salary:** {display['Salary']}")
@@ -194,8 +212,13 @@ def _render_job_dashboard() -> None:
             st.write(f"**Sponsorship available:** {display['Sponsorship']}")
             st.write(f"**Posted:** {display['Posted Date']}")
             st.write(f"**Source:** {display['Source']}")
+            st.write(f"**Fit Score:** {display['Fit Score']}")
             if display["URL"]:
                 st.write(f"[View posting]({display['URL']})")
+            if job.alternative_sources:
+                st.caption(
+                    "Also posted on: " + ", ".join(job.alternative_sources)
+                )
 
             action_cols = st.columns(4)
             actions = ["interested", "saved", "skipped", "applied"]
@@ -213,8 +236,16 @@ def main():
     st.title("Job Search")
     st.caption(
         "Set your search goals, choose which sources to scrape, and triage "
-        "the results below. No jobs are ever fabricated — missing fields show "
-        "as 'Unknown' or 'Not specified'."
+        "the results below."
+    )
+    st.warning(
+        "⚠️ Demo Mode: Job listings shown are simulated placeholder data "
+        "for testing the search/filter/triage flow. Real scraper integrations "
+        "(LinkedIn, Indeed, Handshake, Greenhouse APIs) are a follow-up item — "
+        "see decisions/ for tracking. Real job data will never be fabricated "
+        "once live scraping is integrated; only actually-scraped fields will "
+        "be shown, with 'Unknown'/'Not specified' for anything a real posting "
+        "doesn't provide."
     )
 
     form_data = _render_search_goals_form()

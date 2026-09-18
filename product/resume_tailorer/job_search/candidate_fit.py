@@ -9,6 +9,7 @@ Scoring: Weighted average of skills (40%), experience (30%), education (20%), sp
 """
 
 import re
+from datetime import datetime
 from typing import List, Optional
 from resume_tailorer.models.career_profile import CareerTruthProfile
 from resume_tailorer.job_search.models import JobPosting
@@ -62,7 +63,7 @@ class CandidateFitScorer:
             job: JobPosting with requirements
 
         Returns:
-            Integer score 0-100
+            Float score 0-100
         """
         # Score each component
         skills_score = self._score_skills(profile, job)
@@ -78,7 +79,7 @@ class CandidateFitScorer:
             sponsorship_score * 0.10
         )
 
-        return int(round(final_score))
+        return round(float(final_score), 1)
 
     def _score_skills(self, profile: CareerTruthProfile, job: JobPosting) -> float:
         """
@@ -331,7 +332,7 @@ class CandidateFitScorer:
         present_match = re.search(r'(\d{4})\s*[\-–]\s*(present|now|current)', dates_str, re.IGNORECASE)
         if present_match:
             start_year = int(present_match.group(1))
-            current_year = 2024  # Could use datetime.now().year
+            current_year = datetime.now().year
             return max(1, current_year - start_year)
 
         return None
