@@ -88,6 +88,7 @@ def main():
         with st.spinner("Parsing resume..."):
             resume_path = _save_uploaded_file(resume_file)
             profile = ResumeParser().parse(resume_path)
+        st.session_state["career_profile"] = profile
         st.success(f"Resume parsed for {profile.name}.")
     except Exception as exc:
         st.error(f"Failed to parse resume: {exc}")

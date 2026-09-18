@@ -54,6 +54,13 @@ class JobDatabase:
             )
         """)
 
+        # Migration guard: legacy databases created before alternative_sources
+        # existed won't get the column from CREATE TABLE IF NOT EXISTS.
+        cursor.execute("PRAGMA table_info(job_postings)")
+        existing_columns = {row[1] for row in cursor.fetchall()}
+        if "alternative_sources" not in existing_columns:
+            cursor.execute("ALTER TABLE job_postings ADD COLUMN alternative_sources TEXT")
+
         # Create user_selections table
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS user_selections (

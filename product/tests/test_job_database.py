@@ -241,3 +241,61 @@ def test_salary_range_filtering(temp_db):
     assert "medium" in source_ids
     # job_low (40k-60k) is below the range
     # job_high (150k-200k) is above the range
+
+
+def test_create_tables_migrates_legacy_schema_without_alternative_sources(tmp_path):
+    """A pre-existing DB without the alternative_sources column gets migrated safely."""
+    import sqlite3
+    db_path = str(tmp_path / "legacy.db")
+
+    # Simulate a legacy database missing the alternative_sources column
+    conn = sqlite3.connect(db_path)
+    conn.execute("""
+        CREATE TABLE job_postings (
+            id TEXT PRIMARY KEY,
+            source TEXT NOT NULL,
+            source_id TEXT NOT NULL,
+            company TEXT NOT NULL,
+            title TEXT NOT NULL,
+            location TEXT NOT NULL,
+            description TEXT,
+            posted_date TIMESTAMP,
+            application_deadline TIMESTAMP,
+            salary_min INTEGER,
+            salary_max INTEGER,
+            experience_required TEXT,
+            education_required TEXT,
+            sponsorship_available BOOLEAN,
+            work_mode TEXT,
+            url TEXT,
+            ats_platform TEXT,
+            raw_json TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(source, source_id)
+        )
+    """)
+    conn.commit()
+    conn.close()
+
+    # Now open with JobDatabase and run create_tables — should migrate, not crash
+    db = JobDatabase(db_path)
+    db.create_tables()  # should migrate the legacy table
+
+    # Verify we can now save a job with alternative_sources without error
+    posting = JobPosting(
+        source=JobSource.LINKEDIN,
+        source_id="test-migration-1",
+        company="TestCo",
+        title="Engineer",
+        location="Remote",
+        description="desc",
+        url="https://example.com/job/1",
+    )
+    job_id = db.save_job_posting(posting)
+    assert job_id is not None
+
+    retrieved = db.get_job_posting(job_id)
+    assert retrieved is not None
+    assert retrieved.alternative_sources == []
+
+    db.close()
