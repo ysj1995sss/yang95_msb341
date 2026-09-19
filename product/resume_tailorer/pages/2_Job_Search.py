@@ -152,6 +152,26 @@ def _render_search_button(form_data: dict, sources: list) -> None:
                 count = service.search_and_store(goals, sources)
             st.success(f"Stored {count} job posting(s).")
             st.session_state.last_search_goals = goals
+
+            greenhouse_scraper = (
+                service._get_scraper(JobSource.GREENHOUSE)
+                if JobSource.GREENHOUSE in sources
+                else None
+            )
+            used_real_data = getattr(greenhouse_scraper, "data_source", None) == "real"
+
+            if used_real_data:
+                st.success(
+                    "✅ Live Data: Greenhouse results include real, "
+                    "currently-posted jobs pulled from public company job boards."
+                )
+            else:
+                st.warning(
+                    "⚠️ Demo Mode: Job listings shown are simulated placeholder data "
+                    "for testing the search/filter/triage flow. LinkedIn, Indeed, and Handshake "
+                    "integrations, and the Greenhouse live fallback path, are follow-up items — "
+                    "see decisions/ for tracking."
+                )
         except Exception as exc:
             st.error(f"Search failed: {exc}")
 
@@ -238,16 +258,6 @@ def main():
         "Set your search goals, choose which sources to scrape, and triage "
         "the results below."
     )
-    st.warning(
-        "⚠️ Demo Mode: Job listings shown are simulated placeholder data "
-        "for testing the search/filter/triage flow. Real scraper integrations "
-        "(LinkedIn, Indeed, Handshake, Greenhouse APIs) are a follow-up item — "
-        "see decisions/ for tracking. Real job data will never be fabricated "
-        "once live scraping is integrated; only actually-scraped fields will "
-        "be shown, with 'Unknown'/'Not specified' for anything a real posting "
-        "doesn't provide."
-    )
-
     form_data = _render_search_goals_form()
     sources = _render_source_selection()
     _render_search_button(form_data, sources)

@@ -9,6 +9,7 @@ from resume_tailorer.job_search.models import SearchGoals, JobPosting, JobSource
 from resume_tailorer.job_search.database import JobDatabase
 from resume_tailorer.job_search.deduplicator import JobDeduplicator
 from resume_tailorer.job_search.candidate_fit import CandidateFitScorer
+from resume_tailorer.job_search.url_validator import URLValidator
 from resume_tailorer.job_search.scrapers import (
     LinkedInScraper,
     IndeedScraper,
@@ -31,6 +32,7 @@ class JobService:
         self.db.create_tables()
         self.deduplicator = JobDeduplicator()
         self.fit_scorer = CandidateFitScorer()
+        self.url_validator = URLValidator()
 
         # Mapping of JobSource to scraper classes (initialized here for mockability)
         self.scraper_map = {
@@ -54,7 +56,8 @@ class JobService:
            - Call scraper.scrape(goals) to get postings
            - Collect all results
         3. Deduplicate all collected postings via JobDeduplicator
-        4. For each deduplicated posting:
+        3b. Filter out confirmed-closed postings via URLValidator
+        4. For each remaining posting:
            - Call database.save_job_posting()
            - Increment stored count
         5. Return total count stored
@@ -83,6 +86,9 @@ class JobService:
 
         # Step 3: Deduplicate
         deduplicated_postings = self.deduplicator.deduplicate(all_postings)
+
+        # Step 3b: Filter out confirmed-closed job URLs before storing
+        deduplicated_postings = self.url_validator.filter_active_jobs(deduplicated_postings)
 
         # Step 4 & 5: Store and count
         stored_count = 0
