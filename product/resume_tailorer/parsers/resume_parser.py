@@ -319,6 +319,53 @@ class ResumeParser:
         # For MVP, we'll extract from skills section or mention in work experience
         return []
 
+    def extract_style_hints(self, raw_text: str) -> dict:
+        """
+        Extract lightweight visual style hints from the original resume text,
+        used later to make the tailored PDF resemble the source resume's
+        bullet style and heading emphasis.
+
+        Args:
+            raw_text: The original resume's extracted plain text.
+
+        Returns:
+            Dict with keys:
+                "bullet_char": most common bullet marker found ("•", "-", "*"),
+                    defaulting to "•" if none detected.
+                "heading_style": "bold_larger" if a short (<30 char) ALL-CAPS
+                    line is found (suggesting a large/bold heading font in
+                    the original), else "bold".
+        """
+        lines = raw_text.splitlines()
+
+        bullet_counts = {"•": 0, "-": 0, "*": 0}
+        has_short_caps_heading = False
+
+        for raw_line in lines:
+            line = raw_line.strip()
+            if not line:
+                continue
+
+            for marker in bullet_counts:
+                if line.startswith(marker):
+                    bullet_counts[marker] += 1
+                    break
+
+            letters = [c for c in line if c.isalpha()]
+            if letters and all(c.isupper() for c in letters) and len(line) < 30:
+                has_short_caps_heading = True
+
+        dominant_bullet = max(bullet_counts, key=bullet_counts.get)
+        if bullet_counts[dominant_bullet] == 0:
+            dominant_bullet = "•"
+
+        heading_style = "bold_larger" if has_short_caps_heading else "bold"
+
+        return {
+            "bullet_char": dominant_bullet,
+            "heading_style": heading_style,
+        }
+
     def _extract_certifications(self, text: str) -> list[str]:
         """Extract certifications."""
         certifications = []

@@ -53,3 +53,39 @@ def test_resume_parser_extracts_work_experience(sample_resume_path):
     assert first_job.employer
     assert first_job.title
     assert first_job.dates
+
+
+def test_extract_style_hints_detects_bullet_dash():
+    """Detects '-' as the dominant bullet character."""
+    parser = ResumeParser()
+    text = "WORK EXPERIENCE\n- Built a system\n- Led a team\n- Shipped a feature"
+    hints = parser.extract_style_hints(text)
+    assert hints["bullet_char"] == "-"
+
+def test_extract_style_hints_detects_bullet_dot():
+    """Detects '•' as the dominant bullet character."""
+    parser = ResumeParser()
+    text = "WORK EXPERIENCE\n• Built a system\n• Led a team\n• Shipped a feature"
+    hints = parser.extract_style_hints(text)
+    assert hints["bullet_char"] == "•"
+
+def test_extract_style_hints_defaults_to_dot_when_no_bullets_found():
+    """Falls back to '•' default when no bullet markers are present."""
+    parser = ResumeParser()
+    text = "WORK EXPERIENCE\nBuilt a system without bullets\nLed a team without bullets"
+    hints = parser.extract_style_hints(text)
+    assert hints["bullet_char"] == "•"
+
+def test_extract_style_hints_detects_short_caps_heading_as_bold_larger():
+    """A short ALL-CAPS heading line suggests a larger/bold heading style."""
+    parser = ResumeParser()
+    text = "EXPERIENCE\n- Built a system\nEDUCATION\n- BS Computer Science"
+    hints = parser.extract_style_hints(text)
+    assert hints["heading_style"] == "bold_larger"
+
+def test_extract_style_hints_defaults_heading_style_to_bold():
+    """No short all-caps heading present defaults to plain bold."""
+    parser = ResumeParser()
+    text = "some lowercase text with no headings at all in this resume body"
+    hints = parser.extract_style_hints(text)
+    assert hints["heading_style"] == "bold"
