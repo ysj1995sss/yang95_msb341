@@ -43,10 +43,30 @@ class PDFValidator:
     # readable rather than garbage/corrupted.
     MIN_READABLE_RATIO = 0.85
 
+    TARGET_LENGTH_MAX_PAGES = {
+        "1_page": 1,
+        "2_page": 2,
+        "preserve": 10,
+    }
+
     def __init__(self, max_pages: int = 2):
         self.max_pages = max_pages
 
-    def validate(self, pdf_path: str) -> ValidationResult:
+    def validate(self, pdf_path: str, target_length: str = "1_page") -> ValidationResult:
+        """
+        Validate a generated PDF via round-trip text extraction.
+
+        Args:
+            pdf_path: Path to the PDF file to validate.
+            target_length: One of "1_page" (default), "2_page", "preserve".
+                Determines the page-count limit used for the overflow check.
+                Overrides the max_pages set on the validator instance when
+                recognized; falls back to self.max_pages otherwise.
+
+        Returns:
+            ValidationResult with passed/page_count/extracted_text/issues.
+        """
+        effective_max_pages = self.TARGET_LENGTH_MAX_PAGES.get(target_length, self.max_pages)
         issues = []
 
         if not pdf_path or not os.path.exists(pdf_path):
@@ -97,10 +117,10 @@ class PDFValidator:
             )
 
         # Check 2: page count reasonable for MVP (1-2 pages)
-        if page_count > self.max_pages:
+        if page_count > effective_max_pages:
             issues.append(
                 f"PDF has {page_count} pages, exceeding the MVP target of "
-                f"{self.max_pages} page(s)."
+                f"{effective_max_pages} page(s)."
             )
 
         # Check 3: no obvious corruption — extracted text shouldn't be

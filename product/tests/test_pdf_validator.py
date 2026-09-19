@@ -188,3 +188,95 @@ def test_round_trip_generate_then_validate():
         assert result.passed is True
         assert "Jane Smith" in result.extracted_text
         assert "jane.smith@example.com" in result.extracted_text
+
+
+def test_validate_with_1_page_target_uses_strict_limit(tmp_path):
+    """target_length='1_page' rejects a 2-page PDF (stricter than the old default max_pages=2)."""
+    from unittest.mock import patch, MagicMock
+
+    validator = PDFValidator()
+    fake_pdf_path = str(tmp_path / "fake.pdf")
+    with open(fake_pdf_path, "wb") as f:
+        f.write(b"%PDF-1.4 fake content for page count mock test")
+
+    mock_reader = MagicMock()
+    mock_page1 = MagicMock()
+    mock_page1.extract_text.return_value = "Some resume text here that is long enough to pass the length check for sure."
+    mock_page2 = MagicMock()
+    mock_page2.extract_text.return_value = "More resume text on a second page that also passes length check easily."
+    mock_reader.pages = [mock_page1, mock_page2]
+
+    with patch("resume_tailorer.pdf.validator.PdfReader", return_value=mock_reader):
+        result = validator.validate(fake_pdf_path, target_length="1_page")
+
+    assert result.passed is False
+    assert any("1 page" in issue for issue in result.issues)
+
+
+def test_validate_with_2_page_target_allows_2_pages(tmp_path):
+    """target_length='2_page' allows exactly 2 pages without flagging an issue."""
+    from unittest.mock import patch, MagicMock
+
+    validator = PDFValidator()
+    fake_pdf_path = str(tmp_path / "fake.pdf")
+    with open(fake_pdf_path, "wb") as f:
+        f.write(b"%PDF-1.4 fake content")
+
+    mock_reader = MagicMock()
+    mock_page1 = MagicMock()
+    mock_page1.extract_text.return_value = "Some resume text here that is long enough to pass the length check for sure."
+    mock_page2 = MagicMock()
+    mock_page2.extract_text.return_value = "More resume text on a second page that also passes length check easily."
+    mock_reader.pages = [mock_page1, mock_page2]
+
+    with patch("resume_tailorer.pdf.validator.PdfReader", return_value=mock_reader):
+        result = validator.validate(fake_pdf_path, target_length="2_page")
+
+    assert result.passed is True
+    assert result.page_count == 2
+
+
+def test_validate_with_preserve_target_allows_many_pages(tmp_path):
+    """target_length='preserve' does not flag a 5-page PDF as too long."""
+    from unittest.mock import patch, MagicMock
+
+    validator = PDFValidator()
+    fake_pdf_path = str(tmp_path / "fake.pdf")
+    with open(fake_pdf_path, "wb") as f:
+        f.write(b"%PDF-1.4 fake content")
+
+    mock_reader = MagicMock()
+    pages = []
+    for _ in range(5):
+        page = MagicMock()
+        page.extract_text.return_value = "Resume text that is long enough to pass the minimum length check comfortably."
+        pages.append(page)
+    mock_reader.pages = pages
+
+    with patch("resume_tailorer.pdf.validator.PdfReader", return_value=mock_reader):
+        result = validator.validate(fake_pdf_path, target_length="preserve")
+
+    assert result.passed is True
+    assert result.page_count == 5
+
+
+def test_validate_default_target_length_matches_1_page_behavior(tmp_path):
+    """Calling validate() with no target_length defaults to '1_page' strict checking."""
+    from unittest.mock import patch, MagicMock
+
+    validator = PDFValidator()
+    fake_pdf_path = str(tmp_path / "fake.pdf")
+    with open(fake_pdf_path, "wb") as f:
+        f.write(b"%PDF-1.4 fake content")
+
+    mock_reader = MagicMock()
+    mock_page1 = MagicMock()
+    mock_page1.extract_text.return_value = "Resume text that is long enough to pass the minimum length check comfortably."
+    mock_reader.pages = [mock_page1]
+
+    with patch("resume_tailorer.pdf.validator.PdfReader", return_value=mock_reader):
+        result_default = validator.validate(fake_pdf_path)
+        result_explicit = validator.validate(fake_pdf_path, target_length="1_page")
+
+    assert result_default.passed == result_explicit.passed
+    assert result_default.page_count == result_explicit.page_count
