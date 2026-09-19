@@ -11,3 +11,4 @@ build/
 .streamlit/
 venv/
 *.db
+.superpowers/
