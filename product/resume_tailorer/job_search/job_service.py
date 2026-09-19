@@ -17,22 +17,31 @@ from resume_tailorer.job_search.scrapers import (
     GreenhouseScraper,
 )
 from resume_tailorer.models.career_profile import CareerTruthProfile
+from resume_tailorer.applications.database import ApplicationDatabase
+from resume_tailorer.applications.models import ApplicationMode, ApplicationSubmission
+from resume_tailorer.applications.submission_engine import SubmissionEngine
 
 
 class JobService:
     """Orchestrates the entire job search pipeline."""
 
-    def __init__(self, db_path: str = "job_search.db"):
+    def __init__(self, db_path: str = "job_search.db", applications_db_path: str = "applications.db"):
         """Initialize JobService with database.
 
         Args:
-            db_path: Path to SQLite database file
+            db_path: Path to SQLite database file for job postings.
+            applications_db_path: Path to SQLite database file for
+                application submissions and status tracking.
         """
         self.db = JobDatabase(db_path=db_path)
         self.db.create_tables()
         self.deduplicator = JobDeduplicator()
         self.fit_scorer = CandidateFitScorer()
         self.url_validator = URLValidator()
+
+        self.applications_db = ApplicationDatabase(db_path=applications_db_path)
+        self.applications_db.create_tables()
+        self._submission_engine = SubmissionEngine(self.applications_db)
 
         # Mapping of JobSource to scraper classes (initialized here for mockability)
         self.scraper_map = {
@@ -172,10 +181,68 @@ class JobService:
         fit_score = self.fit_scorer.score_fit(profile, job)
         return (job, fit_score)
 
+    def apply_for_job(
+        self,
+        job_id: str,
+        profile: CareerTruthProfile,
+        resume_pdf_path: str,
+        mode: ApplicationMode,
+        resume_match_score: float,
+        dry_run: bool = True,
+    ) -> ApplicationSubmission:
+        """
+        Submit (or dry-run) an application for a stored job posting.
+
+        Orchestrates: fetch job from DB -> compute candidate fit score ->
+        delegate to SubmissionEngine (parse form -> fill -> optionally
+        submit -> record).
+
+        Args:
+            job_id: Job ID in format "{source}_{source_id}".
+            profile: The candidate's verified career data.
+            resume_pdf_path: Path to the tailored resume PDF used for
+                this application.
+            mode: MANUAL, ASSIST, or AUTO.
+            resume_match_score: Resume Match score from Sprint 1's
+                ResumeBenchmarker for this job (JobService does not
+                compute this itself — it's a separate module's output,
+                passed in by the caller).
+            dry_run: If True (default), never performs a real network
+                submission. See SubmissionEngine for the full safety
+                model.
+
+        Returns:
+            The recorded ApplicationSubmission.
+
+        Raises:
+            ValueError: If job_id is not found, or if the underlying
+                SubmissionEngine refuses to submit (unsupported platform,
+                or Auto mode with an unfilled required field).
+        """
+        job = self.db.get_job_posting(job_id)
+        if job is None:
+            raise ValueError(f"Job not found: {job_id}")
+
+        candidate_fit_score = self.fit_scorer.score_fit(profile, job)
+
+        return self._submission_engine.apply_for_job(
+            job_posting_id=job_id,
+            form_url=job.url,
+            ats_platform=job.ats_platform.lower() if job.ats_platform else "",
+            profile=profile,
+            resume_pdf_path=resume_pdf_path,
+            candidate_fit_score=candidate_fit_score,
+            resume_match_score=resume_match_score,
+            mode=mode,
+            dry_run=dry_run,
+        )
+
     def close(self) -> None:
-        """Close database connection."""
+        """Close database connections."""
         if self.db:
             self.db.close()
+        if self.applications_db:
+            self.applications_db.close()
 
     def _validate_goals(self, goals: SearchGoals) -> None:
         """Validate search goals.
