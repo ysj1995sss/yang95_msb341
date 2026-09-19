@@ -69,6 +69,7 @@ class GreenhouseScraper(BaseScraper):
             and mock paths somehow fail, which should not happen in
             practice since mock generation cannot fail).
         """
+        self.data_source = None
         real_jobs = self._scrape_real(goals)
 
         if real_jobs:
@@ -100,7 +101,41 @@ class GreenhouseScraper(BaseScraper):
                 if job is not None:
                     all_jobs.append(job)
 
-        return all_jobs
+        return self._filter_by_goals(all_jobs, goals)
+
+    def _filter_by_goals(self, jobs: List[JobPosting], goals: SearchGoals) -> List[JobPosting]:
+        """Filter real job postings by the user's search goals before they proceed
+        to deduplication and URL validation, so the number of postings that need
+        live liveness-checking stays small (the spec calls for results 'filtered
+        by the user's stated goals', not every open req across every board).
+
+        Matching is intentionally loose (substring, case-insensitive) since job
+        titles vary in phrasing across companies — this is a coarse pre-filter,
+        not the final relevance ranking (that's the database layer's job).
+
+        Location is deliberately NOT filtered here: real Greenhouse locations are
+        free-text and the database's search_jobs() LIKE filter already handles
+        location matching downstream.
+        """
+        if not goals.job_title:
+            return jobs
+
+        title_keywords = [
+            word.lower()
+            for word in goals.job_title.split()
+            if len(word) > 2  # skip short connector words like "of", "a"
+        ]
+
+        if not title_keywords:
+            return jobs
+
+        matched = []
+        for job in jobs:
+            title_lower = job.title.lower()
+            if any(keyword in title_lower for keyword in title_keywords):
+                matched.append(job)
+
+        return matched
 
     def _map_greenhouse_job(self, raw_job: dict, board_token: str) -> Optional[JobPosting]:
         """Map a single Greenhouse API job dict to a JobPosting.
@@ -132,7 +167,7 @@ class GreenhouseScraper(BaseScraper):
         return JobPosting(
             source=JobSource.GREENHOUSE,
             source_id=str(job_id),
-            company=board_token,
+            company=board_token.replace("-", " ").replace("_", " ").title(),
             title=title,
             location=location,
             description=description,

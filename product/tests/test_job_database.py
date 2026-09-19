@@ -299,3 +299,51 @@ def test_create_tables_migrates_legacy_schema_without_alternative_sources(tmp_pa
     assert retrieved.alternative_sources == []
 
     db.close()
+
+
+def test_search_jobs_unknown_work_mode_passes_remote_preference(temp_db):
+    """Real Greenhouse postings have work_mode='Unknown' (never fabricated).
+    Selecting remote must not silently hide 100% of them."""
+    temp_db.create_tables()
+
+    unknown_job = JobPosting(
+        source=JobSource.GREENHOUSE,
+        source_id="unknown-wm",
+        company="Airbnb",
+        title="Software Engineer",
+        location="Remote - US",
+        description="Real posting with no work mode exposed by the API",
+        work_mode="Unknown",
+        url="https://boards.greenhouse.io/airbnb/jobs/1",
+    )
+    onsite_job = JobPosting(
+        source=JobSource.GREENHOUSE,
+        source_id="onsite-wm",
+        company="Airbnb",
+        title="Software Engineer",
+        location="Remote - US",
+        description="Explicitly on-site",
+        work_mode="on-site",
+        url="https://boards.greenhouse.io/airbnb/jobs/2",
+    )
+
+    temp_db.save_job_posting(unknown_job)
+    temp_db.save_job_posting(onsite_job)
+
+    goals = SearchGoals(
+        job_title="Software Engineer",
+        industries=["Technology"],
+        min_salary=0,
+        max_salary=0,
+        location="Remote",
+        remote_preference="remote",
+        sponsorship_required=False,
+        experience_level="mid",
+        company_size="any",
+    )
+
+    results = temp_db.search_jobs(goals)
+    source_ids = {job.source_id for job in results}
+
+    assert "unknown-wm" in source_ids
+    assert "onsite-wm" not in source_ids

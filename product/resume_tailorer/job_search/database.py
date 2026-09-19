@@ -204,7 +204,12 @@ class JobDatabase:
 
         # Filter by work mode if not "any"
         if goals.remote_preference and goals.remote_preference != "any":
-            where_clauses.append("work_mode LIKE ?")
+            # Real postings from sources that don't expose work mode store
+            # "Unknown" (never fabricated) — treat that as a pass rather than
+            # silently hiding every real job whenever a preference is set.
+            where_clauses.append(
+                "(work_mode LIKE ? OR work_mode IS NULL OR work_mode = 'Unknown')"
+            )
             params.append(f"%{goals.remote_preference}%")
 
         # Filter by sponsorship if required

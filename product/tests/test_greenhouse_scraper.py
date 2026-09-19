@@ -64,12 +64,74 @@ def test_scrape_maps_greenhouse_fields_correctly():
     assert job.location == "Remote - US"
     assert job.url == "https://boards.greenhouse.io/examplecompany/jobs/1000"
     assert job.ats_platform == "Greenhouse"
+    # company is derived from the board token, title-cased for display
+    assert job.company == GreenhouseScraper.GREENHOUSE_BOARD_TOKENS[0].title()
+
+
+def test_map_greenhouse_job_title_cases_board_token():
+    """The board token is presented title-cased (e.g. 'airbnb' -> 'Airbnb')."""
+    scraper = GreenhouseScraper()
+    raw = {
+        "id": 55,
+        "title": "Software Engineer",
+        "absolute_url": "https://boards.greenhouse.io/some-co/jobs/55",
+        "location": {"name": "Remote"},
+        "content": "<p>hi</p>",
+    }
+
+    job = scraper._map_greenhouse_job(raw, "some-co")
+
+    assert job.company == "Some Co"
+
+
+def test_scrape_real_filters_postings_by_goal_job_title():
+    """Real postings whose titles don't match the goal title are dropped BEFORE
+    URL validation, so we don't liveness-check every open req on every board."""
+    scraper = GreenhouseScraper()
+    goals = _make_goals(job_title="Software Engineer")
+
+    mixed_response = {
+        "jobs": [
+            {
+                "id": 1,
+                "title": "Senior Software Engineer",
+                "absolute_url": "https://boards.greenhouse.io/x/jobs/1",
+                "location": {"name": "Remote"},
+                "content": "<p>eng</p>",
+            },
+            {
+                "id": 2,
+                "title": "Marketing Manager",
+                "absolute_url": "https://boards.greenhouse.io/x/jobs/2",
+                "location": {"name": "Remote"},
+                "content": "<p>mkt</p>",
+            },
+        ]
+    }
+
+    with patch.object(scraper, "_make_get_request", return_value=mixed_response):
+        results = scraper._scrape_real(goals)
+
+    titles = {job.title for job in results}
+    assert "Senior Software Engineer" in titles
+    assert "Marketing Manager" not in titles
+
+
+def test_filter_by_goals_returns_all_when_no_job_title():
+    """With no job title in goals there is nothing to pre-filter on."""
+    scraper = GreenhouseScraper()
+    goals = _make_goals(job_title="")
+
+    with patch.object(scraper, "_make_get_request", return_value=_fake_greenhouse_response(job_count=2)):
+        results = scraper._scrape_real(goals)
+
+    assert len(results) == 2 * len(GreenhouseScraper.GREENHOUSE_BOARD_TOKENS)
 
 
 def test_scrape_handles_missing_optional_fields_as_unknown():
     """A job JSON missing salary/experience info maps to 'Unknown', never a fabricated value."""
     scraper = GreenhouseScraper()
-    goals = _make_goals()
+    goals = _make_goals(job_title="Data Analyst")
 
     sparse_response = {
         "jobs": [

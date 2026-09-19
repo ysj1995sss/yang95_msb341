@@ -109,3 +109,34 @@ def test_filter_active_jobs_skips_jobs_with_no_url():
 
     mock_check.assert_not_called()
     assert len(result) == 1
+
+
+def test_check_url_respects_rate_limit_between_consecutive_calls():
+    """Back-to-back checks sleep to keep at most ~1 request/sec per host."""
+    validator = URLValidator()
+    mock_response = MagicMock()
+    mock_response.status_code = 200
+
+    with patch("resume_tailorer.job_search.url_validator.requests.head", return_value=mock_response), \
+         patch("resume_tailorer.job_search.url_validator.time.sleep") as mock_sleep:
+        validator.check_url("https://example.com/job/1")
+        validator.check_url("https://example.com/job/2")
+
+    # First call: _last_request_time is 0.0 (epoch), so elapsed >> interval -> no sleep.
+    # Second call: immediately after the first -> must sleep for the remainder.
+    assert mock_sleep.call_count == 1
+    slept = mock_sleep.call_args[0][0]
+    assert 0 < slept <= URLValidator.MIN_REQUEST_INTERVAL
+
+
+def test_first_check_url_call_is_not_delayed():
+    """A fresh validator's first check is never delayed (last_request_time is epoch 0)."""
+    validator = URLValidator()
+    mock_response = MagicMock()
+    mock_response.status_code = 200
+
+    with patch("resume_tailorer.job_search.url_validator.requests.head", return_value=mock_response), \
+         patch("resume_tailorer.job_search.url_validator.time.sleep") as mock_sleep:
+        validator.check_url("https://example.com/job/1")
+
+    mock_sleep.assert_not_called()
