@@ -29,7 +29,6 @@ plan's sample served only as a guide to the overall UI flow.
 
 import os
 import tempfile
-from pathlib import Path
 
 import streamlit as st
 
@@ -106,14 +105,12 @@ def main():
 
             # Extract the raw resume text so we can derive style hints
             # (bullet character, heading style) from the source formatting.
-            # This mirrors the same extraction ResumeParser.parse() performs
-            # internally, based on file extension.
-            suffix = Path(resume_path).suffix.lower()
-            if suffix == ".pdf":
-                raw_resume_text = parser._extract_text_from_pdf(resume_path)
-            elif suffix in (".docx", ".doc"):
-                raw_resume_text = parser._extract_text_from_docx(resume_path)
-            else:
+            # get_raw_text() is the same public dispatch ResumeParser.parse()
+            # uses internally, so there's a single source of truth for
+            # file-type dispatch.
+            try:
+                raw_resume_text = parser.get_raw_text(resume_path)
+            except ValueError:
                 raw_resume_text = ""
             style_hints = parser.extract_style_hints(raw_resume_text)
         st.session_state["career_profile"] = profile

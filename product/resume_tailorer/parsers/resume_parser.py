@@ -20,17 +20,37 @@ class ResumeParser:
 
     def parse(self, file_path: str) -> CareerTruthProfile:
         """Parse a resume file (PDF or DOCX) and return a CareerTruthProfile."""
-        path = Path(file_path)
-
-        if path.suffix.lower() == ".pdf":
-            text = self._extract_text_from_pdf(file_path)
-        elif path.suffix.lower() in [".docx", ".doc"]:
-            text = self._extract_text_from_docx(file_path)
-        else:
-            raise ValueError(f"Unsupported file format: {path.suffix}")
+        text = self.get_raw_text(file_path)
 
         # Parse the extracted text into a CareerTruthProfile
         return self._parse_text(text)
+
+    def get_raw_text(self, file_path: str) -> str:
+        """
+        Extract raw text from a resume file, dispatching by file extension.
+
+        This is the same extraction logic parse() uses internally, exposed
+        as a public method so callers (like the UI's style-hint extraction)
+        don't need to duplicate the file-type dispatch or reach into private
+        methods.
+
+        Args:
+            file_path: Path to the resume file (.pdf, .docx, or .doc).
+
+        Returns:
+            Extracted raw text.
+
+        Raises:
+            ValueError: If the file extension is not supported.
+        """
+        path = Path(file_path)
+
+        if path.suffix.lower() == ".pdf":
+            return self._extract_text_from_pdf(file_path)
+        elif path.suffix.lower() in [".docx", ".doc"]:
+            return self._extract_text_from_docx(file_path)
+        else:
+            raise ValueError(f"Unsupported file format: {path.suffix}")
 
     def _extract_text_from_pdf(self, file_path: str) -> str:
         """Extract text from a PDF file."""

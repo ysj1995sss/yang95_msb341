@@ -89,3 +89,16 @@ def test_extract_style_hints_defaults_heading_style_to_bold():
     text = "some lowercase text with no headings at all in this resume body"
     hints = parser.extract_style_hints(text)
     assert hints["heading_style"] == "bold"
+
+def test_get_raw_text_dispatches_pdf(sample_resume_path):
+    """get_raw_text() extracts text from a PDF via its public dispatch method."""
+    parser = ResumeParser()
+    text = parser.get_raw_text(str(sample_resume_path))
+    assert isinstance(text, str)
+    assert "John Smith" in text
+
+def test_get_raw_text_raises_on_unsupported_extension():
+    """get_raw_text() raises ValueError for an unsupported file extension."""
+    parser = ResumeParser()
+    with pytest.raises(ValueError, match="Unsupported"):
+        parser.get_raw_text("resume.txt")
