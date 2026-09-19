@@ -29,6 +29,7 @@ plan's sample served only as a guide to the overall UI flow.
 
 import os
 import tempfile
+from pathlib import Path
 
 import streamlit as st
 
@@ -68,6 +69,19 @@ def main():
         st.header("2. Paste the job description")
         job_description = st.text_area("Job description text", height=250)
 
+        st.header("3. Choose the target resume length")
+        length_choice_ui = st.selectbox(
+            "Target resume length",
+            options=["1 page", "2 pages", "Preserve original length"],
+            index=0,
+        )
+        target_length_map = {
+            "1 page": "1_page",
+            "2 pages": "2_page",
+            "Preserve original length": "preserve",
+        }
+        target_length = target_length_map[length_choice_ui]
+
         run_clicked = st.button("Tailor my resume", type="primary")
 
     if not run_clicked:
@@ -87,7 +101,21 @@ def main():
     try:
         with st.spinner("Parsing resume..."):
             resume_path = _save_uploaded_file(resume_file)
-            profile = ResumeParser().parse(resume_path)
+            parser = ResumeParser()
+            profile = parser.parse(resume_path)
+
+            # Extract the raw resume text so we can derive style hints
+            # (bullet character, heading style) from the source formatting.
+            # This mirrors the same extraction ResumeParser.parse() performs
+            # internally, based on file extension.
+            suffix = Path(resume_path).suffix.lower()
+            if suffix == ".pdf":
+                raw_resume_text = parser._extract_text_from_pdf(resume_path)
+            elif suffix in (".docx", ".doc"):
+                raw_resume_text = parser._extract_text_from_docx(resume_path)
+            else:
+                raw_resume_text = ""
+            style_hints = parser.extract_style_hints(raw_resume_text)
         st.session_state["career_profile"] = profile
         st.success(f"Resume parsed for {profile.name}.")
     except Exception as exc:
@@ -153,6 +181,8 @@ def main():
             pdf_path = PDFGenerator().generate(
                 optimization_result.tailored_resume,
                 profile.name,
+                target_length=target_length,
+                style_hints=style_hints,
             )
     except Exception as exc:
         st.error(f"PDF generation failed: {exc}")
@@ -161,7 +191,7 @@ def main():
     # --- Step 8: Validate PDF (hard gate) -----------------------------------------
     try:
         with st.spinner("Validating generated PDF..."):
-            pdf_validation = PDFValidator().validate(pdf_path)
+            pdf_validation = PDFValidator().validate(pdf_path, target_length=target_length)
     except Exception as exc:
         st.error(f"PDF validation failed: {exc}")
         return
