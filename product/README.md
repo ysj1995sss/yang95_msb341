@@ -42,7 +42,7 @@ pip install -r requirements.txt
 
 The `requirements.txt` includes:
 - **streamlit** — web UI framework
-- **anthropic** — Claude API for resume tailoring
+- **litellm** — multi-provider LLM client for resume tailoring
 - **pypdf** — PDF reading and validation
 - **python-docx** — DOCX resume parsing
 - **reportlab** — PDF generation
@@ -51,15 +51,21 @@ The `requirements.txt` includes:
 
 ## Configuration
 
-### Required Environment Variables
-
-The system requires an **Anthropic API key** to power Claude-based resume tailoring and optimization:
+### Required Environment Variables (or use the sidebar)
 
 ```bash
-export ANTHROPIC_API_KEY=sk-ant-...
+set LLM_MODEL=openai/gpt-4o
+set LLM_API_KEY=sk-...
+# optional
+set LLM_API_BASE=https://your-proxy.example/v1
 ```
 
-Set this in your shell, in a `.env` file (loaded via `python-dotenv`), or in your deployment environment.
+In the Streamlit sidebar, section **Model provider** overrides these when filled.
+Job Search and Applications do not need an LLM key.
+
+Migration from Anthropic-only setup: use `LLM_MODEL=anthropic/claude-3-5-sonnet-20241022` and set `LLM_API_KEY` to your Anthropic key (do not rely on `ANTHROPIC_API_KEY` alone).
+
+Set these in your shell, in a `.env` file (loaded via `python-dotenv`), or in your deployment environment.
 
 ## Usage
 
@@ -69,7 +75,7 @@ Set this in your shell, in a `.env` file (loaded via `python-dotenv`), or in you
 streamlit run resume_tailorer/app.py
 ```
 
-The Streamlit app opens in your browser at `http://localhost:8501`. Upload a resume (PDF or DOCX), paste a job description, and click "Tailor my resume" to receive a gap analysis, tailored resume PDF, and final report.
+The Streamlit app opens in your browser at `http://localhost:8501`. Configure the model in the sidebar (or via env), upload a resume (PDF or DOCX), paste a job description, and click "Tailor my resume" to receive a gap analysis, tailored resume PDF, and final report.
 
 ### Input
 
@@ -144,7 +150,7 @@ product/
     ├── report_generator.py          # Generates final application report
     ├── docs/                        # Documentation (see docs/architecture.md)
     │   └── architecture.md
-    └── tests/                       # Test suite (77 tests)
+    └── tests/                       # Test suite (310 tests)
         ├── __init__.py
         ├── test_resume_parser.py
         ├── test_job_analyzer.py

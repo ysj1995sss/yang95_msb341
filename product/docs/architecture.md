@@ -283,7 +283,7 @@ It does **not** cover:
 
 ## Testing
 
-The test suite includes 77 tests covering:
+The test suite includes 310 tests covering:
 - Resume parsing (PDF and DOCX)
 - Career Truth Profile construction
 - Job analysis
@@ -362,12 +362,21 @@ If the score plateaus before reaching 85%, the optimizer reports the ceiling and
 
 ## Configuration and Secrets
 
-The application requires `ANTHROPIC_API_KEY` to be set in the environment. It can be loaded from:
-1. Shell environment variable: `export ANTHROPIC_API_KEY=sk-ant-...`
-2. `.env` file (via python-dotenv): `ANTHROPIC_API_KEY=sk-ant-...`
-3. Deployment environment (e.g., Streamlit Cloud secrets)
+Resume tailoring uses a provider-agnostic LLM client (`LLMClient` / LiteLLM). Required settings:
 
-Do not commit the API key to version control.
+- `LLM_MODEL` — LiteLLM model id (e.g. `openai/gpt-4o`, `anthropic/claude-3-5-sonnet-20241022`)
+- `LLM_API_KEY` — API key for that provider
+- `LLM_API_BASE` — optional base URL for proxies or compatible endpoints
+
+They can be loaded from:
+1. Shell environment variables (e.g. `set LLM_MODEL=...` / `export LLM_MODEL=...`)
+2. `.env` file (via python-dotenv)
+3. Streamlit sidebar **Model provider** section (session-only overrides; keys are not persisted)
+4. Deployment environment (e.g., Streamlit Cloud secrets)
+
+Job Search and Applications do not require LLM settings. Missing model/key fails hard with a clear error — there is no silent Anthropic default. Migration: former `ANTHROPIC_API_KEY`-only setups should set `LLM_MODEL=anthropic/...` and `LLM_API_KEY`.
+
+Do not commit API keys to version control.
 
 ## Deployment Notes
 
@@ -375,11 +384,11 @@ The MVP is a single-user Streamlit web application. To deploy:
 1. Host on Streamlit Cloud, Heroku, or a self-managed server.
 2. Ensure Python 3.11+ is available.
 3. Install requirements: `pip install -r requirements.txt`
-4. Set `ANTHROPIC_API_KEY` in the deployment environment.
+4. Set `LLM_MODEL` and `LLM_API_KEY` (and optionally `LLM_API_BASE`) in the deployment environment.
 5. Run: `streamlit run resume_tailorer/app.py`
 
 For multi-user deployment, consider:
 - Session-based storage for user resumes (currently stored in tempfiles)
 - Database for storing tailoring history and optimization results
 - Async job queue for long-running PDF generation and validation
-- Rate limiting on Claude API calls (currently unbounded in the MVP)
+- Rate limiting on LLM provider calls (currently unbounded in the MVP)

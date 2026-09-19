@@ -44,7 +44,6 @@ class LLMClient:
         if "timeout" in text or "connection" in text or "network" in text:
             return RuntimeError("Could not reach the model provider.")
         # Never include raw exception if it might contain secrets; keep short.
-        safe = str(exc).replace(getattr(exc, "args", [""])[0] if False else "", "")
         reason = str(exc)
         for secret_marker in ("sk-", "key=", "api_key"):
             if secret_marker in reason.lower():
