@@ -42,6 +42,13 @@ class JobService:
             JobSource.GREENHOUSE: GreenhouseScraper,
         }
 
+        # Cache of instantiated scrapers, keyed by JobSource. This ensures the
+        # SAME scraper instance used during search_and_store() is the one
+        # returned by later _get_scraper() calls (e.g. from the UI, to inspect
+        # the instance's data_source after a scrape), instead of a fresh,
+        # never-scraped instance whose data_source is always None.
+        self._scraper_cache = {}
+
     def search_and_store(
         self,
         goals: SearchGoals,
@@ -74,12 +81,15 @@ class JobService:
 
         # Step 2: Scrape from all sources
         all_postings = []
+        greenhouse_data_source = None
         for source in sources:
             try:
                 scraper = self._get_scraper(source)
                 if scraper:
                     postings = scraper.scrape(goals)
                     all_postings.extend(postings)
+                    if source == JobSource.GREENHOUSE:
+                        greenhouse_data_source = getattr(scraper, "data_source", None)
             except Exception:
                 # Graceful error handling - skip this source and continue
                 pass
@@ -87,8 +97,25 @@ class JobService:
         # Step 3: Deduplicate
         deduplicated_postings = self.deduplicator.deduplicate(all_postings)
 
-        # Step 3b: Filter out confirmed-closed job URLs before storing
-        deduplicated_postings = self.url_validator.filter_active_jobs(deduplicated_postings)
+        # Step 3b: Filter out confirmed-closed job URLs before storing.
+        #
+        # URL validation makes live HTTP requests, so it's only meaningful
+        # (and safe) for postings backed by real, currently-posted URLs.
+        # Right now only GreenhouseScraper can produce real data (LinkedIn,
+        # Indeed, and Handshake are mock-only and have no data_source
+        # concept). Mock postings use fabricated URLs that would otherwise
+        # be spuriously checked (and potentially misflagged) against live
+        # servers, so we skip validation entirely for anything that isn't a
+        # real Greenhouse result.
+        if greenhouse_data_source == "real":
+            greenhouse_postings = [
+                p for p in deduplicated_postings if p.source == JobSource.GREENHOUSE
+            ]
+            other_postings = [
+                p for p in deduplicated_postings if p.source != JobSource.GREENHOUSE
+            ]
+            filtered_greenhouse = self.url_validator.filter_active_jobs(greenhouse_postings)
+            deduplicated_postings = other_postings + filtered_greenhouse
 
         # Step 4 & 5: Store and count
         stored_count = 0
@@ -178,7 +205,12 @@ class JobService:
         Returns:
             Scraper instance or None if source not supported
         """
+        if source in self._scraper_cache:
+            return self._scraper_cache[source]
+
         scraper_class = self.scraper_map.get(source)
         if scraper_class:
-            return scraper_class()
+            scraper = scraper_class()
+            self._scraper_cache[source] = scraper
+            return scraper
         return None

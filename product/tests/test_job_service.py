@@ -21,6 +21,27 @@ def temp_db(tmp_path):
     # Cleanup handled automatically by tmp_path fixture
 
 
+@pytest.fixture(autouse=True)
+def mock_url_validation(request):
+    """Prevent live HTTP calls from URLValidator across this test file.
+
+    search_and_store() now runs URLValidator.filter_active_jobs() on real
+    Greenhouse results, which makes real HTTP HEAD requests. Every test in
+    this file except test_search_and_store_filters_out_closed_job_urls
+    (which explicitly exercises the filtering behavior itself and manages
+    its own patching) should never hit the network, so we patch
+    URLValidator.check_url to always report "active" by default.
+    """
+    if request.node.name == "test_search_and_store_filters_out_closed_job_urls":
+        yield  # that test manages its own patching of check_url
+    else:
+        with mock.patch(
+            "resume_tailorer.job_search.job_service.URLValidator.check_url",
+            return_value="active",
+        ):
+            yield
+
+
 @pytest.fixture
 def sample_goals():
     """Create sample search goals."""
@@ -416,7 +437,14 @@ def test_get_job_with_fit_score_nonexistent_job(temp_db, sample_profile):
 
 
 def test_search_and_store_filters_out_closed_job_urls(temp_db):
-    """search_and_store drops jobs whose URL validator confirms as closed (404/410)."""
+    """search_and_store drops jobs whose URL validator confirms as closed (404/410).
+
+    URL validation is only applied to real (non-mock) Greenhouse results
+    (see job_service.search_and_store), since that's currently the only
+    scraper with a genuine real/mock data_source distinction. So this test
+    simulates a real Greenhouse scrape by setting data_source="real" on the
+    mocked scraper.
+    """
     service = JobService(db_path=temp_db)
 
     goals = SearchGoals(
@@ -432,25 +460,26 @@ def test_search_and_store_filters_out_closed_job_urls(temp_db):
     )
 
     job_active = JobPosting(
-        source=JobSource.LINKEDIN, source_id="active-1", company="A",
+        source=JobSource.GREENHOUSE, source_id="active-1", company="A",
         title="Engineer", location="Remote", description="d",
         url="https://example.com/active",
     )
     job_closed = JobPosting(
-        source=JobSource.LINKEDIN, source_id="closed-1", company="B",
+        source=JobSource.GREENHOUSE, source_id="closed-1", company="B",
         title="Engineer", location="Remote", description="d",
         url="https://example.com/closed",
     )
 
     mock_scraper = mock.MagicMock()
     mock_scraper.scrape.return_value = [job_active, job_closed]
+    mock_scraper.data_source = "real"
 
     def fake_check_url(url, timeout=5):
         return "closed" if "closed" in url else "active"
 
     with mock.patch.object(service, "_get_scraper", return_value=mock_scraper), \
          mock.patch("resume_tailorer.job_search.job_service.URLValidator.check_url", side_effect=fake_check_url):
-        count = service.search_and_store(goals, [JobSource.LINKEDIN])
+        count = service.search_and_store(goals, [JobSource.GREENHOUSE])
 
     stored_jobs = service.get_available_jobs(goals)
     stored_urls = {job.url for job in stored_jobs}
