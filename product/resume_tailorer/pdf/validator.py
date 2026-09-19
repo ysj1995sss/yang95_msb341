@@ -50,6 +50,9 @@ class PDFValidator:
     }
 
     def __init__(self, max_pages: int = 2):
+        # Vestigial: the page limit is now resolved entirely from
+        # target_length via TARGET_LENGTH_MAX_PAGES. Kept so existing
+        # callers doing PDFValidator(max_pages=N) keep working.
         self.max_pages = max_pages
 
     def validate(self, pdf_path: str, target_length: str = "1_page") -> ValidationResult:
@@ -60,13 +63,22 @@ class PDFValidator:
             pdf_path: Path to the PDF file to validate.
             target_length: One of "1_page" (default), "2_page", "preserve".
                 Determines the page-count limit used for the overflow check.
-                Overrides the max_pages set on the validator instance when
-                recognized; falls back to self.max_pages otherwise.
+                Must be one of those three values; any other string raises
+                ValueError (matching PDFGenerator's behavior) rather than
+                silently falling back to a default limit.
 
         Returns:
             ValidationResult with passed/page_count/extracted_text/issues.
+
+        Raises:
+            ValueError: If target_length is not a recognized value.
         """
-        effective_max_pages = self.TARGET_LENGTH_MAX_PAGES.get(target_length, self.max_pages)
+        if target_length not in self.TARGET_LENGTH_MAX_PAGES:
+            raise ValueError(
+                f"Unknown target_length '{target_length}'. "
+                f"Must be one of: {list(self.TARGET_LENGTH_MAX_PAGES.keys())}"
+            )
+        effective_max_pages = self.TARGET_LENGTH_MAX_PAGES[target_length]
         issues = []
 
         if not pdf_path or not os.path.exists(pdf_path):

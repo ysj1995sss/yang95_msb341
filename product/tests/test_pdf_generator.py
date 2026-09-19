@@ -169,6 +169,19 @@ def test_generate_with_invalid_target_length_raises_value_error():
     with pytest.raises(ValueError, match="target_length"):
         gen._get_length_preset("3_page")
 
+def test_build_styles_uses_larger_heading_for_bold_larger_hint():
+    """style_hints={'heading_style': 'bold_larger'} produces a bigger section heading font than the default."""
+    gen = PDFGenerator()
+    preset = gen._get_length_preset("1_page")
+
+    default_styles = gen._build_styles(preset, style_hints=None)
+    plain_bold_styles = gen._build_styles(preset, style_hints={"heading_style": "bold"})
+    larger_styles = gen._build_styles(preset, style_hints={"heading_style": "bold_larger"})
+
+    assert larger_styles["section"].fontSize > default_styles["section"].fontSize
+    assert larger_styles["section"].fontSize > plain_bold_styles["section"].fontSize
+    assert plain_bold_styles["section"].fontSize == default_styles["section"].fontSize
+
 def test_generate_default_target_length_matches_existing_output(tmp_path):
     """Calling generate() with no target_length produces identical output to explicit '1_page' (backward compatibility)."""
     gen = PDFGenerator()

@@ -207,6 +207,17 @@ def main():
         st.error(f"Failed to build final report: {exc}")
         return
 
+    # If the ONLY problem is that the content overflowed the 1-page target,
+    # the PDF itself is still text-based and ATS-readable — treat it as a
+    # recoverable "too long" case rather than a broken-PDF failure.
+    page_count_issue_only = (
+        not pdf_validation.passed
+        and len(pdf_validation.issues) == 1
+        and "page" in pdf_validation.issues[0].lower()
+        and pdf_validation.page_count > 0
+    )
+    length_overflow_only = page_count_issue_only and target_length == "1_page"
+
     # --- Display results ------------------------------------------------------------
     st.header("Results")
 
@@ -227,6 +238,12 @@ def main():
 
     if report["pdf_validation_passed"]:
         st.success("PDF validation passed: the generated resume is text-based and ATS-readable.")
+    elif length_overflow_only:
+        st.warning(
+            "The PDF is text-based and ATS-readable, but it didn't fit the 1-page target."
+        )
+        for issue in report["pdf_validation_details"]["issues"]:
+            st.write(f"- {issue}")
     else:
         st.error("PDF validation FAILED — do not send this resume as-is.")
         for issue in report["pdf_validation_details"]["issues"]:
@@ -256,14 +273,34 @@ def main():
     st.subheader("Tailored resume text")
     st.text_area("Tailored resume", optimization_result.tailored_resume, height=400)
 
-    if pdf_validation.passed and os.path.exists(pdf_path):
-        with open(pdf_path, "rb") as f:
-            st.download_button(
-                "Download tailored resume (PDF)",
-                data=f.read(),
-                file_name=f"{profile.name.replace(' ', '_')}_tailored_resume.pdf",
-                mime="application/pdf",
-            )
+    if os.path.exists(pdf_path):
+        if pdf_validation.passed:
+            with open(pdf_path, "rb") as f:
+                st.download_button(
+                    "Download tailored resume (PDF)",
+                    data=f.read(),
+                    file_name=f"{profile.name.replace(' ', '_')}_tailored_resume.pdf",
+                    mime="application/pdf",
+                )
+        else:
+            # Don't leave the user with nothing when the only problem is that
+            # the content overflowed the 1-page target — offer the PDF with a
+            # clear warning plus a concrete next step.
+            if length_overflow_only:
+                st.warning(
+                    f"Your tailored resume needs {pdf_validation.page_count} pages to hold all "
+                    "the content while staying readable — it doesn't fit on 1 page. "
+                    "Try selecting **2 pages** or **Preserve original length** in the sidebar "
+                    "and generating again. The PDF is still available below if you'd like to "
+                    "review it as-is."
+                )
+                with open(pdf_path, "rb") as f:
+                    st.download_button(
+                        "Download PDF anyway (exceeds 1-page target)",
+                        data=f.read(),
+                        file_name=f"{profile.name.replace(' ', '_')}_tailored_resume.pdf",
+                        mime="application/pdf",
+                    )
 
 
 if __name__ == "__main__":

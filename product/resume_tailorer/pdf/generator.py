@@ -17,6 +17,14 @@ Layout approach:
   margins/font sizes; if content is long enough to overflow, reportlab
   will simply continue onto additional pages rather than corrupt the
   layout. Enforcing a strict 1-page cutoff is out of scope for MVP.
+
+Scope of `target_length` (important):
+- target_length controls font size, line spacing, and margins only. It does
+  NOT reprioritize, shorten, or cut resume content — if the tailored
+  resume's content doesn't fit within the chosen target_length's page
+  limit, PDFValidator will report a page-count overflow issue.
+  Content-level length adaptation (choosing which bullets to include) is a
+  future enhancement, not implemented here.
 """
 
 import os
@@ -69,6 +77,11 @@ class PDFGenerator:
         leading = preset["leading"]
         bullet_leading = preset["bullet_leading"]
 
+        heading_style_hint = (style_hints or {}).get("heading_style", "bold")
+        # "bold_larger" headings get an extra size bump beyond the standard +2;
+        # plain "bold" headings keep the existing +2 sizing.
+        heading_size_bump = 3 if heading_style_hint == "bold_larger" else 2
+
         name_style = ParagraphStyle(
             name="CandidateName",
             fontName="Helvetica-Bold",
@@ -89,8 +102,8 @@ class PDFGenerator:
         section_style = ParagraphStyle(
             name="SectionHeading",
             fontName="Helvetica-Bold",
-            fontSize=body_font + 2,
-            leading=leading + 2,
+            fontSize=body_font + heading_size_bump,
+            leading=leading + heading_size_bump,
             spaceBefore=8,
             spaceAfter=4,
         )
@@ -139,7 +152,9 @@ class PDFGenerator:
                 generated in a temp directory.
             job_title: Optional job title to display under the name.
             target_length: One of "1_page" (default), "2_page", "preserve".
-                Controls font size, line spacing, and margins.
+                Controls font size, line spacing, and margins. (Adjusts
+                formatting only — does not shorten or omit resume content.
+                See module docstring.)
             style_hints: Optional dict with keys "bullet_char" (str, e.g.
                 "•", "-", "*") and "heading_style" (str, "bold" or
                 "bold_larger") extracted from the original resume, used to

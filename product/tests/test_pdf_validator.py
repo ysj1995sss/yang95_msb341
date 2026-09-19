@@ -280,3 +280,10 @@ def test_validate_default_target_length_matches_1_page_behavior(tmp_path):
 
     assert result_default.passed == result_explicit.passed
     assert result_default.page_count == result_explicit.page_count
+
+
+def test_validate_with_invalid_target_length_raises_value_error(generated_pdf_path):
+    """An unrecognized target_length raises ValueError (matching PDFGenerator), not a silent fallback."""
+    validator = PDFValidator()
+    with pytest.raises(ValueError, match="target_length"):
+        validator.validate(generated_pdf_path, target_length="3_page")
