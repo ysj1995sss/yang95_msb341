@@ -38,6 +38,9 @@ from resume_tailorer.tailorer import ResumeTailorer, ResumeTailoringOptimizer
 from resume_tailorer.pdf import PDFGenerator, PDFValidator
 from resume_tailorer.report_generator import ReportGenerator
 from resume_tailorer.diff_generator import DiffGenerator
+from resume_tailorer.llm.settings import resolve_settings
+from resume_tailorer.llm.client import LLMClient
+from resume_tailorer.llm.ui import COMMON_MODELS, collect_sidebar_llm_fields
 
 
 st.set_page_config(page_title="Resume Tailorer", page_icon="\U0001F4C4", layout="wide")
@@ -82,6 +85,29 @@ def main():
         }
         target_length = target_length_map[length_choice_ui]
 
+        st.header("4. Model provider")
+        st.caption(
+            "Optional: leave blank to use LLM_MODEL / LLM_API_KEY / LLM_API_BASE "
+            "from the environment."
+        )
+        model_choice = st.selectbox(
+            "Common models (helper)",
+            options=["(custom / env)"] + COMMON_MODELS,
+        )
+        model_input = st.text_input(
+            "Model id",
+            value="" if model_choice.startswith("(") else model_choice,
+            help=(
+                "Examples: openai/gpt-4o, anthropic/claude-3-5-sonnet-20241022, "
+                "gemini/gemini-1.5-pro"
+            ),
+        )
+        api_key_input = st.text_input("API key", type="password")
+        api_base_input = st.text_input(
+            "Base URL (optional)",
+            help="Azure / Ollama / proxy / OpenRouter-compatible endpoints",
+        )
+
         run_clicked = st.button("Tailor my resume", type="primary")
 
     if not run_clicked:
@@ -95,6 +121,25 @@ def main():
     if not job_description or not job_description.strip():
         st.error("Please paste a job description before continuing.")
         return
+
+    llm_fields = collect_sidebar_llm_fields(model_input, api_key_input, api_base_input)
+    try:
+        settings = resolve_settings(
+            model=llm_fields["model"],
+            api_key=llm_fields["api_key"],
+            api_base=llm_fields["api_base"],
+        )
+    except ValueError as exc:
+        st.error(str(exc))
+        if os.environ.get("ANTHROPIC_API_KEY") and not os.environ.get("LLM_API_KEY"):
+            st.info(
+                "ANTHROPIC_API_KEY is set but no longer used alone. "
+                "Set LLM_MODEL=anthropic/claude-3-5-sonnet-20241022 and "
+                "LLM_API_KEY to your Anthropic key."
+            )
+        return
+
+    llm = LLMClient(settings)
 
     # --- Step 1: Parse resume --------------------------------------------------
     resume_path = None
@@ -151,24 +196,28 @@ def main():
         st.error(f"Failed to run gap analysis: {exc}")
         return
 
-    # --- Step 5: Tailor resume (live Claude API call) ---------------------------
+    # --- Step 5: Tailor resume (live LLM call) ----------------------------------
     try:
-        with st.spinner("Tailoring resume with Claude (this calls the live API)..."):
-            tailored_text = ResumeTailorer().tailor(profile, job_analysis, gap_report)
+        with st.spinner("Tailoring resume with the configured LLM..."):
+            tailored_text = ResumeTailorer(llm=llm).tailor(
+                profile, job_analysis, gap_report
+            )
+    except RuntimeError as exc:
+        st.error(str(exc))
+        return
     except Exception as exc:
-        st.error(
-            "Resume tailoring failed. This step calls the Anthropic Claude API "
-            "and requires a valid ANTHROPIC_API_KEY in the environment. "
-            f"Details: {exc}"
-        )
+        st.error(f"Resume tailoring failed: {exc}")
         return
 
-    # --- Step 6: Optimize (iterative refinement, also calls Claude) -------------
+    # --- Step 6: Optimize (iterative refinement, also calls LLM) ----------------
     try:
         with st.spinner("Optimizing tailored resume for alignment..."):
-            optimization_result = ResumeTailoringOptimizer().optimize(
+            optimization_result = ResumeTailoringOptimizer(llm=llm).optimize(
                 profile, job_analysis, tailored_text, gap_report
             )
+    except RuntimeError as exc:
+        st.error(str(exc))
+        return
     except Exception as exc:
         st.error(f"Optimization failed: {exc}")
         return
