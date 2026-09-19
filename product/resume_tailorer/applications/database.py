@@ -54,6 +54,13 @@ class ApplicationDatabase:
         self.conn.commit()
 
     def save_submission(self, submission: ApplicationSubmission) -> str:
+        """Record what was (or would be) submitted.
+
+        This records the audit row ONLY. It deliberately does not write a
+        status-history row: a submission may be a dry-run preview, or a real
+        submission whose POST later fails, and neither is an APPLIED status.
+        Callers use update_status() once a real submission has succeeded.
+        """
         application_id = f"app_{uuid.uuid4().hex[:12]}"
         cursor = self.conn.cursor()
         cursor.execute("""
@@ -78,13 +85,31 @@ class ApplicationDatabase:
             submission.confirmation_number,
         ))
 
-        cursor.execute("""
-            INSERT INTO application_status_history (application_id, job_posting_id, status, notes)
-            VALUES (?, ?, ?, ?)
-        """, (application_id, submission.job_posting_id, ApplicationStatus.APPLIED.value, "Initial submission"))
-
         self.conn.commit()
         return application_id
+
+    def update_confirmation_number(self, application_id: str, confirmation_number: str) -> bool:
+        """Write back a confirmation number after a successful real submission.
+
+        Args:
+            application_id: The application to update.
+            confirmation_number: The confirmation identifier returned by
+                the ATS platform.
+
+        Returns:
+            True if the application existed and was updated, False otherwise.
+        """
+        cursor = self.conn.cursor()
+        cursor.execute("SELECT application_id FROM applications WHERE application_id = ?", (application_id,))
+        if not cursor.fetchone():
+            return False
+
+        cursor.execute(
+            "UPDATE applications SET confirmation_number = ? WHERE application_id = ?",
+            (confirmation_number, application_id),
+        )
+        self.conn.commit()
+        return True
 
     def get_submission(self, application_id: str) -> Optional[ApplicationSubmission]:
         cursor = self.conn.cursor()

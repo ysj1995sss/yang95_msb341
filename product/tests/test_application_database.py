@@ -74,12 +74,30 @@ def test_get_submissions_by_job(temp_db):
     assert len(results) == 2
 
 
-def test_save_submission_creates_initial_applied_status(temp_db):
+def test_save_submission_does_not_create_status_until_explicitly_set(temp_db):
+    """Saving a submission (which may be a dry-run preview) must NOT claim APPLIED
+    until something explicitly records that status — a preview is not a submission."""
     sub = _make_submission()
     app_id = temp_db.save_submission(sub)
 
     status = temp_db.get_current_status(app_id)
-    assert status == ApplicationStatus.APPLIED
+    assert status is None
+
+
+def test_update_confirmation_number(temp_db):
+    sub = _make_submission()
+    app_id = temp_db.save_submission(sub)
+
+    success = temp_db.update_confirmation_number(app_id, "CONF-12345")
+    assert success is True
+
+    retrieved = temp_db.get_submission(app_id)
+    assert retrieved.confirmation_number == "CONF-12345"
+
+
+def test_update_confirmation_number_returns_false_for_unknown_id(temp_db):
+    success = temp_db.update_confirmation_number("app_does_not_exist", "CONF-999")
+    assert success is False
 
 
 def test_update_status(temp_db):
@@ -96,6 +114,7 @@ def test_update_status(temp_db):
 def test_get_status_history_ordered(temp_db):
     sub = _make_submission()
     app_id = temp_db.save_submission(sub)
+    temp_db.update_status(app_id, ApplicationStatus.APPLIED, notes="Submitted")
     temp_db.update_status(app_id, ApplicationStatus.RECRUITER_SCREEN, notes="Screen done")
     temp_db.update_status(app_id, ApplicationStatus.INTERVIEW, notes="Onsite scheduled")
 
@@ -111,6 +130,7 @@ def test_get_applications_by_status(temp_db):
     sub2 = _make_submission(job_posting_id="greenhouse_2")
     app_id1 = temp_db.save_submission(sub1)
     app_id2 = temp_db.save_submission(sub2)
+    temp_db.update_status(app_id1, ApplicationStatus.APPLIED)
     temp_db.update_status(app_id2, ApplicationStatus.INTERVIEW)
 
     applied = temp_db.get_applications_by_status(ApplicationStatus.APPLIED)

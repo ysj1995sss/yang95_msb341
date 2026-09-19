@@ -5,7 +5,7 @@ from unittest.mock import patch, MagicMock
 
 from resume_tailorer.applications.submission_engine import SubmissionEngine
 from resume_tailorer.applications.database import ApplicationDatabase
-from resume_tailorer.applications.models import ApplicationMode
+from resume_tailorer.applications.models import ApplicationMode, ApplicationStatus
 from resume_tailorer.models.career_profile import CareerTruthProfile, EducationEntry, WorkExperience
 
 
@@ -59,6 +59,8 @@ def test_dry_run_defaults_to_true_and_never_calls_submit(temp_db):
             )
     mock_submit.assert_not_called()
     assert result.application_id  # still recorded
+    # A preview is not a submission: no status may be claimed.
+    assert temp_db.get_current_status(result.application_id) is None
 
 
 def test_dry_run_false_calls_submit_for_assist_mode(temp_db):
@@ -78,6 +80,9 @@ def test_dry_run_false_calls_submit_for_assist_mode(temp_db):
             )
     mock_submit.assert_called_once()
     assert result.confirmation_number == "CONF-123"
+    assert temp_db.get_current_status(result.application_id) == ApplicationStatus.APPLIED
+    persisted = temp_db.get_submission(result.application_id)
+    assert persisted.confirmation_number == "CONF-123"
 
 
 def test_manual_mode_never_submits_even_with_dry_run_false(temp_db):
@@ -98,6 +103,8 @@ def test_manual_mode_never_submits_even_with_dry_run_false(temp_db):
             )
     mock_submit.assert_not_called()
     assert result.mode == ApplicationMode.MANUAL
+    # Manual mode: the user applies themselves and sets status via the dashboard.
+    assert temp_db.get_current_status(result.application_id) is None
 
 
 def test_auto_mode_refuses_submission_with_unfilled_required_field(temp_db):
@@ -160,6 +167,8 @@ def test_submission_recorded_before_real_submit_attempted(temp_db):
                 )
     submissions = temp_db.get_submissions_by_job("greenhouse_1")
     assert len(submissions) == 1  # recorded despite the failed submit
+    # ...but a failed submission must NOT show up as APPLIED on the dashboard.
+    assert temp_db.get_current_status(submissions[0].application_id) is None
 
 
 def test_submission_captures_filled_fields(temp_db):

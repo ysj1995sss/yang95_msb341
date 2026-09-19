@@ -10,6 +10,10 @@ Safety model (see plan Task 4 for full rationale):
 - Unsupported platforms (Workday) refuse to submit entirely.
 - The audit record is saved BEFORE any real network call, so a failed
   submission still leaves a record of what was attempted.
+- An APPLIED status (and the confirmation number) is recorded ONLY after a
+  real submission actually succeeds. A dry-run preview, a Manual-mode
+  record, or a real submission whose POST raises all leave no status, so
+  the dashboard never shows a false "Applied".
 """
 
 import time
@@ -23,7 +27,11 @@ from resume_tailorer.applications.ats_parsers.ashby_parser import AshbyParser
 from resume_tailorer.applications.ats_parsers.workday_parser import WorkdayParser
 from resume_tailorer.applications.database import ApplicationDatabase
 from resume_tailorer.applications.form_filler import FormFiller
-from resume_tailorer.applications.models import ApplicationMode, ApplicationSubmission
+from resume_tailorer.applications.models import (
+    ApplicationMode,
+    ApplicationStatus,
+    ApplicationSubmission,
+)
 from resume_tailorer.models.career_profile import CareerTruthProfile
 
 _PARSER_MAP = {
@@ -130,6 +138,12 @@ class SubmissionEngine:
             self._respect_rate_limit()
             confirmation_number = self._submit_to_platform(form_url, form_fields_submitted)
             submission.confirmation_number = confirmation_number
+            self.db.update_confirmation_number(application_id, confirmation_number)
+            self.db.update_status(
+                application_id,
+                ApplicationStatus.APPLIED,
+                notes=f"Submitted via {mode.value} mode" + (f", confirmation: {confirmation_number}" if confirmation_number else ""),
+            )
 
         return submission
 
