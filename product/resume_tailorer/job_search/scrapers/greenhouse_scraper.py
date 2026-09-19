@@ -132,7 +132,7 @@ class GreenhouseScraper(BaseScraper):
         matched = []
         for job in jobs:
             title_lower = job.title.lower()
-            if any(keyword in title_lower for keyword in title_keywords):
+            if all(keyword in title_lower for keyword in title_keywords):
                 matched.append(job)
 
         return matched

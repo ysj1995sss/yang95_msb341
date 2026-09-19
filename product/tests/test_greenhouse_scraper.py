@@ -117,6 +117,41 @@ def test_scrape_real_filters_postings_by_goal_job_title():
     assert "Marketing Manager" not in titles
 
 
+def test_scrape_real_excludes_partially_matching_titles():
+    """A title matching only SOME of the goal's title keywords must be excluded (AND semantics, not OR).
+
+    Regression test: 'Software Engineer' previously matched via OR-semantics
+    against any title containing EITHER 'Software' OR 'Engineer' alone,
+    letting through unrelated roles like 'Engineering Manager, Guest & Host'.
+    """
+    scraper = GreenhouseScraper()
+    goals = _make_goals(job_title="Software Engineer")
+
+    # This title contains "Engineer" but not "Software" - must NOT match.
+    partial_match_response = {
+        "jobs": [
+            {
+                "id": 3000,
+                "title": "Engineering Manager, Guest Experience",
+                "absolute_url": "https://boards.greenhouse.io/examplecompany/jobs/3000",
+                "location": {"name": "Remote"},
+                "content": "<p>Manager role.</p>",
+                "updated_at": "2026-09-01T12:00:00-00:00",
+                "departments": [],
+            }
+        ]
+    }
+
+    with patch.object(scraper, "_make_get_request", return_value=partial_match_response):
+        results = scraper.scrape(goals)
+
+    # Since the real API path returns zero true matches (the only real job doesn't
+    # fully match), scrape() should fall back to mock data (data_source == "mock"),
+    # NOT return the partially-matching real job.
+    assert scraper.data_source == "mock"
+    assert not any(job.title == "Engineering Manager, Guest Experience" for job in results)
+
+
 def test_filter_by_goals_returns_all_when_no_job_title():
     """With no job title in goals there is nothing to pre-filter on."""
     scraper = GreenhouseScraper()
