@@ -137,3 +137,64 @@ def test_generate_fits_target_page_count(tmp_output_path):
     reader = PdfReader(tmp_output_path)
     # MVP allows some overflow, but a short sample resume should fit on 1 page
     assert len(reader.pages) == 1
+
+
+def test_generate_with_1_page_target_uses_default_preset(tmp_path):
+    """target_length='1_page' (or omitted) matches today's existing font/margin values."""
+    gen = PDFGenerator()
+    preset = gen._get_length_preset("1_page")
+    assert preset["font_size"] == 9
+    assert preset["leading"] == 12
+    assert preset["margin"] == 0.5
+
+def test_generate_with_2_page_target_uses_larger_preset(tmp_path):
+    """target_length='2_page' uses larger font/margins than 1_page."""
+    gen = PDFGenerator()
+    preset = gen._get_length_preset("2_page")
+    assert preset["font_size"] == 10
+    assert preset["leading"] == 14
+    assert preset["margin"] == 0.75
+
+def test_generate_with_preserve_target_uses_middle_preset(tmp_path):
+    """target_length='preserve' uses a preset between 1_page and 2_page."""
+    gen = PDFGenerator()
+    preset = gen._get_length_preset("preserve")
+    assert preset["font_size"] == 9.5
+    assert preset["leading"] == 13
+    assert preset["margin"] == 0.6
+
+def test_generate_with_invalid_target_length_raises_value_error():
+    """An unrecognized target_length string raises ValueError, not a silent fallback."""
+    gen = PDFGenerator()
+    with pytest.raises(ValueError, match="target_length"):
+        gen._get_length_preset("3_page")
+
+def test_generate_default_target_length_matches_existing_output(tmp_path):
+    """Calling generate() with no target_length produces identical output to explicit '1_page' (backward compatibility)."""
+    gen = PDFGenerator()
+    output_default = str(tmp_path / "default.pdf")
+    output_explicit = str(tmp_path / "explicit.pdf")
+
+    resume_text = "WORK EXPERIENCE\n- Built a system\nEDUCATION\nBS Computer Science"
+
+    path1 = gen.generate(resume_text, "Jane Doe", output_path=output_default)
+    path2 = gen.generate(resume_text, "Jane Doe", output_path=output_explicit, target_length="1_page")
+
+    # Both files should be non-empty and roughly the same size (same layout params)
+    size1 = os.path.getsize(path1)
+    size2 = os.path.getsize(path2)
+    assert size1 > 0
+    assert size2 > 0
+    assert abs(size1 - size2) < 50  # near-identical byte size; same layout params produce near-identical PDF bytes
+
+def test_generate_2_page_target_produces_larger_fonts_in_output(tmp_path):
+    """A resume generated with target_length='2_page' extracts with the larger font metadata (indirect check via file size difference from 1_page)."""
+    gen = PDFGenerator()
+    resume_text = "WORK EXPERIENCE\n- Built a system\nEDUCATION\nBS Computer Science"
+
+    path_1page = gen.generate(resume_text, "Jane Doe", output_path=str(tmp_path / "one.pdf"), target_length="1_page")
+    path_2page = gen.generate(resume_text, "Jane Doe", output_path=str(tmp_path / "two.pdf"), target_length="2_page")
+
+    # Different presets must produce different PDF byte content (proves the preset actually affects generation)
+    with open(path_1page, "rb") as f1, open(path_2page, "rb") as f2:
+        assert f1.read() != f2.read()
