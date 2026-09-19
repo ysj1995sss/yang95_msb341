@@ -3,6 +3,9 @@
 from abc import ABC, abstractmethod
 from typing import List, Optional
 import time
+
+import requests
+
 from resume_tailorer.job_search.models import SearchGoals, JobPosting
 
 
@@ -64,3 +67,25 @@ class BaseScraper(ABC):
         # In production, this would log to a proper logging system
         # For now, we just silently handle errors
         pass
+
+    def _make_get_request(self, url: str, timeout: int = 10) -> Optional[dict]:
+        """
+        Make an HTTP GET request and return the parsed JSON body.
+
+        Never raises — any network error, timeout, or non-200 status
+        results in None so callers can fall back gracefully.
+
+        Args:
+            url: Full URL to request.
+            timeout: Request timeout in seconds.
+
+        Returns:
+            Parsed JSON dict on success, or None on any failure.
+        """
+        try:
+            response = requests.get(url, timeout=timeout)
+            if response.status_code != 200:
+                return None
+            return response.json()
+        except Exception:
+            return None

@@ -1,22 +1,47 @@
 """Greenhouse job scraper."""
 
+import re
 import uuid
-from typing import List
+from typing import List, Optional
 from datetime import datetime, timedelta
 from resume_tailorer.job_search.models import SearchGoals, JobPosting, JobSource
 from resume_tailorer.job_search.scrapers.base_scraper import BaseScraper
 
 
 class GreenhouseScraper(BaseScraper):
-    """Scraper for Greenhouse job postings (ATS provider)."""
+    """Scraper for Greenhouse job postings (ATS provider).
+
+    Uses Greenhouse's public boards-api.greenhouse.io endpoint, which
+    requires no authentication and returns JSON job listings for any
+    company that has a public Greenhouse job board. Falls back to
+    mock data if the real API is unavailable or returns no results,
+    so the demo experience always has something to show — but
+    `data_source` always reflects which path was actually used.
+    """
+
+    # A small curated list of company board tokens known to expose public
+    # Greenhouse job boards. Board token is the string in a company's
+    # public URL: https://boards.greenhouse.io/{board_token}
+    GREENHOUSE_BOARD_TOKENS = [
+        "airbnb",
+        "stripe",
+        "gitlab",
+        "coinbase",
+        "asana",
+    ]
+
+    GREENHOUSE_API_BASE = "https://boards-api.greenhouse.io/v1/boards"
 
     def __init__(self, api_key: str = None):
         """Initialize Greenhouse scraper.
 
         Args:
-            api_key: Optional Greenhouse API key for authentication
+            api_key: Optional Greenhouse API key (not required for the
+                public boards-api endpoint; reserved for future
+                authenticated endpoints).
         """
         super().__init__(api_key=api_key)
+        self.data_source = None  # set to "real" or "mock" after each scrape()
 
     def get_platform_name(self) -> str:
         """Get platform name.
@@ -29,30 +54,108 @@ class GreenhouseScraper(BaseScraper):
     def scrape(self, goals: SearchGoals) -> List[JobPosting]:
         """Scrape Greenhouse job postings matching search goals.
 
-        For MVP, returns mock data simulating Greenhouse job listings.
-        Greenhouse is an ATS provider. Many companies publish jobs on their
-        public Greenhouse boards. Production implementation would use Greenhouse API
-        or parse company-specific Greenhouse job boards.
+        Tries the real public Greenhouse boards API first across a
+        curated list of company board tokens. Falls back to mock data
+        if the real API is unavailable or returns no jobs at all, so
+        there's always something to show for demo purposes. Sets
+        self.data_source to "real" or "mock" depending on which path
+        was used.
 
         Args:
             goals: SearchGoals object with search criteria
 
         Returns:
-            List of JobPosting objects (empty list on error)
+            List of JobPosting objects (empty list only if both real
+            and mock paths somehow fail, which should not happen in
+            practice since mock generation cannot fail).
         """
+        real_jobs = self._scrape_real(goals)
+
+        if real_jobs:
+            self.data_source = "real"
+            return real_jobs
+
+        self.data_source = "mock"
         try:
             self._respect_rate_limit()
-
-            # Mock job listings for Greenhouse
-            mock_jobs = self._generate_mock_jobs(goals)
-            return mock_jobs
-
+            return self._generate_mock_jobs(goals)
         except Exception as error:
             self._handle_error(error, "scrape")
             return []
 
+    def _scrape_real(self, goals: SearchGoals) -> List[JobPosting]:
+        """Query the real Greenhouse public API across known board tokens."""
+        all_jobs = []
+
+        for board_token in self.GREENHOUSE_BOARD_TOKENS:
+            self._respect_rate_limit()
+            url = f"{self.GREENHOUSE_API_BASE}/{board_token}/jobs?content=true"
+            data = self._make_get_request(url)
+
+            if not data or "jobs" not in data:
+                continue
+
+            for raw_job in data["jobs"]:
+                job = self._map_greenhouse_job(raw_job, board_token)
+                if job is not None:
+                    all_jobs.append(job)
+
+        return all_jobs
+
+    def _map_greenhouse_job(self, raw_job: dict, board_token: str) -> Optional[JobPosting]:
+        """Map a single Greenhouse API job dict to a JobPosting.
+
+        Returns None if the raw job is missing required fields
+        (id, title, absolute_url) — never fabricates a required field.
+        """
+        job_id = raw_job.get("id")
+        title = raw_job.get("title")
+        url = raw_job.get("absolute_url")
+
+        if not job_id or not title or not url:
+            return None
+
+        location_data = raw_job.get("location") or {}
+        location = location_data.get("name") or "Unknown"
+
+        content_html = raw_job.get("content") or ""
+        description = self._strip_html(content_html) or "Unknown"
+
+        updated_at = raw_job.get("updated_at")
+        posted_date = None
+        if updated_at:
+            try:
+                posted_date = datetime.fromisoformat(updated_at.replace("Z", "+00:00"))
+            except (ValueError, AttributeError):
+                posted_date = None
+
+        return JobPosting(
+            source=JobSource.GREENHOUSE,
+            source_id=str(job_id),
+            company=board_token,
+            title=title,
+            location=location,
+            description=description,
+            posted_date=posted_date,
+            salary_min=None,
+            salary_max=None,
+            experience_required="Unknown",
+            education_required="Unknown",
+            sponsorship_available=False,
+            work_mode="Unknown",
+            url=url,
+            ats_platform="Greenhouse",
+        )
+
+    @staticmethod
+    def _strip_html(html: str) -> str:
+        """Strip HTML tags from Greenhouse job description content."""
+        text = re.sub(r"<[^>]+>", " ", html)
+        text = re.sub(r"\s+", " ", text).strip()
+        return text
+
     def _generate_mock_jobs(self, goals: SearchGoals) -> List[JobPosting]:
-        """Generate mock Greenhouse job postings for testing.
+        """Generate mock Greenhouse job postings for testing/demo fallback.
 
         Args:
             goals: SearchGoals object with search criteria
@@ -60,7 +163,6 @@ class GreenhouseScraper(BaseScraper):
         Returns:
             List of mock JobPosting objects
         """
-        # Sample job data from Greenhouse board
         job_titles = [
             f"{goals.job_title}",
             f"Senior {goals.job_title}",
@@ -107,7 +209,7 @@ class GreenhouseScraper(BaseScraper):
                 description=descriptions[i % len(descriptions)],
                 salary_min=salary_min + (i * 8000),
                 salary_max=salary_max + (i * 8000),
-                posted_date=datetime.now() - timedelta(days=i*3),
+                posted_date=datetime.now() - timedelta(days=i * 3),
                 url=f"https://boards.greenhouse.io/company/jobs/{i+1}",
                 experience_required="5+ years" if i > 1 else "3+ years",
                 sponsorship_available=False,
