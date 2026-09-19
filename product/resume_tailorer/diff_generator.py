@@ -85,9 +85,10 @@ class DiffGenerator:
 
         for line in lines:
             line = line.strip()
-            # Match lines starting with - or •
-            if re.match(r"^[-•]\s+", line):
-                bullet = re.sub(r"^[-•]\s+", "", line)
+            # Match lines starting with -, * or • (the same bullet markers the
+            # PDF generator and resume parser accept).
+            if re.match(r"^[-*•]\s+", line):
+                bullet = re.sub(r"^[-*•]\s+", "", line)
                 if bullet:
                     bullets.append(bullet)
 
@@ -123,27 +124,73 @@ class DiffGenerator:
 
         for tag, i1, i2, j1, j2 in matcher.get_opcodes():
             if tag == "replace":
-                # One or more bullets were changed
-                for orig_idx in range(i1, i2):
-                    tail_idx = j1 + (orig_idx - i1)
-                    if tail_idx < j2:
-                        orig = original[orig_idx]
-                        tail = tailored[tail_idx]
+                # Pair bullets by SIMILARITY, not by index position. Index-based
+                # pairing scrambles a reorder with an unrelated reword, and hides
+                # genuinely new bullets behind whatever original shares their index.
+                orig_slice = list(original[i1:i2])
+                tail_slice = list(tailored[j1:j2])
 
-                        # Determine change type
-                        if self._is_rephrased(orig, tail):
-                            change_type = "rephrased"
-                            reasoning = "Same fact, different wording to match job keywords"
-                        else:
-                            change_type = "modified"
-                            reasoning = "Content changed"
+                # Score every (orig, tail) pair in this replace block.
+                pairs = []
+                for oi, orig_bullet in enumerate(orig_slice):
+                    for ti, tail_bullet in enumerate(tail_slice):
+                        ratio = difflib.SequenceMatcher(
+                            None, orig_bullet, tail_bullet
+                        ).ratio()
+                        pairs.append((ratio, oi, ti))
 
+                # Greedily match highest-similarity pairs first; each used once.
+                pairs.sort(key=lambda p: p[0], reverse=True)
+                matched_orig = set()
+                matched_tail = set()
+                matches = []  # (oi, ti)
+                for ratio, oi, ti in pairs:
+                    if oi in matched_orig or ti in matched_tail:
+                        continue
+                    matched_orig.add(oi)
+                    matched_tail.add(ti)
+                    matches.append((oi, ti))
+
+                for oi, ti in matches:
+                    orig_bullet = orig_slice[oi]
+                    tail_bullet = tail_slice[ti]
+                    if self._is_rephrased(orig_bullet, tail_bullet):
+                        change_type = "rephrased"
+                        reasoning = "Same fact, different wording to match job keywords"
+                    else:
+                        change_type = "modified"
+                        reasoning = "Content changed"
+
+                    changes.append(
+                        BulletChange(
+                            original=orig_bullet,
+                            tailored=tail_bullet,
+                            change_type=change_type,
+                            reasoning=reasoning,
+                        )
+                    )
+
+                # Unmatched originals were dropped, not rephrased into anything.
+                for oi, orig_bullet in enumerate(orig_slice):
+                    if oi not in matched_orig:
                         changes.append(
                             BulletChange(
-                                original=orig,
-                                tailored=tail,
-                                change_type=change_type,
-                                reasoning=reasoning,
+                                original=orig_bullet,
+                                tailored="",
+                                change_type="removed",
+                                reasoning="Deprioritized for space; not directly relevant to this job",
+                            )
+                        )
+
+                # Unmatched tailored bullets are genuinely new content.
+                for ti, tail_bullet in enumerate(tail_slice):
+                    if ti not in matched_tail:
+                        changes.append(
+                            BulletChange(
+                                original="",
+                                tailored=tail_bullet,
+                                change_type="added",
+                                reasoning="NEW BULLET - should not occur if tailoring is truthful",
                             )
                         )
 
@@ -196,30 +243,51 @@ class DiffGenerator:
     def _check_fabrication_risks(
         self, tailored_bullets: List[str], profile: CareerTruthProfile
     ) -> List[str]:
-        """Check tailored resume for skills/tools/companies not in profile."""
+        """Check tailored resume for skills/tools not present anywhere in the profile."""
         issues = []
 
-        # Collect all known skills, tools, companies from profile
-        known_skills = set(s.lower() for s in profile.skills)
-        known_tools = set(t.lower() for t in profile.tools)
-        known_companies = set(
-            job.employer.lower() for job in profile.work_experience if job.employer
-        )
+        # Build the full searchable profile text: skills, tools, and every
+        # accomplishment/responsibility string across all work experience, so a
+        # skill mentioned in prose (or written as "Python 3.11" / "AWS (EC2, S3)")
+        # still counts as "known". Matching is symmetric with the bullet side.
+        profile_text_parts = list(profile.skills) + list(profile.tools)
+        for job in profile.work_experience:
+            profile_text_parts.extend(job.accomplishments)
+            profile_text_parts.extend(job.responsibilities)
+        profile_text = " ".join(profile_text_parts).lower()
 
+        tech_keywords = [
+            "python", "java", "javascript", "c++", "rust", "go",
+            "aws", "azure", "gcp", "kubernetes", "docker", "terraform",
+            "react", "vue", "angular", "node", "flask", "django",
+        ]
+
+        # Dedup: don't repeat the same tech keyword across multiple bullets.
+        reported = set()
         for bullet in tailored_bullets:
             bullet_lower = bullet.lower()
-
-            # Look for programming languages or tools that weren't in profile
-            tech_keywords = [
-                "python", "java", "javascript", "c++", "rust", "go",
-                "aws", "azure", "gcp", "kubernetes", "docker", "terraform",
-                "react", "vue", "angular", "node", "flask", "django",
-            ]
-
             for tech in tech_keywords:
-                if tech in bullet_lower and tech not in known_skills and tech not in known_tools:
+                if tech in reported:
+                    continue
+                pattern = self._tech_pattern(tech)
+                if re.search(pattern, bullet_lower) and not re.search(
+                    pattern, profile_text
+                ):
                     issues.append(
                         f"⚠️ FABRICATION RISK: '{tech}' mentioned in '{bullet}' but not in original resume"
                     )
+                    reported.add(tech)
 
         return issues
+
+    @staticmethod
+    def _tech_pattern(tech: str) -> str:
+        """Word-boundary regex for a tech keyword, safe for tokens like 'c++'.
+
+        A plain ``\\b`` after '+' would require a following word character and
+        never match "c++", so boundaries are only asserted on alphanumeric edges.
+        Prevents false hits such as "go" inside "algorithm".
+        """
+        left = r"(?<!\w)" if tech[:1].isalnum() else ""
+        right = r"(?!\w)" if tech[-1:].isalnum() else ""
+        return left + re.escape(tech) + right
