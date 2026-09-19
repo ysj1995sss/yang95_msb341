@@ -150,7 +150,7 @@ product/
     ├── report_generator.py          # Generates final application report
     ├── docs/                        # Documentation (see docs/architecture.md)
     │   └── architecture.md
-    └── tests/                       # Test suite (310 tests)
+    └── tests/                       # Test suite (323 tests)
         ├── __init__.py
         ├── test_resume_parser.py
         ├── test_job_analyzer.py

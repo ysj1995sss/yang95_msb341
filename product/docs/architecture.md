@@ -283,7 +283,7 @@ It does **not** cover:
 
 ## Testing
 
-The test suite includes 310 tests covering:
+The test suite includes 323 tests covering:
 - Resume parsing (PDF and DOCX)
 - Career Truth Profile construction
 - Job analysis

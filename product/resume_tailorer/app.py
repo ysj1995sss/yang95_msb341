@@ -8,7 +8,7 @@ Ties together the full pipeline built in Tasks 1-11:
         -> JobAnalyzer.analyze                (Task 4)
         -> ResumeBenchmarker.benchmark        (Task 5)
         -> GapAnalyzer.analyze                (Task 6)
-        -> ResumeTailorer.tailor              (Task 7, live Claude API call)
+        -> ResumeTailorer.tailor              (Task 7, LLM via LLMClient)
         -> ResumeTailoringOptimizer.optimize  (Task 9)
         -> PDFGenerator.generate              (Task 10)
         -> PDFValidator.validate              (Task 10)
