@@ -37,6 +37,7 @@ from resume_tailorer.analyzers import JobAnalyzer, ResumeBenchmarker, GapAnalyze
 from resume_tailorer.tailorer import ResumeTailorer, ResumeTailoringOptimizer
 from resume_tailorer.pdf import PDFGenerator, PDFValidator
 from resume_tailorer.report_generator import ReportGenerator
+from resume_tailorer.diff_generator import DiffGenerator
 
 
 st.set_page_config(page_title="Resume Tailorer", page_icon="\U0001F4C4", layout="wide")
@@ -272,6 +273,49 @@ def main():
 
     st.subheader("Tailored resume text")
     st.text_area("Tailored resume", optimization_result.tailored_resume, height=400)
+
+    # --- Resume Changes: side-by-side diff with reasoning ------------------------
+    st.subheader("Resume Changes")
+    try:
+        diff_report = DiffGenerator().generate_diff(profile, optimization_result.tailored_resume)
+    except Exception as exc:
+        st.warning(f"Could not generate the resume change breakdown: {exc}")
+        diff_report = None
+
+    if diff_report is not None:
+        col_orig, col_tail = st.columns(2)
+        with col_orig:
+            st.markdown("**Original bullets**")
+            if diff_report.original_bullets:
+                for bullet in diff_report.original_bullets:
+                    st.write(f"- {bullet}")
+            else:
+                st.caption("No accomplishment bullets found in the original resume.")
+        with col_tail:
+            st.markdown("**Tailored bullets**")
+            if diff_report.tailored_bullets:
+                for bullet in diff_report.tailored_bullets:
+                    st.write(f"- {bullet}")
+            else:
+                st.caption("No bullet points found in the tailored resume.")
+
+        if diff_report.changes:
+            with st.expander(f"What changed and why ({len(diff_report.changes)} change(s))"):
+                for i, change in enumerate(diff_report.changes, start=1):
+                    st.markdown(f"**{i}. {change.change_type.title()}**")
+                    st.write(f"Reasoning: {change.reasoning}")
+                    if change.original:
+                        st.write(f"Original: {change.original}")
+                    if change.tailored:
+                        st.write(f"Tailored: {change.tailored}")
+                    st.divider()
+        else:
+            st.caption("No bullet-level changes were detected.")
+
+        if diff_report.issues:
+            st.warning("Possible fabrication risks detected in the tailored resume:")
+            for issue in diff_report.issues:
+                st.write(f"- {issue}")
 
     if os.path.exists(pdf_path):
         if pdf_validation.passed:
