@@ -128,3 +128,45 @@ def test_fill_form_preserves_required_flag():
     fields = [FormField(field_name="email", field_type="email", required=True)]
     filled = filler.fill_form(fields, _make_profile())
     assert filled[0].required is True
+
+
+def test_fill_form_company_name_field_maps_to_employer_not_candidate_name():
+    """A "company_name" field asks about the candidate's employer, not their own name."""
+    filler = FormFiller()
+    fields = [FormField(field_name="company_name", field_type="text")]
+    filled = filler.fill_form(fields, _make_profile())
+    assert filled[0].value == "TechCorp"
+    assert filled[0].prefilled is True
+
+
+def test_fill_form_single_word_name_leaves_last_name_unfilled():
+    """A single-word name (no last name) must not spill into the last_name field."""
+    filler = FormFiller()
+    profile = CareerTruthProfile(
+        contact_info={
+            "name": "Madonna",
+            "email": "madonna@example.com",
+            "phone": "555-000-0000",
+            "location": "New York, NY",
+        },
+        education=[],
+        work_experience=[],
+        skills=[],
+        tools=[],
+        certifications=[],
+        accomplishments=[],
+    )
+    fields = [FormField(field_name="last_name", field_type="text")]
+    filled = filler.fill_form(fields, profile)
+    assert filled[0].value == ""
+    assert filled[0].prefilled is False
+
+
+def test_fill_form_full_name_variant_fields_still_work():
+    """Removing the bare generic "name" fallback must not break specific full-name aliases."""
+    filler = FormFiller()
+    for field_name in ("full_name", "candidate_name", "applicant_name"):
+        fields = [FormField(field_name=field_name, field_type="text")]
+        filled = filler.fill_form(fields, _make_profile())
+        assert filled[0].value == "Jane Doe"
+        assert filled[0].prefilled is True

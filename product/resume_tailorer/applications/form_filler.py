@@ -16,17 +16,25 @@ from resume_tailorer.models.career_profile import CareerTruthProfile
 
 # Each entry: (list of substrings to match in the lowercased field name, resolver function)
 # Order matters: more specific patterns (e.g. "first_name") are checked before
-# more general ones (e.g. "name") to avoid a generic pattern winning first.
+# more general ones (e.g. "full_name") to avoid a generic pattern winning first.
+#
+# NOTE: there is no bare ["name"] catch-all. A substring check against "name"
+# would also match "last_name" and "company_name" (both literally contain
+# "name"), so once _resolve_value stops scanning after the first matching
+# group (see below), a bare "name" fallback would either shadow those more
+# specific groups or, if placed last, would still incorrectly catch them
+# after their own specific resolver legitimately returned "". Every pattern
+# below is specific enough that a match is genuinely about that exact piece
+# of data.
 _FIELD_ALIASES = [
     (["first_name", "firstname", "fname"], lambda p: p.contact_info.get("name", "").split()[0] if p.contact_info.get("name") else ""),
     (["last_name", "lastname", "lname"], lambda p: p.contact_info.get("name", "").split()[-1] if p.contact_info.get("name") and len(p.contact_info["name"].split()) > 1 else ""),
-    (["full_name", "fullname"], lambda p: p.contact_info.get("name", "")),
+    (["full_name", "fullname", "your_name", "candidate_name", "applicant_name"], lambda p: p.contact_info.get("name", "")),
     (["email"], lambda p: p.contact_info.get("email", "")),
     (["phone"], lambda p: p.contact_info.get("phone", "")),
     (["location", "city"], lambda p: p.contact_info.get("location", "")),
-    (["current_company", "employer", "current_employer"], lambda p: p.work_experience[0].employer if p.work_experience else ""),
+    (["current_company", "employer", "current_employer", "company_name"], lambda p: p.work_experience[0].employer if p.work_experience else ""),
     (["current_title", "job_title", "current_role"], lambda p: p.work_experience[0].title if p.work_experience else ""),
-    (["name"], lambda p: p.contact_info.get("name", "")),  # generic fallback, checked last
 ]
 
 
@@ -56,14 +64,21 @@ class FormFiller:
         return result
 
     def _resolve_value(self, field_name: str, profile: CareerTruthProfile) -> str:
-        """Try each known alias pattern in order; return the first confident match."""
+        """Try each known alias pattern in order; return the first matching group's result.
+
+        Once a pattern group's substrings match the field name, that group's
+        resolver result is returned immediately (even if empty) — later,
+        more generic groups are never consulted for a field name that already
+        matched something more specific. This prevents a field like
+        "last_name" or "company_name" (which both contain the substring
+        "name") from falling through to a generic name-fallback pattern
+        when its own specific resolver has nothing to offer.
+        """
         name_lower = field_name.lower()
         for patterns, resolver in _FIELD_ALIASES:
             if any(pattern in name_lower for pattern in patterns):
                 try:
-                    value = resolver(profile)
+                    return resolver(profile)
                 except (IndexError, AttributeError):
-                    value = ""
-                if value:
-                    return value
+                    return ""
         return ""
