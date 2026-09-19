@@ -45,16 +45,18 @@ class ResumeTailoringOptimizer:
     refines existing content, never fabricates.
     """
 
-    def __init__(self, max_iterations: int = 5):
+    def __init__(self, max_iterations: int = 5, llm=None):
         """
         Initialize the optimizer.
 
         Args:
             max_iterations: Maximum number of refinement iterations (default: 5)
+            llm: Optional LLMClient forwarded to ResumeTailorer. When omitted,
+                ResumeTailorer resolves settings from the environment.
         """
         self.max_iterations = max_iterations
         self.target_score = 0.85  # 85% alignment target
-        self.tailorer = ResumeTailorer()
+        self.tailorer = ResumeTailorer(llm=llm) if llm is not None else ResumeTailorer()
 
     def optimize(
         self,

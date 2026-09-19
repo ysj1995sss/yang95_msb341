@@ -6,8 +6,8 @@ SCOPE RULING — read before extending this file
 The plan's Task 13 spec calls for validating the MVP's Global Constraint:
 "80% keyword alignment on 8/10 real job postings." That goal requires:
   1. Real job postings (not accessible from this environment), and
-  2. Live calls to the Claude API via ResumeTailorer.tailor() and
-     ResumeTailoringOptimizer.optimize() (no ANTHROPIC_API_KEY is configured
+  2. Live LLM calls via ResumeTailorer.tailor() and
+     ResumeTailoringOptimizer.optimize() (no provider API key is configured
      in this environment, and these tests must run in CI/sandboxes without
      network access or API cost).
 
@@ -27,27 +27,21 @@ What IS covered here (no API needed):
   - Test 3: a single mocked end-to-end run (parse -> analyze -> benchmark ->
     gap -> tailor[mocked] -> optimize[mocked] -> PDF generate -> PDF validate
     -> report) verifying that data flows correctly between every stage of
-    the pipeline, using the same `unittest.mock.patch`-on-`anthropic` pattern
-    already used in test_resume_tailorer.py and test_optimizer.py. This test
+    the pipeline, injecting a MagicMock LLMClient. This test
     checks integration/wiring, not alignment quality.
 """
 
-import sys
 from pathlib import Path
-from unittest.mock import MagicMock, Mock
+from unittest.mock import MagicMock
 
 import pytest
-
-# Mock anthropic before importing anything that transitively imports the
-# tailorer package, to avoid requiring the real package / API key.
-mock_anthropic_module = Mock()
-sys.modules['anthropic'] = mock_anthropic_module
 
 from resume_tailorer.models import CareerTruthProfile
 from resume_tailorer.parsers.resume_parser import ResumeParser
 from resume_tailorer.analyzers.job_analyzer import JobAnalyzer, JobAnalysis
 from resume_tailorer.analyzers.resume_benchmarker import ResumeBenchmarker, ResumeBenchmark
 from resume_tailorer.analyzers.gap_analyzer import GapAnalyzer, GapReport
+from resume_tailorer.llm.client import LLMClient
 from resume_tailorer.tailorer.resume_tailorer import ResumeTailorer
 from resume_tailorer.tailorer.optimizer import ResumeTailoringOptimizer, OptimizationResult
 from resume_tailorer.pdf.generator import PDFGenerator
@@ -60,11 +54,11 @@ from tests.fixtures.real_job_descriptions import JOB_DESCRIPTIONS
 SAMPLE_RESUME_PATH = Path(__file__).parent / "fixtures" / "sample_resume.pdf"
 
 
-def setup_anthropic_mock():
-    """Setup mocked Anthropic client for tests (same pattern as Task 8/9 tests)."""
-    mock_client = MagicMock()
-    sys.modules['anthropic'].Anthropic = MagicMock(return_value=mock_client)
-    return mock_client
+def _mock_llm(return_text: str) -> MagicMock:
+    """Build a MagicMock LLMClient with complete() returning return_text."""
+    llm = MagicMock(spec=LLMClient)
+    llm.complete.return_value = return_text
+    return llm
 
 
 @pytest.fixture(scope="module")
@@ -151,13 +145,9 @@ class TestMockedEndToEndPipeline:
     """
 
     def test_full_pipeline_parse_through_report(self, tmp_path):
-        mock_client = setup_anthropic_mock()
-
-        # The mocked Claude response used for both tailor() and optimize()'s
+        # Mocked LLM response used for both tailor() and optimize()'s
         # internal refine step.
-        mock_response = MagicMock()
-        mock_response.content = [MagicMock()]
-        mock_response.content[0].text = (
+        tailored_content = (
             "Jane Doe\n"
             "SUMMARY\n"
             "Experienced Software Engineer with Python, Docker, and PostgreSQL background.\n"
@@ -166,7 +156,7 @@ class TestMockedEndToEndPipeline:
             "- Built APIs and maintained services\n"
             "- Reduced latency by 30%\n"
         )
-        mock_client.messages.create.return_value = mock_response
+        llm = _mock_llm(tailored_content)
 
         # Stage 1: parse.
         parser = ResumeParser()
@@ -188,15 +178,15 @@ class TestMockedEndToEndPipeline:
         gap_report = gap_analyzer.analyze(profile, job_analysis, benchmark)
         assert isinstance(gap_report, GapReport)
 
-        # Stage 5: tailor (Claude call mocked).
-        tailorer = ResumeTailorer()
+        # Stage 5: tailor (LLM call mocked).
+        tailorer = ResumeTailorer(llm=llm)
         tailored_text = tailorer.tailor(profile, job_analysis, gap_report)
         assert isinstance(tailored_text, str) and tailored_text
-        assert mock_client.messages.create.called
+        assert llm.complete.called
 
-        # Stage 6: optimize (Claude call mocked, capped to 1 iteration so
+        # Stage 6: optimize (LLM call mocked, capped to 1 iteration so
         # the test stays fast and deterministic).
-        optimizer = ResumeTailoringOptimizer(max_iterations=1)
+        optimizer = ResumeTailoringOptimizer(max_iterations=1, llm=llm)
         optimization_result = optimizer.optimize(
             profile, job_analysis, tailored_text, gap_report
         )

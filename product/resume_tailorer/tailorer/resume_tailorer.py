@@ -1,7 +1,7 @@
 """
-Resume Tailoring Engine using Claude API.
+Resume Tailoring Engine using LLM provider via LLMClient.
 
-This module provides the ResumeTailorer class, which uses Claude to rewrite
+This module provides the ResumeTailorer class, which uses an LLM to rewrite
 resume content to match job requirements while strictly adhering to the
 Career Truth Profile (no fabrication).
 
@@ -12,22 +12,37 @@ Every rewrite must cite the Career Truth Profile only.
 from resume_tailorer.models import CareerTruthProfile
 from resume_tailorer.analyzers.job_analyzer import JobAnalysis
 from resume_tailorer.analyzers.gap_analyzer import GapReport, GapCategory
+from resume_tailorer.llm.client import LLMClient
+from resume_tailorer.llm.settings import LLMSettings, resolve_settings
 
 
 class ResumeTailorer:
     """
-    Claude-powered resume tailoring engine.
+    LLM-powered resume tailoring engine.
 
     Rewrites resume content to match job requirements while strictly adhering
     to the Career Truth Profile. This is the MOST safety-critical component:
     the system prompt IS the fabrication guardrail.
     """
 
-    def __init__(self):
-        """Initialize the ResumeTailorer with Anthropic client."""
-        import anthropic
-        self.client = anthropic.Anthropic()
-        self.model = "claude-3-5-sonnet-20241022"
+    def __init__(
+        self,
+        llm: LLMClient | None = None,
+        settings: LLMSettings | None = None,
+    ):
+        """Initialize the ResumeTailorer with an LLMClient.
+
+        Args:
+            llm: Optional pre-built LLMClient. If given, used directly.
+            settings: Optional LLMSettings. Used to build LLMClient when llm
+                is not provided. If neither is given, resolves from env.
+        """
+        if llm is not None:
+            self.llm = llm
+        elif settings is not None:
+            self.llm = LLMClient(settings)
+        else:
+            self.llm = LLMClient(resolve_settings())
 
     def tailor(
         self,
@@ -46,28 +61,14 @@ class ResumeTailorer:
         Returns:
             Tailored resume text (string)
 
-        This method calls Claude API with strict constraints to ensure:
+        This method calls the LLM via LLMClient with strict constraints to ensure:
         - No fabrication of experience, skills, certifications, numbers, dates, or employers
         - Only rephrase, reorganize, prioritize existing experience
         - Respect gap categories: fill A/B/C, ignore D/E
         """
         system_prompt = self._build_system_prompt()
         user_prompt = self._build_user_prompt(profile, job_analysis, gap_report)
-
-        response = self.client.messages.create(
-            model=self.model,
-            max_tokens=2000,
-            messages=[
-                {
-                    "role": "user",
-                    "content": user_prompt,
-                }
-            ],
-            system=system_prompt,
-        )
-
-        # Extract tailored resume text from response
-        return response.content[0].text
+        return self.llm.complete(system_prompt, user_prompt, max_tokens=2000)
 
     def _build_system_prompt(self) -> str:
         """
@@ -370,27 +371,13 @@ Provide the tailored resume content now:"""
         Returns:
             Refined resume text
 
-        This method follows the same safety pattern as tailor(): it uses Claude
+        This method follows the same safety pattern as tailor(): it uses the LLM
         with strict fabrication guardrails to iteratively improve the resume
         while staying true to the Career Truth Profile.
         """
         system_prompt = self._build_refinement_system_prompt()
         user_prompt = self._build_refinement_user_prompt(current_resume, improvement_prompt, profile)
-
-        response = self.client.messages.create(
-            model=self.model,
-            max_tokens=2000,
-            messages=[
-                {
-                    "role": "user",
-                    "content": user_prompt,
-                }
-            ],
-            system=system_prompt,
-        )
-
-        # Extract refined resume text from response
-        return response.content[0].text
+        return self.llm.complete(system_prompt, user_prompt, max_tokens=2000)
 
     def _build_refinement_system_prompt(self) -> str:
         """

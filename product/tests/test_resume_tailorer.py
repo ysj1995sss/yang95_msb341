@@ -1,16 +1,11 @@
 import pytest
-from unittest.mock import MagicMock, Mock
-import sys
-
-# Mock anthropic before importing ResumeTailorer to avoid import errors
-mock_anthropic_module = Mock()
-sys.modules['anthropic'] = mock_anthropic_module
+from unittest.mock import MagicMock
 
 from resume_tailorer.models import CareerTruthProfile, WorkExperience, EducationEntry
 from resume_tailorer.analyzers import JobAnalyzer
-from resume_tailorer.analyzers.resume_benchmarker import ResumeBenchmarker
-from resume_tailorer.analyzers.gap_analyzer import GapAnalyzer, GapCategory, GapItem, GapReport
+from resume_tailorer.analyzers.gap_analyzer import GapCategory, GapItem, GapReport
 from resume_tailorer.tailorer import ResumeTailorer
+from resume_tailorer.llm.client import LLMClient
 
 
 @pytest.fixture
@@ -133,27 +128,17 @@ def sample_gap_report():
     )
 
 
-def setup_anthropic_mock():
-    """Setup mocked Anthropic client for tests."""
-    mock_client = MagicMock()
-    sys.modules['anthropic'].Anthropic = MagicMock(return_value=mock_client)
-    return mock_client
-
-
 def test_resume_tailorer_instantiation():
-    """Test that ResumeTailorer can be instantiated."""
-    setup_anthropic_mock()
-
-    tailorer = ResumeTailorer()
+    """Test that ResumeTailorer can be instantiated with an injected LLMClient."""
+    llm = MagicMock(spec=LLMClient)
+    tailorer = ResumeTailorer(llm=llm)
     assert tailorer is not None
-    assert tailorer.model == "claude-3-5-sonnet-20241022"
+    assert tailorer.llm is llm
 
 
 def test_resume_tailorer_system_prompt_forbids_fabrication():
     """Test that system prompt explicitly forbids fabrication."""
-    setup_anthropic_mock()
-
-    tailorer = ResumeTailorer()
+    tailorer = ResumeTailorer(llm=MagicMock())
     system_prompt = tailorer._build_system_prompt()
 
     # Critical: system prompt must forbid fabrication
@@ -161,29 +146,23 @@ def test_resume_tailorer_system_prompt_forbids_fabrication():
     assert "Career Truth Profile" in system_prompt or "truth" in system_prompt.lower()
 
 
-def test_resume_tailorer_tailor_method_calls_claude(sample_profile, sample_job_analysis, sample_gap_report):
-    """Test that tailor method calls Claude API (mocked)."""
-    mock_client = setup_anthropic_mock()
-
-    mock_response = MagicMock()
-    mock_response.content = [MagicMock()]
-    mock_response.content[0].text = "Here is the tailored resume content..."
-    mock_client.messages.create.return_value = mock_response
-
-    tailorer = ResumeTailorer()
+def test_resume_tailorer_tailor_method_calls_llm(sample_profile, sample_job_analysis, sample_gap_report):
+    """Test that tailor method calls LLMClient.complete (mocked)."""
+    llm = MagicMock(spec=LLMClient)
+    llm.complete.return_value = "Here is the tailored resume content..."
+    tailorer = ResumeTailorer(llm=llm)
     result = tailorer.tailor(sample_profile, sample_job_analysis, sample_gap_report)
 
-    # Verify Claude was called
-    assert mock_client.messages.create.called
-    # Verify result is a string
+    assert llm.complete.called
+    args, kwargs = llm.complete.call_args
+    assert "fabricat" in args[0].lower() or "never" in args[0].lower()
+    assert isinstance(args[1], str)
     assert isinstance(result, str)
 
 
 def test_resume_tailorer_gap_formatting_excludes_de_gaps(sample_profile, sample_job_analysis, sample_gap_report):
     """Test that D/E gaps are explicitly excluded from 'fill' instructions."""
-    setup_anthropic_mock()
-
-    tailorer = ResumeTailorer()
+    tailorer = ResumeTailorer(llm=MagicMock())
     formatted = tailorer._format_gaps(sample_gap_report)
 
     # Check that D/E gaps are present but marked as exclusions
@@ -193,9 +172,7 @@ def test_resume_tailorer_gap_formatting_excludes_de_gaps(sample_profile, sample_
 
 def test_resume_tailorer_profile_to_string(sample_profile):
     """Test that profile is correctly converted to readable text."""
-    setup_anthropic_mock()
-
-    tailorer = ResumeTailorer()
+    tailorer = ResumeTailorer(llm=MagicMock())
     profile_text = tailorer._profile_to_string(sample_profile)
 
     # Verify key profile elements are in the output
@@ -205,11 +182,9 @@ def test_resume_tailorer_profile_to_string(sample_profile):
     assert "Python" in profile_text
 
 
-def test_resume_tailorer_uses_correct_model():
-    """Test that ResumeTailorer initializes with correct Claude model."""
-    setup_anthropic_mock()
-
-    tailorer = ResumeTailorer()
-
-    # Verify the model attribute is set correctly
-    assert tailorer.model == "claude-3-5-sonnet-20241022"
+def test_resume_tailorer_has_llm():
+    """Test that ResumeTailorer exposes an llm client."""
+    llm = MagicMock(spec=LLMClient)
+    tailorer = ResumeTailorer(llm=llm)
+    assert tailorer.llm is not None
+    assert tailorer.llm is llm
