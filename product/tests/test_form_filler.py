@@ -170,3 +170,14 @@ def test_fill_form_full_name_variant_fields_still_work():
         filled = filler.fill_form(fields, _make_profile())
         assert filled[0].value == "Jane Doe"
         assert filled[0].prefilled is True
+
+
+def test_fill_form_fullname_no_underscore_variant_resolves_to_full_name():
+    """"fullname" (no underscore) contains the substring "lname" (fuLL-NAMe),
+    which previously caused it to collide with the last_name alias group and
+    incorrectly resolve to just the last name. It must resolve to the full name."""
+    filler = FormFiller()
+    fields = [FormField(field_name="fullname", field_type="text")]
+    filled = filler.fill_form(fields, _make_profile())
+    assert filled[0].value == "Jane Doe"
+    assert filled[0].prefilled is True

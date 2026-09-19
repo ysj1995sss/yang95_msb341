@@ -15,8 +15,10 @@ from resume_tailorer.applications.models import FormField
 from resume_tailorer.models.career_profile import CareerTruthProfile
 
 # Each entry: (list of substrings to match in the lowercased field name, resolver function)
-# Order matters: more specific patterns (e.g. "first_name") are checked before
-# more general ones (e.g. "full_name") to avoid a generic pattern winning first.
+# Order matters: "full_name" is checked before "first_name"/"last_name" because
+# the no-underscore spelling "fullname" contains "lname" as a substring
+# (fu-LL-N-AME), which would otherwise let the last_name group match first and
+# incorrectly resolve "fullname" to just the last name instead of the full name.
 #
 # NOTE: there is no bare ["name"] catch-all. A substring check against "name"
 # would also match "last_name" and "company_name" (both literally contain
@@ -27,9 +29,9 @@ from resume_tailorer.models.career_profile import CareerTruthProfile
 # below is specific enough that a match is genuinely about that exact piece
 # of data.
 _FIELD_ALIASES = [
+    (["full_name", "fullname", "your_name", "candidate_name", "applicant_name"], lambda p: p.contact_info.get("name", "")),
     (["first_name", "firstname", "fname"], lambda p: p.contact_info.get("name", "").split()[0] if p.contact_info.get("name") else ""),
     (["last_name", "lastname", "lname"], lambda p: p.contact_info.get("name", "").split()[-1] if p.contact_info.get("name") and len(p.contact_info["name"].split()) > 1 else ""),
-    (["full_name", "fullname", "your_name", "candidate_name", "applicant_name"], lambda p: p.contact_info.get("name", "")),
     (["email"], lambda p: p.contact_info.get("email", "")),
     (["phone"], lambda p: p.contact_info.get("phone", "")),
     (["location", "city"], lambda p: p.contact_info.get("location", "")),
