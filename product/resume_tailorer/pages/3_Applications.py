@@ -22,6 +22,7 @@ of the real-submission path.
 import streamlit as st
 
 from resume_tailorer.applications.models import ApplicationMode, ApplicationStatus
+from resume_tailorer.applications.status_tracker import StatusTracker
 from resume_tailorer.applications.ui_helpers import format_application_for_display
 from resume_tailorer.job_search.job_service import JobService
 
@@ -93,9 +94,20 @@ def _render_submit_tab(service: JobService) -> None:
         value=0.0,
         key="apply_resume_match_score",
     )
+    st.caption(
+        "Not auto-populated yet — copy this from the Resume Match score shown on the "
+        "main page's report for this job. Leaving it at 0 will record a literal 0% "
+        "in the permanent audit trail, not 'unknown'."
+    )
 
     preview_clicked = st.button("Preview (dry run — never submits)")
-    submit_clicked = st.button("Confirm & Submit (real submission for Assist/Auto)")
+    confirm_understanding = st.checkbox(
+        "I understand this may attempt a real submission to the employer's ATS."
+    )
+    submit_clicked = st.button(
+        "Confirm & Submit (real submission for Assist/Auto)",
+        disabled=not confirm_understanding,
+    )
 
     profile = st.session_state.get(CAREER_PROFILE_SESSION_KEY)
 
@@ -121,15 +133,28 @@ def _render_submit_tab(service: JobService) -> None:
                     f"Application submitted. Application ID: {result.application_id}"
                     + (f", Confirmation: {result.confirmation_number}" if result.confirmation_number else "")
                 )
+            st.write(f"**Application link:** {result.form_url}")
             st.write("**Fields that would be / were submitted:**")
             st.json(result.form_fields_submitted)
         except ValueError as exc:
-            st.error(f"Could not submit: {exc}")
+            if "Unknown ATS platform" in str(exc) or "not supported" in str(exc):
+                st.error(
+                    "This job wasn't sourced from a supported ATS (Greenhouse, Lever, or Ashby), "
+                    "so it can't be auto-filled or auto-submitted here. Apply directly on the "
+                    "job's own site instead."
+                )
+            else:
+                st.error(f"Could not submit: {exc}")
 
 
 def _render_dashboard_tab(service: JobService) -> None:
     """Render the application status dashboard: filter, list, view history, update status."""
     st.subheader("Application Status Dashboard")
+
+    # Go through StatusTracker rather than ApplicationDatabase directly: it is the
+    # narrow status-only interface built for exactly this caller, and it is a
+    # cheap stateless wrapper, so constructing it per render is fine.
+    status_tracker = StatusTracker(service.applications_db)
 
     status_filter_ui = st.selectbox(
         "Filter by status",
@@ -138,9 +163,9 @@ def _render_dashboard_tab(service: JobService) -> None:
     )
 
     if status_filter_ui == "All":
-        applications = service.applications_db.get_all_applications()
+        applications = status_tracker.get_all_applications()
     else:
-        applications = service.applications_db.get_applications_by_status(
+        applications = status_tracker.get_applications_by_status(
             STATUS_BY_LABEL[status_filter_ui]
         )
 
@@ -160,7 +185,7 @@ def _render_dashboard_tab(service: JobService) -> None:
     if not selected_app_id:
         return
 
-    history = service.applications_db.get_status_history(selected_app_id)
+    history = status_tracker.get_status_history(selected_app_id)
     st.write("**Status history:**")
     for h in history:
         st.write(
@@ -175,7 +200,7 @@ def _render_dashboard_tab(service: JobService) -> None:
     )
     update_notes = st.text_input("Notes (optional)", key="update_notes")
     if st.button("Update Status"):
-        service.applications_db.update_status(
+        status_tracker.update_status(
             selected_app_id, STATUS_BY_LABEL[new_status_ui], update_notes
         )
         st.success("Status updated.")

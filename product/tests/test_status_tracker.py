@@ -85,6 +85,23 @@ def test_status_tracker_get_applications_by_status(temp_db):
     assert applied[0].application_id == app_id1
 
 
+def test_status_tracker_get_current_status(temp_db):
+    app_id = _seed_application(temp_db)
+    tracker = StatusTracker(temp_db)
+    tracker.update_status(app_id, ApplicationStatus.INTERVIEW)
+
+    status = tracker.get_current_status(app_id)
+    assert status == ApplicationStatus.INTERVIEW
+
+
+def test_status_tracker_get_current_status_none_before_any_status(temp_db):
+    app_id = _seed_application(temp_db)
+    tracker = StatusTracker(temp_db)
+
+    status = tracker.get_current_status(app_id)
+    assert status is None
+
+
 def test_status_tracker_get_all_applications(temp_db):
     # NOTE: with the auto-insert removed, a freshly-saved submission has no
     # status history row at all, so it would not appear in get_all_applications()

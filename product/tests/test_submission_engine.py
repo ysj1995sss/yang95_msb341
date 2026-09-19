@@ -103,8 +103,28 @@ def test_manual_mode_never_submits_even_with_dry_run_false(temp_db):
             )
     mock_submit.assert_not_called()
     assert result.mode == ApplicationMode.MANUAL
-    # Manual mode: the user applies themselves and sets status via the dashboard.
-    assert temp_db.get_current_status(result.application_id) is None
+    # Manual mode: the user applies themselves, so it is READY_TO_APPLY (never
+    # APPLIED) and they advance it via the dashboard once they've actually applied.
+    assert temp_db.get_current_status(result.application_id) == ApplicationStatus.READY_TO_APPLY
+
+
+def test_manual_mode_gets_ready_to_apply_status_immediately(temp_db):
+    """Manual mode submissions must be immediately trackable in the dashboard,
+    unlike Assist/Auto previews which stay invisible until a real submit succeeds."""
+    engine = SubmissionEngine(temp_db)
+    with patch.object(engine, "_fetch_form_html", return_value=SAMPLE_FORM_HTML):
+        result = engine.apply_for_job(
+            job_posting_id="greenhouse_1",
+            form_url="https://boards.greenhouse.io/company/jobs/1",
+            ats_platform="greenhouse",
+            profile=_make_profile(),
+            resume_pdf_path="/tmp/resume.pdf",
+            candidate_fit_score=85.0,
+            resume_match_score=90.0,
+            mode=ApplicationMode.MANUAL,
+        )
+    status = temp_db.get_current_status(result.application_id)
+    assert status == ApplicationStatus.READY_TO_APPLY
 
 
 def test_auto_mode_refuses_submission_with_unfilled_required_field(temp_db):

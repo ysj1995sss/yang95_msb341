@@ -11,9 +11,12 @@ Safety model (see plan Task 4 for full rationale):
 - The audit record is saved BEFORE any real network call, so a failed
   submission still leaves a record of what was attempted.
 - An APPLIED status (and the confirmation number) is recorded ONLY after a
-  real submission actually succeeds. A dry-run preview, a Manual-mode
-  record, or a real submission whose POST raises all leave no status, so
-  the dashboard never shows a false "Applied".
+  real submission actually succeeds. A dry-run preview or a real submission
+  whose POST raises leaves no status at all, so the dashboard never shows a
+  false "Applied".
+- Manual mode is the one exception to "no automatic status": it records
+  READY_TO_APPLY (never APPLIED) immediately, so the user can actually
+  track and advance it from the dashboard.
 """
 
 import time
@@ -132,6 +135,18 @@ class SubmissionEngine:
         # submission still leaves an audit trail of what was attempted.
         application_id = self.db.save_submission(submission)
         submission.application_id = application_id
+
+        # Manual mode never goes through the submit branch below, so without an
+        # explicit status here it would never appear in the dashboard at all
+        # (the dashboard is driven by the status_history table). READY_TO_APPLY
+        # is honest: the user has not applied yet, but the application is now
+        # trackable and can be advanced to APPLIED from the dashboard.
+        if mode == ApplicationMode.MANUAL:
+            self.db.update_status(
+                application_id,
+                ApplicationStatus.READY_TO_APPLY,
+                notes="Manual mode: apply via the provided link, then update status here once submitted.",
+            )
 
         should_actually_submit = (not dry_run) and (mode != ApplicationMode.MANUAL)
         if should_actually_submit:
