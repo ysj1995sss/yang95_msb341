@@ -62,6 +62,20 @@ def _strip_non_resume_content(text: str) -> str:
     return "\n".join(lines).strip()
 
 
+# Live testing (2026-09-22) showed the model formatting its output in
+# Markdown (**bold**, *italic*) despite never being asked to -- resume
+# section headings and job-header lines came back as literal "**EDUCATION**"
+# and "**CVS Health** | Woonsocket, RI". PDFGenerator has no Markdown
+# parser, so every asterisk rendered as a literal character in the PDF
+# (and worse: a line starting with "*" gets misread as a bullet point by
+# PDFGenerator's own heuristic, corrupting the line's leading text too).
+# Real resume text has no legitimate use for a literal asterisk, so this
+# strips all of them unconditionally rather than trying to parse balanced
+# Markdown pairs, which also don't reliably occur in malformed output.
+def _strip_markdown_syntax(text: str) -> str:
+    return text.replace("**", "").replace("*", "")
+
+
 class ResumeTailorer:
     """
     LLM-powered resume tailoring engine.
@@ -115,7 +129,7 @@ class ResumeTailorer:
         system_prompt = self._build_system_prompt()
         user_prompt = self._build_user_prompt(profile, job_analysis, gap_report)
         raw = self.llm.complete(system_prompt, user_prompt, max_tokens=2000)
-        return _strip_non_resume_content(raw)
+        return _strip_markdown_syntax(_strip_non_resume_content(raw))
 
     def _build_system_prompt(self) -> str:
         """
@@ -169,6 +183,12 @@ Output ONLY the resume content itself: contact info, section headings, and bulle
 Do NOT include any notes, explanations, meta-commentary, reasoning, disclaimers, or a
 summary of what you changed or what's missing. If a requirement is missing or uncertain,
 silently omit it from the output -- do not mention it there.
+Output PLAIN TEXT ONLY. Do not use Markdown formatting of any kind: no **bold**, no
+*italics*, no # headings, no markdown bullet syntax. Write section headings in plain
+ALL CAPS on their own line, and write each bullet as a plain line starting with "-".
+Keep each job's "Employer | Location    Dates" line and "Job Title" line as their own
+plain lines, NOT bulleted -- bullets are only for the accomplishment/responsibility
+lines underneath them.
 
 Your output must be a revised resume that increases alignment with the job while maintaining 100% truthfulness to the Career Truth Profile."""
 
@@ -211,7 +231,9 @@ INSTRUCTIONS:
 4. NEVER add experience, skills, or accomplishments not in the Career Truth Profile
 5. NEVER change dates, employers, titles, or employment types
 6. Organize bullets to emphasize job-relevant accomplishments
-7. Output ONLY the revised resume content (bullet points and sections), ready to be inserted
+7. If a PROFESSIONAL SUMMARY is provided above, include a short summary paragraph near the
+   top of the output, lightly adapted toward this job -- do not drop it
+8. Output ONLY the revised resume content (bullet points and sections), ready to be inserted
    into the original resume template -- no notes, no explanations, no commentary about what
    you changed or what's missing
 
@@ -237,6 +259,12 @@ Provide the tailored resume content now:"""
         lines.append(f"  Location: {profile.contact_info.get('location', 'N/A')}")
         lines.append("")
 
+        # Professional summary (if the original resume had one)
+        if profile.summary:
+            lines.append("PROFESSIONAL SUMMARY:")
+            lines.append(f"  {profile.summary}")
+            lines.append("")
+
         # Education
         if profile.education:
             lines.append("EDUCATION:")
@@ -246,6 +274,8 @@ Provide the tailored resume content now:"""
                 )
                 if edu.gpa:
                     lines.append(f"    GPA: {edu.gpa}")
+                for note in edu.notes:
+                    lines.append(f"    - {note}")
             lines.append("")
 
         # Work Experience
@@ -433,7 +463,7 @@ Provide the tailored resume content now:"""
         system_prompt = self._build_refinement_system_prompt()
         user_prompt = self._build_refinement_user_prompt(current_resume, improvement_prompt, profile)
         raw = self.llm.complete(system_prompt, user_prompt, max_tokens=2000)
-        return _strip_non_resume_content(raw)
+        return _strip_markdown_syntax(_strip_non_resume_content(raw))
 
     def _build_refinement_system_prompt(self) -> str:
         """
@@ -472,6 +502,10 @@ FORBIDDEN TRANSFORMATIONS:
 OUTPUT FORMAT - CRITICAL:
 Output ONLY the resume content itself. Do NOT include any notes, explanations,
 meta-commentary, reasoning, disclaimers, or a summary of what you changed.
+Output PLAIN TEXT ONLY. Do not use Markdown formatting of any kind: no **bold**, no
+*italics*, no # headings. Write section headings in plain ALL CAPS on their own line,
+and each bullet as a plain line starting with "-". Keep each job's "Employer | Location
+Dates" line and "Job Title" line as their own plain lines, NOT bulleted.
 
 Your task is to refine the resume iteratively to improve keyword and qualification alignment
 while maintaining 100% truthfulness to the Career Truth Profile."""

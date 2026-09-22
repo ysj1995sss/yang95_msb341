@@ -122,12 +122,33 @@ class PDFGenerator:
             leading=leading,
             spaceAfter=2,
         )
+        # "Employer | Location    Dates" line -- bold, like the original
+        # resume's own layout, instead of falling through to plain body text.
+        org_header_style = ParagraphStyle(
+            name="OrgHeader",
+            fontName="Helvetica-Bold",
+            fontSize=body_font,
+            leading=leading,
+            spaceBefore=6,
+            spaceAfter=1,
+        )
+        # The job title / degree line right after an org header -- italic,
+        # matching the original resume's layout.
+        title_line_style = ParagraphStyle(
+            name="TitleLine",
+            fontName="Helvetica-Oblique",
+            fontSize=body_font,
+            leading=leading,
+            spaceAfter=2,
+        )
         return {
             "name": name_style,
             "title": title_style,
             "section": section_style,
             "bullet": bullet_style,
             "body": body_style,
+            "org_header": org_header_style,
+            "title_line": title_line_style,
         }
 
     def generate(
@@ -202,13 +223,24 @@ class PDFGenerator:
     def _build_body_flowables(self, resume_text: str, candidate_name: str, styles: dict, style_hints: dict = None):
         """Convert plain resume text into a list of Platypus flowables."""
         flowables = []
+        # Defense-in-depth: ResumeTailorer already strips Markdown from LLM
+        # output, but this generator has no Markdown parser of its own, so
+        # a stray "**"/"*" reaching here (from any caller, not just the
+        # tailoring pipeline) would otherwise render as a literal character
+        # -- or worse, a line starting with "*" gets misread as a bullet by
+        # the check below, corrupting its leading text too. Found live
+        # (2026-09-22): "**CVS Health** | Woonsocket, RI" rendered as
+        # "• CVS Health** | Woonsocket, RI".
+        resume_text = resume_text.replace("**", "").replace("*", "")
         lines = resume_text.splitlines()
         bullet_char = (style_hints or {}).get("bullet_char", "•")
+        prev_was_org_header = False
 
         for raw_line in lines:
             line = raw_line.strip()
             if not line:
                 flowables.append(Spacer(1, 4))
+                prev_was_org_header = False
                 continue
 
             # Skip a leading line that just repeats the candidate's name;
@@ -218,13 +250,27 @@ class PDFGenerator:
 
             if self._is_section_heading(line):
                 flowables.append(Paragraph(self._escape(line), styles["section"]))
-            elif line.startswith(("-", "*", "•")):
-                bullet_text = line.lstrip("-*• ").strip()
+                prev_was_org_header = False
+            elif line.startswith(("-", "•")):
+                bullet_text = line.lstrip("-• ").strip()
                 flowables.append(
                     Paragraph(f"{bullet_char} {self._escape(bullet_text)}", styles["bullet"])
                 )
+                prev_was_org_header = False
+            elif self._looks_like_org_header(line):
+                # "Employer | Location    Dates" (or "Institution | ...") --
+                # render bold like the original resume's own layout, instead
+                # of flattening it into a body line or a bullet.
+                flowables.append(Paragraph(self._escape(line), styles["org_header"]))
+                prev_was_org_header = True
+            elif prev_was_org_header:
+                # The line right after an org header is the job title /
+                # degree -- render italic, matching the original layout.
+                flowables.append(Paragraph(self._escape(line), styles["title_line"]))
+                prev_was_org_header = False
             else:
                 flowables.append(Paragraph(self._escape(line), styles["body"]))
+                prev_was_org_header = False
 
         return flowables
 
@@ -236,6 +282,15 @@ class PDFGenerator:
             return False
         is_all_caps = all(c.isupper() for c in letters)
         return is_all_caps and len(line) <= 60
+
+    _ORG_HEADER_YEAR = re.compile(r"(?:19|20)\d{2}")
+
+    @classmethod
+    def _looks_like_org_header(cls, line: str) -> bool:
+        """A line like "Employer | Location    Dates" or "Institution |
+        Location  Year-Year": contains a pipe AND a 4-digit year, and isn't
+        a bullet (already filtered out by the caller)."""
+        return "|" in line and bool(cls._ORG_HEADER_YEAR.search(line))
 
     @staticmethod
     def _escape(text: str) -> str:

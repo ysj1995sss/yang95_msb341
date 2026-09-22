@@ -5,7 +5,7 @@ from resume_tailorer.models import CareerTruthProfile, WorkExperience, Education
 from resume_tailorer.analyzers import JobAnalyzer
 from resume_tailorer.analyzers.gap_analyzer import GapCategory, GapItem, GapReport
 from resume_tailorer.tailorer import ResumeTailorer
-from resume_tailorer.tailorer.resume_tailorer import _strip_non_resume_content
+from resume_tailorer.tailorer.resume_tailorer import _strip_non_resume_content, _strip_markdown_syntax
 from resume_tailorer.llm.client import LLMClient
 
 
@@ -242,4 +242,52 @@ def test_tailor_strips_notes_commentary_from_llm_output(
 
     assert "NOTES" not in result
     assert "Kubernetes was flagged" not in result
+    assert "Built REST APIs" in result
+
+
+# --- _strip_markdown_syntax: defense-in-depth cleanup for a model that
+# formats its output in Markdown despite never being asked to -- observed
+# live against DeepSeek-v4-flash-Free on 2026-09-22: "**EDUCATION**" and
+# "**CVS Health** | Woonsocket, RI" rendered with literal asterisks in the
+# PDF, and a line starting with "*" got misread as a bullet by
+# PDFGenerator's own heuristic, corrupting the leading text too --------
+
+
+def test_strip_markdown_removes_bold_markers():
+    text = "**EDUCATION**\n**CVS Health** | Woonsocket, RI"
+    result = _strip_markdown_syntax(text)
+    assert "*" not in result
+    assert "EDUCATION" in result
+    assert "CVS Health" in result
+
+
+def test_strip_markdown_removes_italic_markers():
+    text = "Marketing Manager | *May 2026 - Aug 2026*"
+    result = _strip_markdown_syntax(text)
+    assert "*" not in result
+    assert "May 2026 - Aug 2026" in result
+
+
+def test_strip_markdown_handles_unpaired_asterisks():
+    """The observed real bug was unpaired -- "** Shangjun Yang**" with no
+    matching opening marker for the trailing "**"."""
+    text = "Shangjun Yang**"
+    result = _strip_markdown_syntax(text)
+    assert result == "Shangjun Yang"
+
+
+def test_tailor_strips_markdown_from_llm_output(
+    sample_profile, sample_job_analysis, sample_gap_report
+):
+    """End-to-end: tailor() must strip Markdown, not just the helper function."""
+    llm = MagicMock(spec=LLMClient)
+    llm.complete.return_value = (
+        "**Jane Doe**\n\n**EDUCATION**\n- **MIT** | *2018*\n\n"
+        "**WORK EXPERIENCE**\n- Built REST APIs"
+    )
+    tailorer = ResumeTailorer(llm=llm)
+    result = tailorer.tailor(sample_profile, sample_job_analysis, sample_gap_report)
+
+    assert "*" not in result
+    assert "Jane Doe" in result
     assert "Built REST APIs" in result

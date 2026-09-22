@@ -90,6 +90,12 @@ class ResumeParser:
         tools = self._extract_tools(text)
         certifications = self._extract_certifications(text)
 
+        # Extract the professional summary paragraph, if there is one --
+        # found missing live (2026-09-22): a real resume's 3-sentence
+        # summary under the name was silently dropped because
+        # CareerTruthProfile had nowhere to put it at all.
+        summary = self._extract_summary(text)
+
         return CareerTruthProfile(
             contact_info=contact_info,
             education=education,
@@ -98,7 +104,53 @@ class ResumeParser:
             tools=tools,
             certifications=certifications,
             accomplishments=[],  # Will be extracted from work_experience
+            summary=summary,
         )
+
+    _SUMMARY_STOP_HEADINGS = re.compile(
+        r"^\s*(EDUCATION|(?:WORK\s+)?EXPERIENCE|PROFESSIONAL\s+EXPERIENCE|SKILLS|TECHNICAL|"
+        r"CERTIFICATIONS|ADDITIONAL)\b",
+        re.IGNORECASE,
+    )
+
+    def _extract_summary(self, text: str) -> str:
+        """
+        Extract a professional-summary paragraph: the free text between the
+        contact info block and the first recognized section heading.
+
+        Skips the name line (short, near the top) and any line that looks
+        like contact info (email, phone, URL) rather than prose.
+        """
+        lines = text.split("\n")
+        start_idx = None
+        end_idx = None
+
+        for i, raw_line in enumerate(lines):
+            line = raw_line.strip()
+            if not line:
+                continue
+            if self._SUMMARY_STOP_HEADINGS.match(line):
+                end_idx = i
+                break
+            looks_like_contact = (
+                "@" in line
+                or "http" in line.lower()
+                or "linkedin" in line.lower()
+                or re.search(r"\d{3}[-.\s]?\d{3}[-.\s]?\d{4}", line)
+            )
+            if looks_like_contact:
+                continue
+            if start_idx is None and i < NAME_SEARCH_LINES and len(line.split()) <= 6:
+                # Short line near the top before any real prose -- almost
+                # certainly the name, not the summary.
+                continue
+            if start_idx is None:
+                start_idx = i
+
+        if start_idx is not None and end_idx is not None and start_idx < end_idx:
+            summary_lines = [lines[i].strip() for i in range(start_idx, end_idx) if lines[i].strip()]
+            return " ".join(summary_lines)
+        return ""
 
     def _extract_contact_info(self, text: str) -> dict:
         """Extract name, email, phone, location from resume text."""
@@ -125,92 +177,95 @@ class ResumeParser:
         return contact_info
 
     def _extract_education(self, text: str) -> list[EducationEntry]:
-        """Extract education entries (simple regex-based)."""
+        """
+        Extract education entries, anchored on each "Institution | Location
+        Dates" line (contains a year, not a bullet) -- mirroring the fix
+        applied to _extract_work_experience for the same reason: the
+        previous per-entry splitter (looking for lines starting with a
+        degree abbreviation) silently dropped a second degree entirely and
+        discarded every bullet underneath each entry (scholarships, notable
+        coursework) -- found live (2026-09-22) on a real two-degree resume
+        where the MBA in progress vanished completely and a work-experience
+        bullet ended up misfiled under Education.
+        """
         education = []
 
-        # Look for EDUCATION section
-        if "education" in text.lower():
-            edu_match = re.search(
-                r"education[:]*\s*\n(.*?)(?:\n(?:TECHNICAL|SKILLS|WORK|EXPERIENCE|CERTIFICATIONS|[A-Z]{2,}[\s:]*$))",
-                text,
-                re.IGNORECASE | re.DOTALL | re.MULTILINE
+        if "education" not in text.lower():
+            return education
+
+        edu_match = re.search(
+            r"education[:]*\s*\n(.*?)(?:\n(?:TECHNICAL|SKILLS|WORK|EXPERIENCE|PROFESSIONAL|"
+            r"CERTIFICATIONS|ADDITIONAL|[A-Z]{2,}[\s:]*$))",
+            text,
+            re.IGNORECASE | re.DOTALL | re.MULTILINE,
+        )
+        if not edu_match:
+            return education
+
+        lines = edu_match.group(1).split("\n")
+
+        anchor_idxs = [
+            i
+            for i, line in enumerate(lines)
+            if self._YEAR_PATTERN.search(line) and not line.strip().startswith(("•", "-"))
+        ]
+
+        for a, idx in enumerate(anchor_idxs):
+            institution_line = lines[idx].strip()
+            parts = re.split(r"\s*\|\s*", institution_line)
+            institution = parts[0].strip() if parts and parts[0].strip() else "Unknown"
+
+            years = [int(y) for y in re.findall(r"(?:19|20)\d{2}", institution_line)]
+            year = years[-1] if years else None  # last year on the line = graduation/end year
+            if not year:
+                continue
+
+            end_idx = anchor_idxs[a + 1] if a + 1 < len(anchor_idxs) else len(lines)
+
+            # The degree is the next non-blank line after the institution
+            # line, as long as it isn't a bullet.
+            degree_text = ""
+            after_degree_idx = idx + 1
+            for j in range(idx + 1, end_idx):
+                candidate = lines[j].strip()
+                if not candidate:
+                    continue
+                if not candidate.startswith(("•", "-")):
+                    degree_text = candidate
+                    after_degree_idx = j + 1
+                break
+
+            # MBA/PhD tried before the shorter B.S./M.A.-style patterns, and
+            # a negative lookahead blocks a mid-word false match (e.g.
+            # "M.?A.?" was matching "Ma" inside "Master" before falling
+            # through to the fallback below).
+            degree_match = re.search(
+                r"\b(MBA|Ph\.?D\.?|B\.?S\.?|M\.?S\.?|B\.?A\.?|M\.?A\.?)(?![a-zA-Z])\s*(.*)",
+                degree_text,
+                re.IGNORECASE,
             )
+            if degree_match:
+                degree = degree_match.group(1).strip()
+                field = degree_match.group(2).strip()
+            else:
+                degree = degree_text
+                field = ""
 
-            if edu_match:
-                edu_section = edu_match.group(1).strip()
+            notes = [
+                lines[j].strip().lstrip("•-").strip()
+                for j in range(after_degree_idx, end_idx)
+                if lines[j].strip().startswith(("•", "-"))
+            ]
 
-                # Split education entries by looking for patterns with degrees
-                # Look for lines that start with degree abbreviations
-                degree_lines = re.findall(
-                    r"((?:B\.?S\.?|M\.?S\.?|B\.?A\.?|M\.?A\.?|Ph\.?D\.?|MBA)\s+.+?)(?:\n(?:[A-Z][a-zA-Z\s,\.0-9&-]*?\s*\|?\s*\d{4})?)",
-                    edu_section,
-                    re.IGNORECASE
+            education.append(
+                EducationEntry(
+                    degree=degree,
+                    field=field,
+                    institution=institution,
+                    year=year,
+                    notes=notes,
                 )
-
-                # Process each potential education entry
-                entries = edu_section.split('\n\n')  # Split by double newline first
-                if len(entries) == 1:
-                    # If no double newlines, try to extract based on degree pattern
-                    lines = edu_section.split('\n')
-                    entries = []
-                    current_entry = []
-                    for line in lines:
-                        if re.match(r"^(B\.?S\.?|M\.?S\.?|B\.?A\.?|M\.?A\.?|Ph\.?D\.?|MBA)\b", line, re.IGNORECASE):
-                            if current_entry:
-                                entries.append('\n'.join(current_entry))
-                            current_entry = [line]
-                        else:
-                            current_entry.append(line)
-                    if current_entry:
-                        entries.append('\n'.join(current_entry))
-
-                for entry in entries:
-                    if not entry.strip():
-                        continue
-
-                    lines = [l.strip() for l in entry.strip().split('\n') if l.strip()]
-                    if not lines:
-                        continue
-
-                    degree_line = lines[0]
-
-                    # Extract degree and field from first line
-                    degree_match = re.search(
-                        r"(B\.?S\.?|M\.?S\.?|B\.?A\.?|M\.?A\.?|Ph\.?D\.?|MBA)\s+(.+?)$",
-                        degree_line,
-                        re.IGNORECASE
-                    )
-
-                    if degree_match:
-                        degree = degree_match.group(1).strip()
-                        field = degree_match.group(2).strip()
-
-                        # Get institution and year from remaining lines
-                        institution = "Unknown"
-                        year = None
-
-                        for i in range(1, len(lines)):
-                            detail_line = lines[i]
-
-                            # Extract year (4 digits)
-                            year_match = re.search(r'(\d{4})', detail_line)
-                            if year_match:
-                                year = int(year_match.group(1))
-
-                            # Extract institution (everything before year or pipe)
-                            inst_part = detail_line.split('|')[0].strip()
-                            if inst_part and inst_part != str(year):
-                                institution = inst_part
-
-                        if year:
-                            education.append(
-                                EducationEntry(
-                                    degree=degree,
-                                    field=field,
-                                    institution=institution,
-                                    year=year,
-                                )
-                            )
+            )
 
         return education
 

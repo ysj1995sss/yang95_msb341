@@ -211,3 +211,58 @@ def test_generate_2_page_target_produces_larger_fonts_in_output(tmp_path):
     # Different presets must produce different PDF byte content (proves the preset actually affects generation)
     with open(path_1page, "rb") as f1, open(path_2page, "rb") as f2:
         assert f1.read() != f2.read()
+
+
+class TestMarkdownDefenseAndOrgHeaderLayout:
+    """
+    Regression tests for two bugs found live (2026-09-22): a real LLM
+    formatted its output in Markdown despite never being asked to, and
+    PDFGenerator's line classifier flattened every "Employer | Location
+    Dates" line into a plain body line (or, when it started with a stray
+    "*", into a corrupted bullet), losing the bold-employer/italic-title
+    layout the original resume had.
+    """
+
+    def test_stray_markdown_asterisks_do_not_reach_the_pdf(self, tmp_path):
+        resume_text = (
+            "**EDUCATION**\n"
+            "**MIT** | Cambridge, MA 2018\n"
+            "*BS Computer Science*\n"
+            "- Built REST APIs\n"
+        )
+        gen = PDFGenerator()
+        path = gen.generate(resume_text, "Jane Doe", output_path=str(tmp_path / "resume.pdf"))
+        reader = PdfReader(path)
+        text = "".join(page.extract_text() or "" for page in reader.pages)
+        assert "*" not in text
+
+    def test_org_header_line_is_not_flattened_into_a_bullet(self, tmp_path):
+        """A line starting with a stray "*" (from unstripped Markdown) must
+        not get misread as a bullet and have its leading text mangled."""
+        resume_text = "**MIT** | Cambridge, MA 2018\nBS Computer Science\n- Built REST APIs\n"
+        gen = PDFGenerator()
+        path = gen.generate(resume_text, "Jane Doe", output_path=str(tmp_path / "resume.pdf"))
+        reader = PdfReader(path)
+        text = "".join(page.extract_text() or "" for page in reader.pages)
+        assert "MIT" in text
+        # The employer/institution line itself must not have been turned
+        # into a bullet point.
+        assert "• MIT" not in text and "- MIT" not in text
+
+    def test_line_with_pipe_and_year_is_treated_as_org_header(self):
+        assert PDFGenerator._looks_like_org_header("CVS Health | Woonsocket, RI 2026") is True
+        assert PDFGenerator._looks_like_org_header("State University | Provo, UT 2020-2024") is True
+
+    def test_plain_body_line_is_not_treated_as_org_header(self):
+        assert PDFGenerator._looks_like_org_header("A summary sentence about the candidate.") is False
+        assert PDFGenerator._looks_like_org_header("Skills: Python, SQL") is False
+
+    def test_title_line_after_org_header_renders_and_extracts(self, tmp_path):
+        resume_text = "CVS Health | Woonsocket, RI 2026\nMarketing Intern\n- Did the work\n"
+        gen = PDFGenerator()
+        path = gen.generate(resume_text, "Jane Doe", output_path=str(tmp_path / "resume.pdf"))
+        reader = PdfReader(path)
+        text = "".join(page.extract_text() or "" for page in reader.pages)
+        assert "CVS Health" in text
+        assert "Marketing Intern" in text
+        assert "Did the work" in text

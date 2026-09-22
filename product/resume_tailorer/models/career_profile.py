@@ -1,4 +1,4 @@
-from dataclasses import dataclass, asdict
+from dataclasses import dataclass, asdict, field as dataclass_field
 from typing import Optional
 
 
@@ -10,6 +10,7 @@ class EducationEntry:
     institution: str  # e.g., "MIT"
     year: int  # graduation year
     gpa: Optional[str] = None  # e.g., "3.9"
+    notes: list[str] = dataclass_field(default_factory=list)  # e.g. scholarships, honors, projects
 
 
 @dataclass
@@ -37,6 +38,7 @@ class CareerTruthProfile:
     tools: list[str]  # e.g., ["Docker", "PostgreSQL", "AWS"]
     certifications: list[str]  # e.g., ["AWS Solutions Architect"]
     accomplishments: list[str]  # career-level accomplishments not tied to a specific job
+    summary: str = ""  # professional summary paragraph, if the original resume had one
 
     @property
     def name(self) -> str:
@@ -60,6 +62,7 @@ class CareerTruthProfile:
             "tools": self.tools,
             "certifications": self.certifications,
             "accomplishments": self.accomplishments,
+            "summary": self.summary,
         }
 
     @classmethod
@@ -73,4 +76,5 @@ class CareerTruthProfile:
             tools=data.get("tools", []),
             certifications=data.get("certifications", []),
             accomplishments=data.get("accomplishments", []),
+            summary=data.get("summary", ""),
         )

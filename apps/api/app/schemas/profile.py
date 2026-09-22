@@ -14,6 +14,7 @@ class EducationEntryOut(BaseModel):
     institution: str = ""
     year: int = 0
     gpa: str | None = None
+    notes: list[str] = Field(default_factory=list)
 
 
 class WorkExperienceOut(BaseModel):
@@ -34,3 +35,4 @@ class CareerTruthProfileOut(BaseModel):
     tools: list[str] = Field(default_factory=list)
     certifications: list[str] = Field(default_factory=list)
     accomplishments: list[str] = Field(default_factory=list)
+    summary: str = ""

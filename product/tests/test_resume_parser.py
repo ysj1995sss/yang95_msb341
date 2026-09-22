@@ -186,3 +186,72 @@ def test_get_raw_text_rejects_legacy_doc():
     parser = ResumeParser()
     with pytest.raises(ValueError, match=r"\.doc"):
         parser.get_raw_text("resume.doc")
+
+
+class TestEducationAndSummaryExtraction:
+    """
+    Regression tests for two bugs found live (2026-09-22) on a real
+    two-degree resume: the MBA (a second, in-progress degree) vanished
+    entirely, its scholarship/honors bullets were dropped, and a
+    3-sentence professional summary paragraph had nowhere to be stored at
+    all (CareerTruthProfile had no summary field).
+    """
+
+    REAL_STYLE_RESUME = (
+        "Jane Doe\n"
+        "(555) 123-4567 https://www.linkedin.com/in/janedoe/ jane@example.com\n"
+        "Data-savvy analyst with a proven record of driving growth. Expert in translating\n"
+        "insights into action and delivering measurable outcomes.\n"
+        "EDUCATION\n"
+        "STATE UNIVERSITY, SCHOOL OF BUSINESS | Springfield, IL Sept 2025-Apr 2027\n"
+        "Master of Business Administration\n"
+        "• Awarded Half-Tuition Merit Scholarship\n"
+        "• Consulted Acme Corp on a market-entry analysis\n"
+        "STATE UNIVERSITY-NORTH | Springfield, IL Apr 2018-Apr 2022\n"
+        "B.S. Business Administration (Summa Cum Laude)\n"
+        "• Dean's List x5 Semesters | GPA: 3.9/4.0\n"
+        "PROFESSIONAL EXPERIENCE\n"
+        "Analyst\n"
+        "Acme Widgets | Remote Jan 2022-Present\n"
+        "• Improved operational productivity by 15%\n"
+    )
+
+    def test_both_degrees_are_extracted_not_just_the_first(self):
+        parser = ResumeParser()
+        education = parser._extract_education(self.REAL_STYLE_RESUME)
+        assert len(education) == 2
+        assert "master" in education[0].degree.lower() or education[0].degree.upper() == "MBA"
+        assert education[0].year == 2027
+        assert "B.S" in education[1].degree.upper() or "BS" in education[1].degree.upper()
+        assert education[1].year == 2022
+
+    def test_education_bullets_are_preserved_as_notes(self):
+        parser = ResumeParser()
+        education = parser._extract_education(self.REAL_STYLE_RESUME)
+        mba = education[0]
+        assert any("Scholarship" in n for n in mba.notes)
+        assert any("Acme Corp" in n for n in mba.notes)
+
+    def test_work_experience_bullet_does_not_leak_into_education(self):
+        parser = ResumeParser()
+        education = parser._extract_education(self.REAL_STYLE_RESUME)
+        all_notes = [n for e in education for n in e.notes]
+        assert not any("operational productivity" in n for n in all_notes)
+
+    def test_summary_paragraph_is_extracted(self):
+        parser = ResumeParser()
+        summary = parser._extract_summary(self.REAL_STYLE_RESUME)
+        assert "Data-savvy analyst" in summary
+        assert "measurable outcomes" in summary
+
+    def test_summary_excludes_name_and_contact_line(self):
+        parser = ResumeParser()
+        summary = parser._extract_summary(self.REAL_STYLE_RESUME)
+        assert "Jane Doe" not in summary
+        assert "jane@example.com" not in summary
+
+    def test_full_parse_includes_summary_on_the_profile(self):
+        parser = ResumeParser()
+        profile = parser._parse_text(self.REAL_STYLE_RESUME)
+        assert profile.summary
+        assert "Data-savvy analyst" in profile.summary
