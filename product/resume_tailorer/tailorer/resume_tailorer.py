@@ -76,6 +76,124 @@ def _strip_markdown_syntax(text: str) -> str:
     return text.replace("**", "").replace("*", "")
 
 
+# The LLM phrases job/education header lines differently on essentially
+# every call -- "Employer | Location Dates" one time, "Title at Employer"
+# the next, "Degree from Institution (Year)" another -- and chasing each
+# new phrasing with a PDF-layout heuristic is a losing game (found live,
+# 2026-09-22, three separate times against the same real resume). The fix
+# used by a reference implementation (github.com/jddavenportOpen/
+# recruit-copilot) is to never let header formatting come from the LLM at
+# all: render employer/title/dates/institution straight from the verified
+# CareerTruthProfile every time. Rather than a full rewrite to a fully
+# structured LLM response, this reconciles after the fact -- detect the
+# header/bullets block for each job and education entry by its POSITION
+# (bullets group N belongs to profile entry N, since job order is fixed
+# going into the prompt) and replace only the header line(s), leaving the
+# LLM's tailored bullet text untouched. This also closes a subtler gap:
+# nothing previously enforced that the LLM's own header text stayed
+# byte-identical to the verified employer name / dates rather than a
+# paraphrase of them.
+_SECTION_HEADING_RE = re.compile(r"^[A-Z][A-Z0-9 &/-]{2,}$")
+
+
+def _split_into_entry_blocks(lines: list[str]) -> list[tuple[list[str], list[str]]]:
+    """Split a list of lines into (header_lines, bullet_lines) blocks. A new
+    block starts whenever a non-bullet, non-heading line follows a run of
+    bullets (or at the very start)."""
+    blocks: list[tuple[list[str], list[str]]] = []
+    header_lines: list[str] = []
+    bullet_lines: list[str] = []
+    in_bullets = False
+
+    for raw_line in lines:
+        line = raw_line.strip()
+        if not line or _SECTION_HEADING_RE.match(line):
+            continue
+        is_bullet = line.startswith(("-", "•"))
+        if is_bullet:
+            bullet_lines.append(line.lstrip("-• ").strip())
+            in_bullets = True
+        else:
+            if in_bullets:
+                blocks.append((header_lines, bullet_lines))
+                header_lines, bullet_lines = [], []
+                in_bullets = False
+            header_lines.append(line)
+
+    if header_lines or bullet_lines:
+        blocks.append((header_lines, bullet_lines))
+    return blocks
+
+
+def _job_header_lines(job) -> list[str]:
+    location_part = f"{job.location}    " if job.location else ""
+    return [f"{job.employer} | {location_part}{job.dates}".rstrip(), job.title]
+
+
+def _education_header_lines(edu) -> list[str]:
+    degree_line = f"{edu.degree} in {edu.field}" if edu.field else edu.degree
+    return [f"{edu.institution} | {edu.year}", degree_line]
+
+
+def _reassemble_section(
+    section_lines: list[str], entries: list, header_builder
+) -> list[str]:
+    """Rebuild a section's lines with deterministic, profile-sourced headers,
+    matching bullet blocks to profile entries by position. Falls back to
+    leaving the section untouched if the block count doesn't match the
+    profile's entry count -- safer than guessing a mismatched pairing."""
+    blocks = _split_into_entry_blocks(section_lines)
+    if len(blocks) != len(entries):
+        return section_lines
+
+    rebuilt: list[str] = []
+    for (_, bullet_lines), entry in zip(blocks, entries):
+        rebuilt.extend(header_builder(entry))
+        rebuilt.extend(f"- {b}" for b in bullet_lines)
+        rebuilt.append("")
+    return rebuilt
+
+
+def _find_section(lines: list[str], heading_pattern: str) -> tuple[int, int] | None:
+    """Return (start, end) line indices of a section's BODY (excluding the
+    heading itself), from the matching ALL-CAPS heading to the next ALL-CAPS
+    heading or end of text."""
+    heading_re = re.compile(heading_pattern, re.IGNORECASE)
+    start = None
+    for i, line in enumerate(lines):
+        stripped = line.strip()
+        if start is None and heading_re.match(stripped) and _SECTION_HEADING_RE.match(stripped):
+            start = i + 1
+            continue
+        if start is not None and _SECTION_HEADING_RE.match(stripped) and not heading_re.match(stripped):
+            return start, i
+    if start is not None:
+        return start, len(lines)
+    return None
+
+
+def _reconcile_headers_with_profile(text: str, profile: CareerTruthProfile) -> str:
+    """Replace job/education header lines with deterministic ones sourced
+    directly from the verified profile, leaving tailored bullet text as-is."""
+    lines = text.split("\n")
+
+    if profile.work_experience:
+        bounds = _find_section(lines, r"(?:WORK\s+)?EXPERIENCE")
+        if bounds:
+            start, end = bounds
+            rebuilt = _reassemble_section(lines[start:end], profile.work_experience, _job_header_lines)
+            lines = lines[:start] + rebuilt + lines[end:]
+
+    if profile.education:
+        bounds = _find_section(lines, r"EDUCATION")
+        if bounds:
+            start, end = bounds
+            rebuilt = _reassemble_section(lines[start:end], profile.education, _education_header_lines)
+            lines = lines[:start] + rebuilt + lines[end:]
+
+    return "\n".join(lines)
+
+
 class ResumeTailorer:
     """
     LLM-powered resume tailoring engine.
@@ -129,7 +247,8 @@ class ResumeTailorer:
         system_prompt = self._build_system_prompt()
         user_prompt = self._build_user_prompt(profile, job_analysis, gap_report)
         raw = self.llm.complete(system_prompt, user_prompt, max_tokens=2000)
-        return _strip_markdown_syntax(_strip_non_resume_content(raw))
+        cleaned = _strip_markdown_syntax(_strip_non_resume_content(raw))
+        return _reconcile_headers_with_profile(cleaned, profile)
 
     def _build_system_prompt(self) -> str:
         """
@@ -463,7 +582,8 @@ Provide the tailored resume content now:"""
         system_prompt = self._build_refinement_system_prompt()
         user_prompt = self._build_refinement_user_prompt(current_resume, improvement_prompt, profile)
         raw = self.llm.complete(system_prompt, user_prompt, max_tokens=2000)
-        return _strip_markdown_syntax(_strip_non_resume_content(raw))
+        cleaned = _strip_markdown_syntax(_strip_non_resume_content(raw))
+        return _reconcile_headers_with_profile(cleaned, profile)
 
     def _build_refinement_system_prompt(self) -> str:
         """

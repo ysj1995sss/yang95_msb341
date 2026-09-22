@@ -5,7 +5,11 @@ from resume_tailorer.models import CareerTruthProfile, WorkExperience, Education
 from resume_tailorer.analyzers import JobAnalyzer
 from resume_tailorer.analyzers.gap_analyzer import GapCategory, GapItem, GapReport
 from resume_tailorer.tailorer import ResumeTailorer
-from resume_tailorer.tailorer.resume_tailorer import _strip_non_resume_content, _strip_markdown_syntax
+from resume_tailorer.tailorer.resume_tailorer import (
+    _strip_non_resume_content,
+    _strip_markdown_syntax,
+    _reconcile_headers_with_profile,
+)
 from resume_tailorer.llm.client import LLMClient
 
 
@@ -291,3 +295,84 @@ def test_tailor_strips_markdown_from_llm_output(
     assert "*" not in result
     assert "Jane Doe" in result
     assert "Built REST APIs" in result
+
+
+# --- _reconcile_headers_with_profile: the LLM phrases job/education header
+# lines differently on essentially every call ("Employer | Location Dates"
+# one time, "Title at Employer" the next, "Degree from Institution (Year)"
+# another), and chasing each new phrasing with a PDF-layout heuristic is a
+# losing game -- found live (2026-09-22) three separate times against the
+# same real resume. This replaces whatever header text the LLM wrote with a
+# deterministic line built straight from the verified profile, leaving the
+# tailored bullet text untouched, matching by position. -----------------
+
+
+class TestReconcileHeadersWithProfile:
+    def test_replaces_pipe_style_header_with_canonical_one(self, sample_profile):
+        text = (
+            "WORK EXPERIENCE\n"
+            "**TechCorp** | Remote\n"
+            "- Built microservices using Python and Go\n"
+            "- Managed Docker containers\n"
+            "StartupXYZ (2018 to 2020)\n"
+            "- Developed frontend with React\n"
+        )
+        result = _reconcile_headers_with_profile(text, sample_profile)
+        assert "TechCorp | San Francisco, CA    2020-2022" in result
+        assert "Software Engineer" in result
+        assert "StartupXYZ | 2018-2020" in result
+        assert "Junior Developer" in result
+        # Bullet content must survive untouched.
+        assert "Built microservices using Python and Go" in result
+        assert "Developed frontend with React" in result
+
+    def test_replaces_title_at_employer_style_header(self, sample_profile):
+        text = (
+            "WORK EXPERIENCE\n"
+            "Software Engineer at TechCorp\n"
+            "- Built microservices using Python and Go\n"
+            "Junior Developer at StartupXYZ\n"
+            "- Developed frontend with React\n"
+        )
+        result = _reconcile_headers_with_profile(text, sample_profile)
+        assert "TechCorp | San Francisco, CA    2020-2022" in result
+        assert "StartupXYZ | 2018-2020" in result
+
+    def test_education_header_is_reconciled_too(self, sample_profile):
+        text = (
+            "EDUCATION\n"
+            "Bachelor of Science from MIT (2018)\n"
+            "- Dean's List\n"
+        )
+        result = _reconcile_headers_with_profile(text, sample_profile)
+        assert "MIT | 2018" in result
+        assert "BS in Computer Science" in result
+        assert "Dean's List" in result
+
+    def test_falls_back_untouched_when_block_count_does_not_match(self, sample_profile):
+        """Safer to leave the section as-is than guess a mismatched pairing
+        (e.g. the LLM merged two jobs into one block, or dropped one)."""
+        text = (
+            "WORK EXPERIENCE\n"
+            "Software Engineer at TechCorp\n"
+            "- Built microservices using Python and Go\n"
+        )  # Only 1 block, but sample_profile has 2 work_experience entries.
+        result = _reconcile_headers_with_profile(text, sample_profile)
+        assert "Software Engineer at TechCorp" in result  # untouched original header
+        assert "TechCorp | San Francisco, CA    2020-2022" not in result
+
+    def test_bullets_and_content_outside_reconciled_sections_are_untouched(self, sample_profile):
+        text = (
+            "PROFESSIONAL SUMMARY\n"
+            "A great engineer.\n"
+            "WORK EXPERIENCE\n"
+            "Software Engineer at TechCorp\n"
+            "- Built microservices using Python and Go\n"
+            "Junior Developer at StartupXYZ\n"
+            "- Developed frontend with React\n"
+            "SKILLS\n"
+            "Python, Go\n"
+        )
+        result = _reconcile_headers_with_profile(text, sample_profile)
+        assert "A great engineer." in result
+        assert "Python, Go" in result
