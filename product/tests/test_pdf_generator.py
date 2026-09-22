@@ -266,3 +266,76 @@ class TestMarkdownDefenseAndOrgHeaderLayout:
         assert "CVS Health" in text
         assert "Marketing Intern" in text
         assert "Did the work" in text
+
+
+class TestCombinedHeaderPattern:
+    """
+    Regression tests for a bug found live (2026-09-22): the LLM sometimes
+    writes "Title at Employer" then "Location | Dates" (two lines) instead
+    of "Employer | Location Dates" then "Title" -- both are reasonable
+    resume phrasings, but only the second matched the original org-header
+    heuristic, so the first left the job title as unstyled plain text.
+    """
+
+    def test_title_at_employer_is_a_combined_header(self):
+        assert PDFGenerator._looks_like_combined_header("Marketing Manager at Acme Corp") is True
+
+    def test_degree_from_institution_is_a_combined_header(self):
+        assert PDFGenerator._looks_like_combined_header(
+            "Master of Business Administration from State University (2027)"
+        ) is True
+
+    def test_prose_sentence_with_at_or_from_is_not_a_combined_header(self):
+        """Resume header lines never end in a sentence period; prose does."""
+        assert PDFGenerator._looks_like_combined_header(
+            "Expert at leveraging data analytics to unlock insights."
+        ) is False
+        assert PDFGenerator._looks_like_combined_header(
+            "Consulted a client from a Fortune 500 company on strategy."
+        ) is False
+
+    def test_line_with_pipe_is_not_a_combined_header(self):
+        """The pipe-based org-header check already handles this case."""
+        assert PDFGenerator._looks_like_combined_header("CVS Health | Woonsocket, RI 2026") is False
+
+    def test_second_header_line_after_a_combined_header_becomes_subtitle_not_bold_again(self, tmp_path):
+        resume_text = (
+            "Marketing Manager at Acme Corp\n"
+            "Remote | 2022 - 2024\n"
+            "- Did the work\n"
+        )
+        gen = PDFGenerator()
+        path = gen.generate(resume_text, "Jane Doe", output_path=str(tmp_path / "resume.pdf"))
+        reader = PdfReader(path)
+        text = "".join(page.extract_text() or "" for page in reader.pages)
+        assert "Acme Corp" in text
+        assert "Remote" in text
+        assert "Did the work" in text
+
+
+class TestFontSanitization:
+    """
+    Regression test for a bug found live (2026-09-22): a real company name
+    ("Mondelez", spelled with a macron-e) rendered as a broken box glyph in
+    the actual PDF -- the character is outside reportlab's base Helvetica
+    font's supported WinAnsiEncoding range.
+    """
+
+    def test_macron_e_is_transliterated_not_dropped_or_broken(self):
+        result = PDFGenerator._sanitize_for_font("Mondelēz")
+        assert result == "Mondelez"
+
+    def test_common_latin1_accents_still_work_fine(self):
+        # These ARE in WinAnsiEncoding -- confirm the sanitizer doesn't
+        # over-aggressively mangle characters that render correctly already.
+        result = PDFGenerator._sanitize_for_font("Café naïve")
+        assert result == "Cafe naive"
+
+    def test_generated_pdf_has_no_replacement_glyphs_for_unusual_characters(self, tmp_path):
+        resume_text = "- Consulted Mondelēz on a growth strategy\n"
+        gen = PDFGenerator()
+        path = gen.generate(resume_text, "Jane Doe", output_path=str(tmp_path / "resume.pdf"))
+        reader = PdfReader(path)
+        text = "".join(page.extract_text() or "" for page in reader.pages)
+        assert "Mondelez" in text
+        assert "�" not in text

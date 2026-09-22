@@ -30,6 +30,7 @@ Scope of `target_length` (important):
 import os
 import re
 import tempfile
+import unicodedata
 
 from reportlab.lib.pagesizes import LETTER
 from reportlab.lib.styles import ParagraphStyle
@@ -258,9 +259,23 @@ class PDFGenerator:
                 )
                 prev_was_org_header = False
             elif self._looks_like_org_header(line):
-                # "Employer | Location    Dates" (or "Institution | ...") --
-                # render bold like the original resume's own layout, instead
-                # of flattening it into a body line or a bullet.
+                # "Employer | Location    Dates" (or "Institution | ...").
+                # If the PREVIOUS line was already a combined header (e.g.
+                # "Title at Employer"), this is a second header line for the
+                # same entry -- render it as the subtitle (italic), not
+                # bold-again. Found live (2026-09-22): the LLM sometimes
+                # writes "Title at Employer" then "Location | Dates" instead
+                # of "Employer | Location Dates" then "Title" -- both are
+                # reasonable, but only one matched the original heuristic.
+                if prev_was_org_header:
+                    flowables.append(Paragraph(self._escape(line), styles["title_line"]))
+                    prev_was_org_header = False
+                else:
+                    flowables.append(Paragraph(self._escape(line), styles["org_header"]))
+                    prev_was_org_header = True
+            elif self._looks_like_combined_header(line):
+                # "Title at Employer" or "Degree from Institution (Year)" --
+                # a single line naming both role/degree and org together.
                 flowables.append(Paragraph(self._escape(line), styles["org_header"]))
                 prev_was_org_header = True
             elif prev_was_org_header:
@@ -292,9 +307,39 @@ class PDFGenerator:
         a bullet (already filtered out by the caller)."""
         return "|" in line and bool(cls._ORG_HEADER_YEAR.search(line))
 
+    # "Marketing Manager at Acme Corp" / "MBA from State University (2027)":
+    # a single line naming both role/degree and organization. Excludes any
+    # line containing "." so ordinary prose sentences (e.g. the professional
+    # summary, which is virtually always multi-sentence) don't get
+    # misdetected as a header just for containing the common words "at" or
+    # "from" -- resume header lines never end in a sentence period.
+    _COMBINED_HEADER = re.compile(r"^[A-Z][^.]*?\s+(?:at|from)\s+[A-Z][^.]*$")
+
+    @classmethod
+    def _looks_like_combined_header(cls, line: str) -> bool:
+        if "|" in line:
+            return False  # the pipe-based check above already handles this
+        return bool(cls._COMBINED_HEADER.match(line))
+
     @staticmethod
-    def _escape(text: str) -> str:
+    def _sanitize_for_font(text: str) -> str:
+        """
+        reportlab's base Helvetica font only supports WinAnsiEncoding, a
+        Latin-1-ish subset -- it covers common accents (e, e, n, etc.) but
+        NOT Latin Extended-A characters like the macron-e in "Mondelez".
+        A character outside that range doesn't raise an error; it silently
+        renders as a broken box glyph in the actual PDF -- found live
+        (2026-09-22) in a real company name. Transliterating to the nearest
+        ASCII via Unicode decomposition trades a little typographic
+        fidelity for guaranteeing nothing renders as a broken glyph.
+        """
+        normalized = unicodedata.normalize("NFKD", text)
+        return "".join(c for c in normalized if not unicodedata.combining(c))
+
+    @classmethod
+    def _escape(cls, text: str) -> str:
         """Escape reportlab/XML-sensitive characters for Paragraph markup."""
+        text = cls._sanitize_for_font(text)
         return (
             text.replace("&", "&amp;")
             .replace("<", "&lt;")
