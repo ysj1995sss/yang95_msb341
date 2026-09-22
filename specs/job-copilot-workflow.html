@@ -1,0 +1,454 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Job Application Copilot Workflow</title>
+    <style>
+        :root {
+            --primary: #2563eb;
+            --success: #16a34a;
+            --warning: #ea580c;
+            --text: #1f2937;
+            --bg: #f9fafb;
+            --border: #e5e7eb;
+        }
+
+        @media (prefers-color-scheme: dark) {
+            :root:not([data-theme="light"]) {
+                --primary: #3b82f6;
+                --success: #22c55e;
+                --warning: #f97316;
+                --text: #f3f4f6;
+                --bg: #111827;
+                --border: #374151;
+            }
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+            line-height: 1.6;
+            color: var(--text);
+            background: var(--bg);
+            margin: 0;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+
+        h1 {
+            font-size: 2em;
+            margin-bottom: 10px;
+            color: var(--primary);
+        }
+
+        .subtitle {
+            color: #666;
+            margin-bottom: 30px;
+            font-size: 0.95em;
+        }
+
+        .sprint-section {
+            margin-bottom: 40px;
+        }
+
+        .sprint-header {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            margin-bottom: 20px;
+            padding-bottom: 10px;
+            border-bottom: 2px solid var(--border);
+        }
+
+        .sprint-badge {
+            background: var(--primary);
+            color: white;
+            padding: 6px 12px;
+            border-radius: 6px;
+            font-weight: 600;
+            font-size: 0.9em;
+        }
+
+        .sprint-title {
+            font-size: 1.4em;
+            font-weight: 600;
+        }
+
+        .steps-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            gap: 16px;
+            margin-bottom: 20px;
+        }
+
+        .step {
+            background: white;
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 16px;
+            box-shadow: 0 1px 2px rgba(0,0,0,0.05);
+        }
+
+        @media (prefers-color-scheme: dark) {
+            :root:not([data-theme="light"]) .step {
+                background: #1f2937;
+            }
+        }
+
+        .step-number {
+            font-weight: 700;
+            color: var(--primary);
+            font-size: 1.1em;
+            margin-bottom: 4px;
+        }
+
+        .step-title {
+            font-weight: 600;
+            margin-bottom: 8px;
+            font-size: 0.95em;
+        }
+
+        .step-desc {
+            font-size: 0.85em;
+            color: #666;
+            line-height: 1.5;
+        }
+
+        @media (prefers-color-scheme: dark) {
+            :root:not([data-theme="light"]) .step-desc {
+                color: #d1d5db;
+            }
+        }
+
+        .status-built {
+            background: #dcfce7;
+            color: #166534;
+            padding: 2px 8px;
+            border-radius: 4px;
+            font-size: 0.75em;
+            font-weight: 600;
+            margin-top: 8px;
+            display: inline-block;
+        }
+
+        @media (prefers-color-scheme: dark) {
+            :root:not([data-theme="light"]) .status-built {
+                background: #164e3f;
+                color: #86efac;
+            }
+        }
+
+        .status-planned {
+            background: #fef08a;
+            color: #854d0e;
+            padding: 2px 8px;
+            border-radius: 4px;
+            font-size: 0.75em;
+            font-weight: 600;
+            margin-top: 8px;
+            display: inline-block;
+        }
+
+        @media (prefers-color-scheme: dark) {
+            :root:not([data-theme="light"]) .status-planned {
+                background: #422006;
+                color: #fef08a;
+            }
+        }
+
+        .flow-diagram {
+            background: white;
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 20px;
+            margin: 20px 0;
+            overflow-x: auto;
+        }
+
+        @media (prefers-color-scheme: dark) {
+            :root:not([data-theme="light"]) .flow-diagram {
+                background: #1f2937;
+            }
+        }
+
+        .flow-text {
+            font-size: 0.9em;
+            white-space: pre-wrap;
+            font-family: 'Monaco', 'Courier New', monospace;
+            color: var(--text);
+        }
+
+        .legend {
+            display: flex;
+            gap: 20px;
+            margin-top: 20px;
+            padding: 15px;
+            background: var(--bg);
+            border-radius: 6px;
+            flex-wrap: wrap;
+        }
+
+        .legend-item {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 0.9em;
+        }
+
+        .legend-color {
+            width: 12px;
+            height: 12px;
+            border-radius: 3px;
+        }
+
+        .section-summary {
+            background: var(--bg);
+            border-left: 4px solid var(--primary);
+            padding: 15px;
+            border-radius: 4px;
+            margin: 15px 0;
+            font-size: 0.95em;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Job Application Copilot</h1>
+        <p class="subtitle">Complete workflow across all sprints — from resume upload to automated job applications</p>
+
+        <!-- SPRINT 1 -->
+        <div class="sprint-section">
+            <div class="sprint-header">
+                <span class="sprint-badge">SPRINT 1</span>
+                <span class="sprint-title">Resume Tailoring MVP (Built ✓)</span>
+            </div>
+            <div class="section-summary">
+                User uploads resume + provides job description → system generates gap report → tailors resume to ≥80% ATS alignment → exports job-specific PDF
+            </div>
+
+            <div class="steps-grid">
+                <div class="step">
+                    <div class="step-number">1</div>
+                    <div class="step-title">Upload Resume</div>
+                    <div class="step-desc">User uploads PDF/DOCX; extract contact, education, experience, skills, accomplishments, certifications</div>
+                    <div class="status-built">✓ Built</div>
+                </div>
+
+                <div class="step">
+                    <div class="step-number">2</div>
+                    <div class="step-title">Career Truth Profile</div>
+                    <div class="step-desc">Convert resume to structured, verified data. AI can only rephrase/reorganize, never invent experience</div>
+                    <div class="status-built">✓ Built</div>
+                </div>
+
+                <div class="step">
+                    <div class="step-number">10</div>
+                    <div class="step-title">Analyze Job Description</div>
+                    <div class="step-desc">Break JD into required/preferred skills, responsibilities, keywords, tools, education, experience levels</div>
+                    <div class="status-built">✓ Built</div>
+                </div>
+
+                <div class="step">
+                    <div class="step-number">11</div>
+                    <div class="step-title">Benchmark Resume</div>
+                    <div class="step-desc">Calculate Resume Match Score: how well current resume communicates qualifications vs. Candidate Fit</div>
+                    <div class="status-built">✓ Built</div>
+                </div>
+
+                <div class="step">
+                    <div class="step-number">12</div>
+                    <div class="step-title">Gap Report</div>
+                    <div class="step-desc">Classify each requirement: already on resume, supported but missing, can be rephrased, needs confirmation, or truly missing</div>
+                    <div class="status-built">✓ Built</div>
+                </div>
+
+                <div class="step">
+                    <div class="step-number">13</div>
+                    <div class="step-title">Tailor Resume</div>
+                    <div class="step-desc">Rephrase, rearrange, reprioritize using only verified experience. Loop analyze → rewrite → score</div>
+                    <div class="status-built">✓ Built</div>
+                </div>
+
+                <div class="step">
+                    <div class="step-number">14</div>
+                    <div class="step-title">Optimize for Target</div>
+                    <div class="step-desc">Reach ≥85% alignment or report the ceiling and missing gaps. Never fabricate to close gap</div>
+                    <div class="status-built">✓ Built</div>
+                </div>
+
+                <div class="step">
+                    <div class="step-number">15</div>
+                    <div class="step-title">Control Length</div>
+                    <div class="step-desc">User chooses 1-page, 2-page, or preserve original length. System adjusts bullets, spacing, priority</div>
+                    <div class="status-built">✓ Built</div>
+                </div>
+
+                <div class="step">
+                    <div class="step-number">16</div>
+                    <div class="step-title">Preserve Design</div>
+                    <div class="step-desc">Keep tailored resume close to original: section order, fonts, formatting, layout. ATS-readable, text-based</div>
+                    <div class="status-built">✓ Built</div>
+                </div>
+
+                <div class="step">
+                    <div class="step-number">17</div>
+                    <div class="step-title">Generate PDF</div>
+                    <div class="step-desc">Produce job-specific PDF (e.g., Yang_Strategy_Manager.pdf) with editable version where possible</div>
+                    <div class="status-built">✓ Built</div>
+                </div>
+
+                <div class="step">
+                    <div class="step-number">18</div>
+                    <div class="step-title">PDF Validation</div>
+                    <div class="step-desc">Reopen PDF, extract text, verify: contact info, employers, dates, accomplishments, no clipping, proper page count</div>
+                    <div class="status-built">✓ Built</div>
+                </div>
+
+                <div class="step">
+                    <div class="step-number">19</div>
+                    <div class="step-title">Final Application Report</div>
+                    <div class="step-desc">Show Candidate Fit, Original Match, Tailored Match, qualifications, unsupported claims, PDF validation, ATS readability</div>
+                    <div class="status-built">✓ Built</div>
+                </div>
+
+                <div class="step">
+                    <div class="step-number">20</div>
+                    <div class="step-title">Show Changes</div>
+                    <div class="step-desc">Side-by-side comparison of original vs. tailored bullets with reasoning for each change</div>
+                    <div class="status-built">✓ Built</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- SPRINT 2 -->
+        <div class="sprint-section">
+            <div class="sprint-header">
+                <span class="sprint-badge">SPRINT 2</span>
+                <span class="sprint-title">Job Search & Discovery (Planned)</span>
+            </div>
+            <div class="section-summary">
+                Add job search capabilities: user sets search goals, system searches multiple job boards, deduplicates results, scores candidate fit, shows filterable dashboard
+            </div>
+
+            <div class="steps-grid">
+                <div class="step">
+                    <div class="step-number">3</div>
+                    <div class="step-title">Set Job Search Goals</div>
+                    <div class="step-desc">Role/title, industry, level, location, salary, company type, target companies, sponsorship needs, work mode, relocation</div>
+                    <div class="status-planned">Planned</div>
+                </div>
+
+                <div class="step">
+                    <div class="step-number">4</div>
+                    <div class="step-title">Select Job Sources</div>
+                    <div class="step-desc">User picks platforms: LinkedIn, Indeed, Handshake, Monster, Greenhouse, Lever, Ashby, Workday, company career pages</div>
+                    <div class="status-planned">Planned</div>
+                </div>
+
+                <div class="step">
+                    <div class="step-number">5</div>
+                    <div class="step-title">Scout Open Jobs</div>
+                    <div class="step-desc">Search selected sources using user goals; collect company, title, location, work mode, description, salary, ATS platform</div>
+                    <div class="status-planned">Planned</div>
+                </div>
+
+                <div class="step">
+                    <div class="step-number">6</div>
+                    <div class="step-title">Clean & Validate Results</div>
+                    <div class="step-desc">Deduplicate same job across sources (prefer employer's page), validate posting is open, URL works. Show "Unknown" when unavailable</div>
+                    <div class="status-planned">Planned</div>
+                </div>
+
+                <div class="step">
+                    <div class="step-number">7</div>
+                    <div class="step-title">Job Discovery Dashboard</div>
+                    <div class="step-desc">Searchable/filterable table of jobs: fit score, salary, sponsorship, posted date, deadline, application status</div>
+                    <div class="status-planned">Planned</div>
+                </div>
+
+                <div class="step">
+                    <div class="step-number">8</div>
+                    <div class="step-title">Calculate Candidate Fit</div>
+                    <div class="step-desc">Compare Career Truth Profile against job requirements to produce Candidate Fit Score (separate from resume match)</div>
+                    <div class="status-planned">Planned</div>
+                </div>
+
+                <div class="step">
+                    <div class="step-number">9</div>
+                    <div class="step-title">User Triage</div>
+                    <div class="step-desc">User marks jobs: Interested, Save for Later, Skip, or Apply. Only "Apply" jobs proceed to tailoring</div>
+                    <div class="status-planned">Planned</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- SPRINT 3+ -->
+        <div class="sprint-section">
+            <div class="sprint-header">
+                <span class="sprint-badge">SPRINT 3+</span>
+                <span class="sprint-title">Application Submission & Tracking (Future)</span>
+            </div>
+            <div class="section-summary">
+                Add application submission: manual mode (user applies), assisted mode (system fills form + drafts answers), auto mode (system submits with safeguards)
+            </div>
+
+            <div class="steps-grid">
+                <div class="step">
+                    <div class="step-number">21</div>
+                    <div class="step-title">Choose Application Mode</div>
+                    <div class="step-desc"><strong>Manual:</strong> generate resume, provide link (user applies). <strong>Assist:</strong> fill known fields, draft answers, stop before submit. <strong>Auto:</strong> submit but stop for unknown questions or verification</div>
+                    <div class="status-planned">Planned</div>
+                </div>
+
+                <div class="step">
+                    <div class="step-number">22</div>
+                    <div class="step-title">Record Submission</div>
+                    <div class="step-desc">Store company, position, job URL, application date/source, resume version used, fit/match scores, answers given, mode, confirmation number</div>
+                    <div class="status-planned">Planned</div>
+                </div>
+
+                <div class="step">
+                    <div class="step-number">23</div>
+                    <div class="step-title">Update Application Status</div>
+                    <div class="step-desc">Track: Discovered → Interested → Preparing → Ready → Applied → Recruiter Screen → Interview → Final Interview → Offer/Rejected/Withdrawn</div>
+                    <div class="status-planned">Planned</div>
+                </div>
+
+                <div class="step">
+                    <div class="step-number">24</div>
+                    <div class="step-title">Application Dashboard</div>
+                    <div class="step-desc">Command-center view of every job: fit score, resume match, status, date applied, resume version used</div>
+                    <div class="status-planned">Planned</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- KEY PRINCIPLE -->
+        <div class="sprint-section">
+            <div class="sprint-header">
+                <span class="sprint-title">Non-Negotiable Principle</span>
+            </div>
+            <div class="section-summary">
+                <strong>Optimize presentation, never manufacture qualifications.</strong>
+                <br><br>
+                The system can rephrase, reorganize, strengthen wording, and highlight existing experience differently. It can never invent experience, skills, certifications, numbers, responsibilities, or change factual dates/employers. Every change must be truthful and verifiable from the original resume.
+            </div>
+        </div>
+
+        <div class="legend">
+            <div class="legend-item">
+                <div class="legend-color" style="background: #16a34a;"></div>
+                <span>✓ Built in Sprint 1</span>
+            </div>
+            <div class="legend-item">
+                <div class="legend-color" style="background: #ea580c;"></div>
+                <span>Planned for Sprint 2+</span>
+            </div>
+        </div>
+    </div>
+</body>
+</html>
