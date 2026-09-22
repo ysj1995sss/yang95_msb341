@@ -39,7 +39,23 @@ whether a change to a prompt helped or hurt.
 
 ## Running it
 
-[If your work includes code: how to run it locally. Delete this section if it does not.]
+`apps/api/` is a multi-user FastAPI backend around the existing `product/resume_tailorer` engine — auth, persistent per-user profiles/jobs, and HTTP endpoints, modeled on the job-copilot course project's backend architecture but built on top of this repo's more complete tailoring pipeline (full resume parsing, weighted candidate-fit scoring, PDF generation with the validation hard gate).
+
+```powershell
+cd apps/api
+python -m venv .venv
+.\.venv\Scripts\activate
+python -m pip install -e ".[dev]"
+uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+```
+
+Health check: `http://localhost:8000/health`. Tests: `cd apps/api && python -m pytest -q` (11 passing — auth, real PDF resume parsing, candidate-fit scoring, and `/tailor/preview` including real PDF generation).
+
+Key endpoints: `POST /profile/upload` (parses a real PDF/DOCX into a full career profile), `POST /jobs/upsert` (dedupe + candidate-fit scoring), `POST /tailor/preview` (job analysis → gap report → LLM tailoring → optimization loop → PDF, requires `LLM_MODEL`/`LLM_API_KEY` in `apps/api/.env`).
+
+**Not yet ported from job-copilot:** the React web dashboard (`apps/web`) and the Chrome extension for capturing jobs off LinkedIn/Handshake pages (`apps/extension`). Today, `product/resume_tailorer`'s own scrapers (`job_search/scrapers/`) hit those sites directly, which is more ToS-fragile than job-copilot's extension-based capture — porting the extension is the next highest-value piece.
+
+The original Streamlit app (`product/resume_tailorer/app.py`) still works standalone and is unaffected by `apps/api/`.
 
 ## Sprints
 

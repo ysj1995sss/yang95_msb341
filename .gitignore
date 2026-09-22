@@ -12,3 +12,6 @@ build/
 venv/
 *.db
 .superpowers/
+*.egg-info/
+apps/api/tailored_resume.pdf
+streamlit.log

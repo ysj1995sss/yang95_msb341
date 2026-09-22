@@ -47,10 +47,13 @@ class ResumeParser:
 
         if path.suffix.lower() == ".pdf":
             return self._extract_text_from_pdf(file_path)
-        elif path.suffix.lower() in [".docx", ".doc"]:
+        if path.suffix.lower() == ".docx":
             return self._extract_text_from_docx(file_path)
-        else:
-            raise ValueError(f"Unsupported file format: {path.suffix}")
+        if path.suffix.lower() == ".doc":
+            raise ValueError(
+                "Legacy .doc files are not supported. Save the resume as PDF or .docx."
+            )
+        raise ValueError(f"Unsupported file format: {path.suffix}")
 
     def _extract_text_from_pdf(self, file_path: str) -> str:
         """Extract text from a PDF file."""
@@ -211,6 +214,10 @@ class ResumeParser:
 
         return education
 
+    # A "company | location, dates" line contains a 4-digit year and is
+    # never itself a bullet.
+    _YEAR_PATTERN = re.compile(r"(?:19|20)\d{2}")
+
     def _extract_work_experience(self, text: str) -> list[WorkExperience]:
         """
         Extract work experience (simplified).
@@ -220,91 +227,151 @@ class ResumeParser:
         """
         work_experience = []
 
-        # Look for job patterns like "Title | Company | Location | Dates"
-        # Pattern: Title at Company (location) dates
-        patterns = [
-            # Pattern 1: "Title\nCompany | Location | Dates"
-            r"([A-Z][^|\n]+)\s*\n([A-Za-z\s&\.]+?)\s*(?:\||—)?\s*([^|,\n]+?)\s*(?:\||—)?\s*((?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+\d{4}[^|,\n]*?)(?:\n|$)",
+        if "experience" not in text.lower():
+            return work_experience
+
+        exp_match = re.search(
+            r"(?:work\s+)?experience[:]*\s*\n(.*?)(?:\n(?:EDUCATION|TECHNICAL|SKILLS|CERTIFICATIONS|$))",
+            text,
+            re.IGNORECASE | re.DOTALL,
+        )
+        if not exp_match:
+            return work_experience
+
+        lines = exp_match.group(1).split("\n")
+
+        # Anchor each job on its "company | location, dates" line (contains
+        # a year, is not a bullet) rather than guessing job boundaries from
+        # capitalization. The previous approach split on ANY line starting
+        # with a capitalized word followed by lowercase letters, which
+        # incorrectly split a title away from its OWN company line whenever
+        # the company name starts with a normal capitalized word rather
+        # than an all-caps abbreviation -- found live (2026-09-22): "Acme
+        # Corp | ..." got split from its title "Marketing Manager" (while
+        # an all-caps company like "CVS Health" happened not to trigger it,
+        # since "CVS" isn't `[A-Z][a-z]+`), scrambling employer/title/dates
+        # and losing every bullet for that job.
+        anchor_idxs = [
+            i
+            for i, line in enumerate(lines)
+            if self._YEAR_PATTERN.search(line) and not line.strip().startswith(("•", "-"))
         ]
 
-        # Simple heuristic: look for "WORK EXPERIENCE" or "EXPERIENCE" section
-        if "work experience" in text.lower() or "experience" in text.lower():
-            # Find the experience section
-            exp_match = re.search(
-                r"(?:work\s+)?experience[:]*\s*\n(.*?)(?:\n(?:EDUCATION|TECHNICAL|SKILLS|CERTIFICATIONS|$))",
-                text,
-                re.IGNORECASE | re.DOTALL
+        for a, idx in enumerate(anchor_idxs):
+            company_line = lines[idx].strip()
+
+            # The title is the nearest preceding non-blank line, as long as
+            # it isn't itself a bullet (which would mean we've walked back
+            # into the previous job's content with no title in between).
+            title_line = ""
+            for j in range(idx - 1, -1, -1):
+                candidate = lines[j].strip()
+                if not candidate:
+                    continue
+                if not candidate.startswith(("•", "-")):
+                    title_line = candidate
+                break
+
+            if not title_line or len(title_line) < MIN_TITLE_LENGTH:
+                continue
+            title = title_line.replace("<b>", "").replace("</b>", "")
+
+            parts = re.split(r"\s*(?:\||—|–)\s*", company_line)
+            employer = parts[0] if parts else "Unknown"
+            location = parts[1] if len(parts) > 1 else ""
+            dates = parts[2] if len(parts) > 2 else ""
+
+            # Bullets run from just after this anchor to just before the
+            # next job's anchor (or end of section) -- but that range's
+            # last non-blank, non-bullet line is the NEXT job's title, so
+            # trim it off rather than swallowing it as a bullet.
+            end_idx = anchor_idxs[a + 1] if a + 1 < len(anchor_idxs) else len(lines)
+            bullet_lines = lines[idx + 1 : end_idx]
+            if a + 1 < len(anchor_idxs):
+                for k in range(len(bullet_lines) - 1, -1, -1):
+                    candidate = bullet_lines[k].strip()
+                    if not candidate:
+                        continue
+                    if not candidate.startswith(("•", "-")):
+                        bullet_lines = bullet_lines[:k]
+                    break
+
+            # PDF text extraction wraps long bullets onto a second physical
+            # line with no bullet marker (e.g. "...identifying up to $120M
+            # in incremental sales\npotential targeted for implementation
+            # by 2027" is ONE bullet, not two). Continuation lines are
+            # appended to whichever bullet list last received an entry,
+            # instead of being silently dropped -- found live (2026-09-22)
+            # losing real content, which then caused the fabrication-risk
+            # checker to flag a genuine, verbatim accomplishment as
+            # fabricated (it was missing from the structured profile it
+            # checks against, not actually absent from the resume).
+            bullets: list[tuple[str, str]] = []  # (category, text), in order
+            for line in bullet_lines:
+                line = line.strip()
+                if not line:
+                    continue
+                if line.startswith("•") or line.startswith("-"):
+                    text_content = line.lstrip("•-").strip()
+                    category = (
+                        "accomplishments"
+                        if re.search(ACCOMPLISHMENT_PATTERN, text_content)
+                        else "responsibilities"
+                    )
+                    bullets.append((category, text_content))
+                elif bullets:
+                    prev_category, prev_text = bullets[-1]
+                    merged_text = f"{prev_text} {line}"
+                    # A continuation line can be where the metric actually
+                    # lands (e.g. "...backstage transition time by 30%"
+                    # wraps to "(60s -> 42s)"), so re-check the category
+                    # against the FULL merged text, not just the first line.
+                    category = (
+                        "accomplishments"
+                        if re.search(ACCOMPLISHMENT_PATTERN, merged_text)
+                        else prev_category
+                    )
+                    bullets[-1] = (category, merged_text)
+
+            responsibilities = [t for cat, t in bullets if cat == "responsibilities"]
+            accomplishments = [t for cat, t in bullets if cat == "accomplishments"]
+
+            work_experience.append(
+                WorkExperience(
+                    employer=employer.strip(),
+                    title=title,
+                    dates=dates.strip(),
+                    responsibilities=responsibilities,
+                    accomplishments=accomplishments,
+                    location=location.strip() if location else None,
+                )
             )
-
-            if exp_match:
-                exp_section = exp_match.group(1)
-
-                # Split by job entries (look for patterns like "Senior Software Engineer")
-                # Jobs usually start with a title line followed by company/location/dates
-                job_blocks = re.split(r'\n(?=[A-Z][a-z]+ )', exp_section)
-
-                for block in job_blocks:
-                    if not block.strip():
-                        continue
-
-                    lines = block.strip().split('\n')
-                    if len(lines) < 2:
-                        continue
-
-                    title_line = lines[0].strip()
-
-                    # Skip if line is too short or looks like a bullet point
-                    if len(title_line) < MIN_TITLE_LENGTH or title_line.startswith('•') or title_line.startswith('-'):
-                        continue
-
-                    # Extract title (remove bold/italic markers if any)
-                    title = title_line.replace('<b>', '').replace('</b>', '')
-
-                    # Extract employer, location, dates from next line if available
-                    company_line = lines[1].strip() if len(lines) > 1 else ""
-
-                    # Split company line by pipe or dash
-                    parts = re.split(r'\s*(?:\||—|–)\s*', company_line)
-                    employer = parts[0] if len(parts) > 0 else "Unknown"
-                    location = parts[1] if len(parts) > 1 else ""
-                    dates = parts[2] if len(parts) > 2 else ""
-
-                    # Extract bullet points (responsibilities and accomplishments)
-                    responsibilities = []
-                    accomplishments = []
-                    for line in lines[2:]:
-                        line = line.strip()
-                        if line.startswith('•') or line.startswith('-'):
-                            # Remove bullet point marker
-                            text_content = line.lstrip('•-').strip()
-
-                            # Heuristic: if it contains numbers/percentages, it's likely an accomplishment
-                            if re.search(ACCOMPLISHMENT_PATTERN, text_content):
-                                accomplishments.append(text_content)
-                            else:
-                                responsibilities.append(text_content)
-
-                    # Create WorkExperience entry if we have at least a title and dates
-                    if title and (dates or employer):
-                        work_experience.append(
-                            WorkExperience(
-                                employer=employer.strip(),
-                                title=title.strip(),
-                                dates=dates.strip(),
-                                responsibilities=responsibilities,
-                                accomplishments=accomplishments,
-                                location=location.strip() if location else None,
-                            )
-                        )
 
         return work_experience
 
+    # Labels resumes use for a skills-equivalent line that never contains the
+    # literal word "skill" -- observed live (2026-09-22): a real resume
+    # labeled this "Technical Proficiency" and "Core Competencies" instead,
+    # under a generic "ADDITIONAL" heading, and the original section-only
+    # detection below (which requires the word "skill" somewhere) returned
+    # an empty list for it entirely.
+    _INLINE_SKILL_LABELS = (
+        "technical proficiency",
+        "technical proficiencies",
+        "core competencies",
+        "areas of expertise",
+        "key skills",
+        "technical skills",
+        "relevant skills",
+        "competencies",
+    )
+
     def _extract_skills(self, text: str) -> list[str]:
         """Extract technical skills from resume."""
-        # Look for a "Skills" section
         skills = []
+
+        # Path 1: a dedicated "Skills" section.
         if "skills" in text.lower():
-            # Find the Skills section and extract items
             skills_section = re.search(
                 r"(?:technical\s+)?skills?[:]*\s*\n(.*?)(?:\n(?:TOOLS?|CERTIFICATIONS?|LANGUAGES?|EDUCATION|EXPERIENCE|WORK|[A-Z]{2,}[\s:]*$)|\Z)",
                 text,
@@ -312,8 +379,6 @@ class ResumeParser:
             )
             if skills_section:
                 items = skills_section.group(1)
-                # Split by comma, newline, pipe, or bullet
-                # First split by newline to get lines
                 lines = items.split('\n')
                 for line in lines:
                     if line.strip():
@@ -323,6 +388,27 @@ class ResumeParser:
                             clean_item = item.strip().lstrip('•-').strip()
                             if clean_item and len(clean_item) > 1:  # Skip single characters
                                 skills.append(clean_item)
+
+        # Path 2: an inline labeled line anywhere in the resume, e.g.
+        # "Technical Proficiency: Tableau | Power BI | SQL" or
+        # "Core Competencies: Strategic Thinker | Competitive Analysis",
+        # which can wrap onto a following line with no repeated label.
+        for label in self._INLINE_SKILL_LABELS:
+            match = re.search(
+                r"(?:^|\n)\s*[•\-]?\s*" + re.escape(label) + r"\s*:\s*(.+?)(?:\n\s*\n|\n[A-Z][A-Za-z ]*:|\n[A-Z]{2,}\s*$|\Z)",
+                text,
+                re.IGNORECASE | re.DOTALL,
+            )
+            if not match:
+                continue
+            captured = match.group(1)
+            # The label's value can wrap onto the next physical line without
+            # its own bullet marker -- treat the whole captured block as one
+            # run of items rather than stopping at the first newline.
+            for item in re.split(r"[|,\n]", captured):
+                clean_item = item.strip().lstrip('•-').strip()
+                if clean_item and len(clean_item) > 1:
+                    skills.append(clean_item)
 
         # Remove duplicates while preserving order
         seen = set()
@@ -335,9 +421,31 @@ class ResumeParser:
         return unique_skills[:MAX_SKILLS]  # Cap at max for MVP
 
     def _extract_tools(self, text: str) -> list[str]:
-        """Extract tools/technologies (databases, frameworks, etc.)."""
-        # For MVP, we'll extract from skills section or mention in work experience
-        return []
+        """Extract known tools/platforms mentioned in the resume."""
+        known_tools = {
+            "docker": "Docker",
+            "kubernetes": "Kubernetes",
+            "postgresql": "PostgreSQL",
+            "mysql": "MySQL",
+            "mongodb": "MongoDB",
+            "redis": "Redis",
+            "aws": "AWS",
+            "azure": "Azure",
+            "gcp": "GCP",
+            "terraform": "Terraform",
+            "jenkins": "Jenkins",
+            "git": "Git",
+            "jira": "Jira",
+            "salesforce": "Salesforce",
+            "tableau": "Tableau",
+            "excel": "Excel",
+        }
+        found = []
+        lower = text.lower()
+        for token, label in known_tools.items():
+            if re.search(r"\b" + re.escape(token) + r"\b", lower):
+                found.append(label)
+        return found
 
     def extract_style_hints(self, raw_text: str) -> dict:
         """

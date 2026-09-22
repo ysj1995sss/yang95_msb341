@@ -1,5 +1,10 @@
 import pytest
-from resume_tailorer.utils.scoring import calculate_keyword_alignment, calculate_qualification_alignment
+from resume_tailorer.utils.scoring import (
+    calculate_keyword_alignment,
+    calculate_qualification_alignment,
+    _semantic_match_qualification,
+    qualification_match_ratio,
+)
 
 
 class TestKeywordAlignment:
@@ -48,8 +53,8 @@ class TestQualificationAlignment:
 
     def test_perfect_qualification_match_returns_score_1_0(self):
         """Perfect match of all qualifications returns score of 1.0."""
-        profile_text = "5+ years of software engineering experience. Strong proficiency in system design and leadership."
-        required_quals = ["5+ years experience", "system design", "leadership"]
+        profile_text = "5+ years of software engineering. Strong proficiency in system design and leadership."
+        required_quals = ["software engineering", "system design", "leadership"]
         preferred_quals = []
 
         score, covered, missing = calculate_qualification_alignment(profile_text, required_quals, preferred_quals)
@@ -83,3 +88,51 @@ class TestQualificationAlignment:
         assert score == 1.0
         assert len(covered) == 3
         assert len(missing) == 0
+
+
+class TestSemanticMatchDoesNotFabricate:
+    def test_generic_words_alone_do_not_match(self):
+        profile = "Led a small team of interns on campus projects"
+        qualification = "strong communication and stakeholder leadership"
+        assert _semantic_match_qualification(profile, qualification) is False
+
+    def test_distinctive_content_words_do_match(self):
+        profile = "Built REST APIs in Python and deployed them with Docker"
+        qualification = "experience building Python APIs"
+        assert _semantic_match_qualification(profile, qualification) is True
+
+
+class TestShortAcronymQualificationMatching:
+    """
+    Regression tests for a bug found live (2026-09-21): a qualification
+    phrase whose only substantive word is a short tech acronym (AWS, SQL,
+    API, ...) was filtered out entirely by the 4+-character word filter,
+    leaving zero distinctive words and forcing ratio 0.0 -- so "Experience
+    with AWS" was misclassified Category E ("truly missing") even when AWS
+    was clearly present in the profile.
+    """
+
+    def test_short_acronym_present_now_matches(self):
+        profile_text = "Deployed services on AWS using Docker containers"
+        assert qualification_match_ratio(profile_text, "Experience with AWS") == 1.0
+
+    def test_short_acronym_absent_still_scores_zero(self):
+        """The fix must not make short acronyms match when they're genuinely absent."""
+        profile_text = "Built REST APIs in Python and deployed them with Docker"
+        assert qualification_match_ratio(profile_text, "Experience with AWS") == 0.0
+
+    def test_multiple_short_acronyms_partial_match(self):
+        profile_text = "Experience with SQL databases"
+        # "AWS" present via SQL context is false; only "sql" is present here.
+        ratio = qualification_match_ratio(profile_text, "Experience with SQL and AWS")
+        assert 0.0 < ratio < 1.0
+
+    def test_unrelated_short_word_is_not_treated_as_an_acronym(self):
+        """Only the known tech-acronym allowlist gets the short-word carve-out;
+        this must not silently start matching on any short word (e.g. "the")."""
+        profile_text = "Managed a relational database migration project"
+        # "with" and "the" are stopwords/too short and not in the acronym
+        # allowlist, so "Experience with the database" reduces to
+        # "database" only (a long word), which is present here.
+        ratio = qualification_match_ratio(profile_text, "Experience with the database")
+        assert ratio == 1.0

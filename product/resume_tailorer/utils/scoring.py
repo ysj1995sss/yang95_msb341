@@ -8,6 +8,19 @@ job requirements using keyword and qualification matching.
 import re
 from typing import Tuple
 
+# JD filler that must not count as evidence a candidate already has a qualification.
+_QUALIFICATION_STOPWORDS = frozenset({
+    "with", "from", "this", "that", "have", "must", "including", "related",
+    "experience", "years", "year", "strong", "ability", "knowledge", "skills",
+    "required", "using", "working", "building", "proven", "excellent",
+    "plus", "such", "into", "over", "than", "both", "able", "well",
+    "good", "high", "role", "position", "field", "work", "team",
+    "your", "their", "them", "will", "would", "could", "should",
+    "need", "needs", "needed", "across", "within", "about", "other",
+    "more", "most", "some", "also", "preferred", "minimum", "highly",
+    "demonstrated", "responsible", "responsibilities",
+})
+
 
 def calculate_keyword_alignment(
     resume_text: str, required_keywords: list[str]
@@ -63,26 +76,44 @@ def _semantic_match_qualification(
     Returns:
         True if the qualification is semantically matched, False otherwise
     """
+    return qualification_match_ratio(profile_text, qualification) >= threshold
+
+
+# Common tech acronyms that are the ONLY substantive word in a qualification
+# phrase (e.g. "Experience with AWS") but are 3 characters or shorter, so the
+# general 4+-character filter below drops them -- leaving zero distinctive
+# words and forcing a false ratio of 0.0 (observed live, 2026-09-21: "AWS"
+# was clearly present in the profile but "Experience with AWS" still scored
+# 0.0 and got classified Category E, "truly missing"). Checked in addition
+# to, not instead of, the 4+-character words.
+_SHORT_TECH_ACRONYMS = frozenset({
+    "aws", "sql", "api", "css", "gcp", "ai", "ml", "ux", "ui", "qa", "pm", "hr", "js", "ci", "cd",
+})
+
+
+def qualification_match_ratio(profile_text: str, qualification: str) -> float:
+    """Return the fraction of distinctive qualification words found in profile text."""
     profile_text_lower = profile_text.lower()
     qual_lower = qualification.lower()
-
-    # Extract key words (words longer than 3 characters) from qualification
-    words = re.findall(r"\b\w{4,}\b", qual_lower)
-
+    long_words = [
+        word
+        for word in re.findall(r"\b\w{4,}\b", qual_lower)
+        if word not in _QUALIFICATION_STOPWORDS
+    ]
+    short_acronyms = [
+        word
+        for word in re.findall(r"\b\w{2,3}\b", qual_lower)
+        if word in _SHORT_TECH_ACRONYMS
+    ]
+    words = long_words + short_acronyms
     if not words:
-        # If no key words, do simple substring match
-        return qual_lower in profile_text_lower
-
-    # Count how many key words are found in profile
+        return 0.0
     matched_count = 0
     for word in words:
         pattern = r"\b" + re.escape(word) + r"\b"
         if re.search(pattern, profile_text_lower):
             matched_count += 1
-
-    # Check if matched count meets threshold
-    match_ratio = matched_count / len(words)
-    return match_ratio >= threshold
+    return matched_count / len(words)
 
 
 def calculate_qualification_alignment(

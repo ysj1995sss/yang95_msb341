@@ -14,7 +14,7 @@ invented here.
 from resume_tailorer.models import CareerTruthProfile
 from resume_tailorer.analyzers.job_analyzer import JobAnalysis
 from resume_tailorer.analyzers.resume_benchmarker import ResumeBenchmark
-from resume_tailorer.analyzers.gap_analyzer import GapReport, GapCategory
+from resume_tailorer.analyzers.gap_analyzer import GapReport, GapCategory, find_unsupported_claims
 from resume_tailorer.tailorer.optimizer import OptimizationResult
 from resume_tailorer.pdf.validator import ValidationResult
 
@@ -46,6 +46,7 @@ class ReportGenerator:
 
         qualifications_summary = self._build_qualifications_summary(gap_report)
         recommendations = self._build_recommendations(gap_report, optimization_result, pdf_validation)
+        unsupported_claims_added = find_unsupported_claims(gap_report, optimization_result.tailored_resume)
 
         return {
             "candidate_name": profile.name,
@@ -54,6 +55,10 @@ class ReportGenerator:
             "candidate_fit_score": None,
             "candidate_fit_score_available": False,
             "original_match_score": original_score,
+            # Spec 001 item 19: "unsupported claims added (should always be 0)".
+            # A non-empty list here is a real signal to review, not necessarily
+            # fabrication -- see find_unsupported_claims's docstring.
+            "unsupported_claims_added": unsupported_claims_added,
             "tailored_match_score": tailored_score,
             "score_improvement": score_improvement,
             "optimization_iterations": optimization_result.iterations,

@@ -55,6 +55,84 @@ def test_resume_parser_extracts_work_experience(sample_resume_path):
     assert first_job.dates
 
 
+class TestWrappedBulletContinuation:
+    """
+    Regression tests for a bug found live (2026-09-22) on a real resume: a
+    long bullet that PDF text extraction wraps onto a second physical line
+    with no bullet marker was silently DROPPED (only the first line was
+    kept), losing real accomplishment content. This cascaded into a false
+    "fabrication risk" flag later, since the dropped content reappeared in
+    the tailored output looking unsupported by the (incomplete) profile.
+    """
+
+    def test_wrapped_continuation_is_appended_not_dropped(self):
+        text = (
+            "EXPERIENCE\n"
+            "Marketing Manager\n"
+            "Acme Corp | Springfield, IL Jan 2022-Dec 2023\n"
+            "• Developed a growth strategy by synthesizing data, identifying up to $50M\n"
+            "in incremental sales potential targeted for next fiscal year\n"
+            "EDUCATION\n"
+        )
+        parser = ResumeParser()
+        jobs = parser._extract_work_experience(text)
+
+        assert len(jobs) == 1
+        combined = " ".join(jobs[0].accomplishments)
+        assert "$50M" in combined
+        # The wrapped continuation text must survive, not just the first line.
+        assert "incremental sales potential" in combined
+
+    def test_multiple_bullets_each_keep_their_own_continuation(self):
+        text = (
+            "EXPERIENCE\n"
+            "Operations Lead\n"
+            "Beta Inc | Remote Mar 2021-Feb 2022\n"
+            "• Led a 10-person team, diagnosed process bottlenecks, and implemented\n"
+            "improvements that reduced cycle time by 30% (60s -> 42s)\n"
+            "• Coordinated cross-functional projects for 50K+ users with 91% satisfaction\n"
+            "EDUCATION\n"
+        )
+        parser = ResumeParser()
+        jobs = parser._extract_work_experience(text)
+
+        assert len(jobs) == 1
+        all_bullets = jobs[0].responsibilities + jobs[0].accomplishments
+        assert any("cycle time by 30%" in b and "60s -> 42s" in b for b in all_bullets)
+        assert any("91% satisfaction" in b for b in all_bullets)
+
+
+class TestInlineLabeledSkills:
+    """
+    Regression test for a bug found live (2026-09-22): a real resume labeled
+    its skills-equivalent content "Technical Proficiency" and "Core
+    Competencies" instead of the literal word "Skills" -- the section-only
+    detection required "skill" to appear somewhere, so it returned an empty
+    list even though the resume clearly listed real skills.
+    """
+
+    def test_technical_proficiency_label_is_recognized(self):
+        text = (
+            "ADDITIONAL\n"
+            "• Technical Proficiency: Tableau | Power BI | SQL | MS Excel\n"
+        )
+        parser = ResumeParser()
+        skills = parser._extract_skills(text)
+        assert "Tableau" in skills
+        assert "Power BI" in skills
+        assert "SQL" in skills
+
+    def test_core_competencies_label_is_recognized(self):
+        text = (
+            "ADDITIONAL\n"
+            "• Core Competencies: Strategic Thinking | Market Research | Mentorship\n"
+        )
+        parser = ResumeParser()
+        skills = parser._extract_skills(text)
+        assert "Strategic Thinking" in skills
+        assert "Market Research" in skills
+
+
 def test_extract_style_hints_detects_bullet_dash():
     """Detects '-' as the dominant bullet character."""
     parser = ResumeParser()
@@ -102,3 +180,9 @@ def test_get_raw_text_raises_on_unsupported_extension():
     parser = ResumeParser()
     with pytest.raises(ValueError, match="Unsupported"):
         parser.get_raw_text("resume.txt")
+
+
+def test_get_raw_text_rejects_legacy_doc():
+    parser = ResumeParser()
+    with pytest.raises(ValueError, match=r"\.doc"):
+        parser.get_raw_text("resume.doc")

@@ -43,13 +43,62 @@ class JobAnalyzer:
         "across", "various", "ensure", "ensuring", "including", "include",
         "position", "opportunity", "team", "teams", "role", "roles",
         "company", "someone",
+        # Added after a real posting (2026-09-22) phrased in full sentences
+        # rather than short bullet fragments: the fallback was picking up
+        # ordinary grammatical filler as if it were a skill -- "Earned" and
+        # "degree" both ended up as separate "requirements," and "degree"
+        # was then flagged "truly missing" despite the candidate obviously
+        # having one. This isn't about recognizing more skills; it's about
+        # not inventing fake ones out of sentence structure.
+        "earned", "degree", "degrees", "preferably", "specializations",
+        "specialization", "relevant", "full-time", "part-time", "demonstrated",
+        "translating", "guide", "recommendations", "one", "two", "three",
+        "four", "five", "six", "seven", "eight", "nine", "ten",
     }
 
     def analyze(self, job_description: str) -> JobAnalysis:
         """Parse a job description and return a JobAnalysis."""
-        # Extract sections
-        required_qual = self._extract_section(job_description, r"(?:must|required|requirements?)[:\n]+(.*?)(?:\n\n|(?:[A-Za-z]+\s*:))", re.IGNORECASE | re.DOTALL)
-        preferred_qual = self._extract_section(job_description, r"(?:preferred|nice.*?to.*?have)[:\n]+(.*?)(?:\n\n|(?:[A-Za-z]+\s*:))", re.IGNORECASE | re.DOTALL)
+        # Normalize Unicode "smart" punctuation to ASCII. Found live
+        # (2026-09-22): a real job posting's "What you'll do:" used a
+        # Unicode right single quote (U+2019) in "you'll", which silently
+        # failed to match this module's ASCII-apostrophe regex below. With
+        # required/preferred/responsibilities all consequently empty, there
+        # was nothing left for even the fallback keyword extractor to work
+        # from, producing a completely empty JobAnalysis and a 0% match
+        # score despite the resume itself being parsed correctly.
+        job_description = (
+            job_description.replace("’", "'")
+            .replace("‘", "'")
+            .replace("“", '"')
+            .replace("”", '"')
+        )
+
+        # Extract sections. Beyond formal "Required:"/"Preferred:" headings,
+        # real postings (especially non-technical ones) often use
+        # conversational phrasing instead -- "What you'll need", "What
+        # you're bringing", "Qualifications" -- also found live (2026-09-22)
+        # on a real marketing job posting that used none of the original
+        # formal headings at all.
+        #
+        # SECTION_END stops at the next section heading (a capitalized
+        # phrase ending in ":") rather than at every blank line. The
+        # previous boundary (any "\n\n") truncated a section after its
+        # FIRST paragraph on postings that separate every sentence with a
+        # blank line instead of using bullet markers -- also found live on
+        # the same real posting, which had five separate "What you'll
+        # need" paragraphs and lost four of them to this exact bug.
+        section_end = r"(?:\n\n(?=[A-Z][A-Za-z' ]*:)|\Z)"
+        required_qual = self._extract_section(
+            job_description,
+            r"(?:must|required|requirements?|what you'll need|what we're looking for|qualifications)[:\n]+(.*?)"
+            + section_end,
+            re.IGNORECASE | re.DOTALL,
+        )
+        preferred_qual = self._extract_section(
+            job_description,
+            r"(?:preferred|nice.*?to.*?have|what you'll bring|what you bring)[:\n]+(.*?)" + section_end,
+            re.IGNORECASE | re.DOTALL,
+        )
         responsibilities = self._extract_responsibilities(job_description)
 
         # Extract skills and tools
@@ -91,33 +140,61 @@ class JobAnalyzer:
         match = re.search(pattern, text, flags)
         if not match:
             return []
+        return self._split_section_items(match.group(1))
 
-        section_text = match.group(1)
-        # Split by bullets, newlines, semicolons
-        items = re.split(r"[•\-\n;]", section_text)
-        return [item.strip() for item in items if item.strip()]
+    def _split_section_items(self, section_text: str) -> list[str]:
+        """
+        Split a captured section into individual items, one per line, only
+        stripping a LEADING bullet marker from each line.
+
+        Splitting on every "-" or ";" anywhere in the text (the previous
+        approach) broke mid-sentence on ordinary hyphenated words
+        ("full-time", "cross-functional") and semicolons -- found live
+        (2026-09-22) on a real job posting whose "requirements" were plain
+        blank-line-separated sentences with no bullet markers at all, where
+        that splitting fragmented single sentences into nonsense pieces at
+        every internal hyphen.
+        """
+        items = []
+        for line in section_text.split("\n"):
+            cleaned = line.strip()
+            if not cleaned:
+                continue
+            cleaned = re.sub(r"^[•\-]\s+", "", cleaned)
+            if cleaned:
+                items.append(cleaned)
+        return items
 
     def _extract_responsibilities(self, text: str) -> list[str]:
         """Extract job responsibilities."""
         # Look for "Responsibilities" section
         resp_match = re.search(
-            r"(?:responsibilities?|what you'll do)[:\n]+(.*?)(?:\n\n|(?:[A-Za-z]+\s*[:]))",
+            r"(?:responsibilities?|what you'll do)[:\n]+(.*?)(?:\n\n(?=[A-Z][A-Za-z' ]*:)|\Z)",
             text,
             re.IGNORECASE | re.DOTALL,
         )
         if resp_match:
-            items = re.split(r"[•\-\n]", resp_match.group(1))
-            return [item.strip() for item in items if item.strip()]
+            return self._split_section_items(resp_match.group(1))
         return []
 
     def _extract_skills(self, text: str, required_section: list[str]) -> list[str]:
-        """Extract technical skills mentioned in job description."""
-        # Common programming languages and frameworks
+        """Extract technical skills mentioned in job description.
+
+        "kubernetes", "docker", and "terraform" are deliberately excluded here
+        even though they're common JD keywords: they're also in
+        _extract_tools's known_tools set, and skills_required + tools_required
+        get concatenated downstream (ResumeBenchmarker, GapAnalyzer,
+        ResumeTailoringOptimizer) to score keyword alignment. Keeping them in
+        both sets double-counted them -- inflating "missing" lists with
+        duplicates and skewing the alignment score's denominator. Tools are
+        the more natural home for infrastructure/platform keywords, so
+        skills keeps languages, frameworks, and practices only.
+        """
         known_skills = {
             "python", "javascript", "typescript", "go", "rust", "java", "c++", "c#",
             "react", "vue", "angular", "node.js", "django", "flask", "fastapi",
             "sql", "nosql", "graphql", "rest", "api", "microservices",
-            "aws", "azure", "gcp", "kubernetes", "docker", "terraform",
+            "aws", "azure", "gcp",
             "agile", "scrum", "git", "ci/cd", "devops",
         }
 

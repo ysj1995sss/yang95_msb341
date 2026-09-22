@@ -9,11 +9,57 @@ Core Rule: Optimize presentation, never manufacture qualifications.
 Every rewrite must cite the Career Truth Profile only.
 """
 
+import re
+
 from resume_tailorer.models import CareerTruthProfile
 from resume_tailorer.analyzers.job_analyzer import JobAnalysis
 from resume_tailorer.analyzers.gap_analyzer import GapReport, GapCategory
 from resume_tailorer.llm.client import LLMClient
 from resume_tailorer.llm.settings import LLMSettings, resolve_settings
+
+# Live testing (2026-09-21, DeepSeek-v4-flash-Free) showed the model ignoring
+# "output ONLY the resume content" and appending a trailing "NOTES:" section
+# explaining its reasoning. That commentary would get baked straight into the
+# generated PDF. The prompt is tightened below, but LLMs don't reliably follow
+# format instructions, so this is a defense-in-depth cleanup applied to every
+# tailor/refine call regardless of prompt compliance.
+_COMMENTARY_HEADER_WORDS = {"NOTE", "NOTES", "EXPLANATION", "SUMMARYOFCHANGES", "REASONING", "DISCLAIMER"}
+_PREAMBLE_LINE = re.compile(
+    r"^\s*(here('?s| is)|below is|i('ve| have)\s+(tailored|revised|updated|refined))\b.*?:?\s*$",
+    re.IGNORECASE,
+)
+_DIVIDER_LINE = re.compile(r"^\s*(-{3,}|_{3,}|\*{3,})\s*$")
+
+
+def _is_commentary_header(line: str) -> bool:
+    """Match a line like "NOTES:", "**Notes**", "**NOTES:**" regardless of
+    where markdown bold markers or the colon land."""
+    normalized = re.sub(r"[*:\s]", "", line).upper()
+    return normalized in _COMMENTARY_HEADER_WORDS
+
+
+def _strip_non_resume_content(text: str) -> str:
+    """Strip a leading conversational preamble and a trailing commentary
+    section (e.g. a "NOTES:" block, optionally after a divider line) from
+    LLM output, without touching the resume content in between."""
+    lines = text.strip("\n").split("\n")
+
+    while lines and (not lines[0].strip() or _PREAMBLE_LINE.match(lines[0])):
+        lines.pop(0)
+
+    for i, line in enumerate(lines):
+        if _DIVIDER_LINE.match(line):
+            j = i + 1
+            while j < len(lines) and not lines[j].strip():
+                j += 1
+            if j < len(lines) and _is_commentary_header(lines[j]):
+                lines = lines[:i]
+                break
+        elif _is_commentary_header(line):
+            lines = lines[:i]
+            break
+
+    return "\n".join(lines).strip()
 
 
 class ResumeTailorer:
@@ -68,7 +114,8 @@ class ResumeTailorer:
         """
         system_prompt = self._build_system_prompt()
         user_prompt = self._build_user_prompt(profile, job_analysis, gap_report)
-        return self.llm.complete(system_prompt, user_prompt, max_tokens=2000)
+        raw = self.llm.complete(system_prompt, user_prompt, max_tokens=2000)
+        return _strip_non_resume_content(raw)
 
     def _build_system_prompt(self) -> str:
         """
@@ -117,6 +164,12 @@ GAPS TO IGNORE:
 - Category D (Needs confirmation): Do not add; mark for user review
 - Category E (Truly missing): NEVER add; these are gaps the candidate doesn't have
 
+OUTPUT FORMAT - CRITICAL:
+Output ONLY the resume content itself: contact info, section headings, and bullet points.
+Do NOT include any notes, explanations, meta-commentary, reasoning, disclaimers, or a
+summary of what you changed or what's missing. If a requirement is missing or uncertain,
+silently omit it from the output -- do not mention it there.
+
 Your output must be a revised resume that increases alignment with the job while maintaining 100% truthfulness to the Career Truth Profile."""
 
     def _build_user_prompt(
@@ -158,7 +211,9 @@ INSTRUCTIONS:
 4. NEVER add experience, skills, or accomplishments not in the Career Truth Profile
 5. NEVER change dates, employers, titles, or employment types
 6. Organize bullets to emphasize job-relevant accomplishments
-7. Output ONLY the revised resume content (bullet points and sections), ready to be inserted into the original resume template
+7. Output ONLY the revised resume content (bullet points and sections), ready to be inserted
+   into the original resume template -- no notes, no explanations, no commentary about what
+   you changed or what's missing
 
 Provide the tailored resume content now:"""
 
@@ -377,7 +432,8 @@ Provide the tailored resume content now:"""
         """
         system_prompt = self._build_refinement_system_prompt()
         user_prompt = self._build_refinement_user_prompt(current_resume, improvement_prompt, profile)
-        return self.llm.complete(system_prompt, user_prompt, max_tokens=2000)
+        raw = self.llm.complete(system_prompt, user_prompt, max_tokens=2000)
+        return _strip_non_resume_content(raw)
 
     def _build_refinement_system_prompt(self) -> str:
         """
@@ -412,6 +468,10 @@ FORBIDDEN TRANSFORMATIONS:
 - Changing dates, employers, or titles
 - Adding technologies or tools not in the Career Truth Profile
 - Exaggerating or misrepresenting experience
+
+OUTPUT FORMAT - CRITICAL:
+Output ONLY the resume content itself. Do NOT include any notes, explanations,
+meta-commentary, reasoning, disclaimers, or a summary of what you changed.
 
 Your task is to refine the resume iteratively to improve keyword and qualification alignment
 while maintaining 100% truthfulness to the Career Truth Profile."""
@@ -450,6 +510,7 @@ REFINEMENT GUIDELINES:
 4. NEVER add experience, skills, or accomplishments not in the Career Truth Profile
 5. NEVER change dates, employers, titles, or employment types
 6. Maintain all factual accuracy while improving presentation
-7. Output ONLY the refined resume content, preserving the structure but with improved wording and organization
+7. Output ONLY the refined resume content, preserving the structure but with improved wording
+   and organization -- no notes, no explanations, no commentary
 
 Provide the refined resume content now:"""

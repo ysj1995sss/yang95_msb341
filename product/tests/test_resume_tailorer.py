@@ -5,6 +5,7 @@ from resume_tailorer.models import CareerTruthProfile, WorkExperience, Education
 from resume_tailorer.analyzers import JobAnalyzer
 from resume_tailorer.analyzers.gap_analyzer import GapCategory, GapItem, GapReport
 from resume_tailorer.tailorer import ResumeTailorer
+from resume_tailorer.tailorer.resume_tailorer import _strip_non_resume_content
 from resume_tailorer.llm.client import LLMClient
 
 
@@ -188,3 +189,57 @@ def test_resume_tailorer_has_llm():
     tailorer = ResumeTailorer(llm=llm)
     assert tailorer.llm is not None
     assert tailorer.llm is llm
+
+
+# --- _strip_non_resume_content: defense-in-depth cleanup for LLM output that
+# ignores the "output ONLY resume content" instruction (observed live against
+# DeepSeek-v4-flash-Free on 2026-09-21: it appended a trailing "NOTES:"
+# section explaining its reasoning) --------------------------------------
+
+
+def test_strip_removes_trailing_notes_section_after_divider():
+    text = (
+        "JANE DOE\n\nWORK EXPERIENCE\n- Built REST APIs\n\n"
+        "---\n\n**NOTES:**\n- Kubernetes was not added per instructions."
+    )
+    result = _strip_non_resume_content(text)
+    assert "NOTES" not in result
+    assert "Kubernetes" not in result
+    assert "Built REST APIs" in result
+
+
+def test_strip_removes_trailing_notes_section_without_divider():
+    text = "JANE DOE\n\nWORK EXPERIENCE\n- Built REST APIs\n\nNOTES:\n- Some commentary here."
+    result = _strip_non_resume_content(text)
+    assert "NOTES" not in result
+    assert "Built REST APIs" in result
+
+
+def test_strip_removes_leading_conversational_preamble():
+    text = "Here is the tailored resume:\n\nJANE DOE\n\nWORK EXPERIENCE\n- Built REST APIs"
+    result = _strip_non_resume_content(text)
+    assert not result.lower().startswith("here")
+    assert "JANE DOE" in result
+
+
+def test_strip_leaves_normal_resume_content_untouched():
+    text = "JANE DOE\n\nWORK EXPERIENCE\n- Built REST APIs\n- Managed a PostgreSQL database"
+    result = _strip_non_resume_content(text)
+    assert result == text
+
+
+def test_tailor_strips_notes_commentary_from_llm_output(
+    sample_profile, sample_job_analysis, sample_gap_report
+):
+    """End-to-end: tailor() must strip commentary, not just the helper function."""
+    llm = MagicMock(spec=LLMClient)
+    llm.complete.return_value = (
+        "JANE DOE\n\nWORK EXPERIENCE\n- Built REST APIs\n\n"
+        "---\n**NOTES:**\n- Kubernetes was flagged as missing and not added."
+    )
+    tailorer = ResumeTailorer(llm=llm)
+    result = tailorer.tailor(sample_profile, sample_job_analysis, sample_gap_report)
+
+    assert "NOTES" not in result
+    assert "Kubernetes was flagged" not in result
+    assert "Built REST APIs" in result
