@@ -22,6 +22,87 @@ job posting. It surfaced problems that no synthetic test had, and one of them �
 that appeared to invent a specific, fabricated achievement — is exactly the failure mode the
 entire "never manufacture qualifications" principle exists to prevent.
 
+## How the pipeline actually works, end to end — all 24 spec steps
+
+This is every step from `specs/001-job-application-copilot.md`, organized by the sprint each
+belongs to, colored by what's actually true today (not the aspirational version in
+`job-copilot-workflow.html`):
+
+- 🟩 **Green** — built and verified working (including against real data this sprint)
+- 🟧 **Amber** — was claimed "✓ Built" but had a real bug found and fixed this sprint
+- ⬜ **Gray** — not started yet (Sprint 2+/3+ scope)
+
+```mermaid
+flowchart TD
+    subgraph S1["SPRINT 1 — Resume Tailoring MVP"]
+        direction TB
+        n1["1. Upload Resume"] --> n2["2. Career Truth Profile"]
+        n2 --> n10["10. Analyze Job Description"]
+        n10 --> n11["11. Benchmark Resume"]
+        n11 --> n12["12. Gap Report (A-E)"]
+        n12 --> n13["13. Tailor Resume"]
+        n13 --> n14["14. Optimize Toward Target"]
+        n14 --> n15["15. Control Length"]
+        n15 --> n16["16. Preserve Design"]
+        n16 --> n17["17. Generate PDF"]
+        n17 --> n18["18. PDF Validation"]
+        n18 --> n19["19. Final Application Report"]
+        n19 --> n20["20. Show Changes"]
+    end
+
+    subgraph S2["SPRINT 2+ — Job Search & Discovery"]
+        direction TB
+        n3["3. Set Job Search Goals"] --> n4["4. Select Job Sources"]
+        n4 --> n5["5. Scout Open Jobs"]
+        n5 --> n6["6. Clean & Validate Results"]
+        n6 --> n7["7. Job Discovery Dashboard"]
+        n7 --> n8["8. Calculate Candidate Fit"]
+        n8 --> n9["9. User Triage"]
+    end
+
+    subgraph S3["SPRINT 3+ — Application Submission"]
+        direction TB
+        n21["21. Choose Application Mode"] --> n22["22. Record Submission"]
+        n22 --> n23["23. Update Application Status"]
+        n23 --> n24["24. Application Dashboard"]
+    end
+
+    n9 -->|"user marks a job Apply"| n1
+    n20 -->|"user reviews & submits"| n21
+
+    style n1 fill:#fef3c7,stroke:#d97706
+    style n2 fill:#dcfce7,stroke:#16a34a
+    style n10 fill:#dcfce7,stroke:#16a34a
+    style n11 fill:#dcfce7,stroke:#16a34a
+    style n12 fill:#fef3c7,stroke:#d97706
+    style n13 fill:#fef3c7,stroke:#d97706
+    style n14 fill:#dcfce7,stroke:#16a34a
+    style n15 fill:#dcfce7,stroke:#16a34a
+    style n16 fill:#fef3c7,stroke:#d97706
+    style n17 fill:#dcfce7,stroke:#16a34a
+    style n18 fill:#dcfce7,stroke:#16a34a
+    style n19 fill:#fef3c7,stroke:#d97706
+    style n20 fill:#dcfce7,stroke:#16a34a
+    style n3 fill:#f3f4f6,stroke:#9ca3af
+    style n4 fill:#f3f4f6,stroke:#9ca3af
+    style n5 fill:#f3f4f6,stroke:#9ca3af
+    style n6 fill:#f3f4f6,stroke:#9ca3af
+    style n7 fill:#f3f4f6,stroke:#9ca3af
+    style n8 fill:#dcfce7,stroke:#16a34a
+    style n9 fill:#f3f4f6,stroke:#9ca3af
+    style n21 fill:#f3f4f6,stroke:#9ca3af
+    style n22 fill:#f3f4f6,stroke:#9ca3af
+    style n23 fill:#f3f4f6,stroke:#9ca3af
+    style n24 fill:#f3f4f6,stroke:#9ca3af
+```
+
+Note on item 8: the workflow diagram marks "Calculate Candidate Fit" as Sprint 2 "Planned," but
+it's actually already built and live-tested in `apps/api` (`CandidateFitScorer`, wired into both
+`/jobs/upsert` and `/tailor/preview`) — ahead of the diagram, not behind it. Everything else in
+Sprint 2+ and 3+ (job source selection, scouting, the dashboard, and all of application
+submission/tracking) is genuinely not started; some scaffolding code exists for ATS auto-apply in
+`product/resume_tailorer/applications/` but it isn't wired to anything real yet.
+
 ## What the workflow diagram claimed vs. what was actually true (before this sprint)
 
 | Spec item | Diagram status | What was actually true |
