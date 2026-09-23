@@ -45,6 +45,11 @@ def main():
     parser.add_argument("--password", default="testpassword123")
     parser.add_argument("--out", default="tailored_resume.pdf", help="Where to save the tailored PDF")
     parser.add_argument("--length", default="1_page", choices=["1_page", "2_page", "preserve"])
+    parser.add_argument(
+        "--conservative",
+        action="store_true",
+        help="Only insert missing ATS keywords into existing bullets, don't rewrite them",
+    )
     args = parser.parse_args()
 
     resume_path = Path(args.resume)
@@ -85,7 +90,12 @@ def main():
             print("3. Tailoring against the job description (real LLM call, ~10-30s)...")
             r = client.post(
                 "/tailor/preview",
-                json={"job_description": job_description, "generate_pdf": True, "target_length": args.length},
+                json={
+                    "job_description": job_description,
+                    "generate_pdf": True,
+                    "target_length": args.length,
+                    "conservative": args.conservative,
+                },
                 headers=headers,
             )
     except httpx.ConnectError:

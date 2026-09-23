@@ -9,7 +9,17 @@ class TailorRequest(BaseModel):
     job_description: str = ""
     job_id: str | None = None
     generate_pdf: bool = False
-    target_length: TargetLength = "1_page"
+    # Base rule: match the length of whatever resume the user actually
+    # uploaded, rather than always defaulting to a fixed 1-page target
+    # regardless of how long their real resume is. "preserve" detects the
+    # original's real page count (see ResumeParser._detect_pdf_style) and
+    # targets that -- falling back to a middle-ground preset only if no
+    # original file was uploaded to detect a page count from.
+    target_length: TargetLength = "preserve"
+    # When True, restrict tailoring to inserting missing ATS keywords into
+    # existing bullets rather than a full rewrite -- for a user who wants
+    # their resume's wording and structure left otherwise untouched.
+    conservative: bool = False
 
 
 class GapItemOut(BaseModel):

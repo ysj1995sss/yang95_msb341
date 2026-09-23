@@ -73,10 +73,14 @@ def main():
         job_description = st.text_area("Job description text", height=250)
 
         st.header("3. Choose the target resume length")
+        # Defaults to "Preserve original length" (index=2): the base rule
+        # is to match whatever length/style the user actually uploaded,
+        # not to assume everyone wants a fixed 1-page resume regardless of
+        # how long their real one is.
         length_choice_ui = st.selectbox(
             "Target resume length",
             options=["1 page", "2 pages", "Preserve original length"],
-            index=0,
+            index=2,
         )
         target_length_map = {
             "1 page": "1_page",
@@ -84,6 +88,16 @@ def main():
             "Preserve original length": "preserve",
         }
         target_length = target_length_map[length_choice_ui]
+
+        conservative_mode = st.checkbox(
+            "Conservative mode: only add missing keywords, don't rewrite bullets",
+            value=False,
+            help=(
+                "Leaves your existing wording and structure untouched and only "
+                "weaves in the specific ATS keywords the job posting is missing, "
+                "instead of a full rewrite."
+            ),
+        )
 
         st.header("4. Model provider")
         st.caption(
@@ -158,7 +172,11 @@ def main():
                 raw_resume_text = parser.get_raw_text(resume_path)
             except ValueError:
                 raw_resume_text = ""
-            style_hints = parser.extract_style_hints(raw_resume_text)
+            # file_path=resume_path additionally detects the original's
+            # page count and font family straight from the PDF structure,
+            # so "Preserve original length" actually preserves length and
+            # the output uses a similar font family.
+            style_hints = parser.extract_style_hints(raw_resume_text, file_path=resume_path)
         st.session_state["career_profile"] = profile
         st.success(f"Resume parsed for {profile.name}.")
     except Exception as exc:
@@ -200,7 +218,7 @@ def main():
     try:
         with st.spinner("Tailoring resume with the configured LLM..."):
             tailored_text = ResumeTailorer(llm=llm).tailor(
-                profile, job_analysis, gap_report
+                profile, job_analysis, gap_report, conservative=conservative_mode
             )
     except RuntimeError as exc:
         st.error(str(exc))
@@ -213,7 +231,7 @@ def main():
     try:
         with st.spinner("Optimizing tailored resume for alignment..."):
             optimization_result = ResumeTailoringOptimizer(llm=llm).optimize(
-                profile, job_analysis, tailored_text, gap_report
+                profile, job_analysis, tailored_text, gap_report, conservative=conservative_mode
             )
     except RuntimeError as exc:
         st.error(str(exc))
@@ -238,7 +256,10 @@ def main():
     # --- Step 8: Validate PDF (hard gate) -----------------------------------------
     try:
         with st.spinner("Validating generated PDF..."):
-            pdf_validation = PDFValidator().validate(pdf_path, target_length=target_length)
+            # Resolve "preserve" to the concrete 1_page/2_page preset so the
+            # validator enforces the same page limit generate() targeted.
+            effective_length = PDFGenerator.resolve_target_length(target_length, style_hints)
+            pdf_validation = PDFValidator().validate(pdf_path, target_length=effective_length)
     except Exception as exc:
         st.error(f"PDF validation failed: {exc}")
         return
@@ -266,7 +287,7 @@ def main():
         and "page" in pdf_validation.issues[0].lower()
         and pdf_validation.page_count > 0
     )
-    length_overflow_only = page_count_issue_only and target_length == "1_page"
+    length_overflow_only = page_count_issue_only and effective_length == "1_page"
 
     # --- Display results ------------------------------------------------------------
     st.header("Results")

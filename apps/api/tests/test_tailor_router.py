@@ -29,7 +29,7 @@ _PROFILE = {
 
 
 class _FakeTailorer:
-    def tailor(self, profile, job_analysis, gap_report):
+    def tailor(self, profile, job_analysis, gap_report, conservative=False):
         return "Initial tailored resume draft."
 
 
@@ -37,7 +37,7 @@ class _FakeOptimizer:
     def __init__(self):
         self.tailorer = _FakeTailorer()
 
-    def optimize(self, profile, job_analysis, initial_tailored, gap_report):
+    def optimize(self, profile, job_analysis, initial_tailored, gap_report, conservative=False):
         return OptimizationResult(
             tailored_resume="- Built REST APIs with Python and FastAPI\n- Deployed services on AWS",
             final_score=0.9,
@@ -158,7 +158,7 @@ class _FakeOptimizerWithUnsupportedClaim:
     def __init__(self):
         self.tailorer = _FakeTailorer()
 
-    def optimize(self, profile, job_analysis, initial_tailored, gap_report):
+    def optimize(self, profile, job_analysis, initial_tailored, gap_report, conservative=False):
         return OptimizationResult(
             tailored_resume="- Built REST APIs with Python and FastAPI\n- Deployed on Kubernetes",
             final_score=0.7,

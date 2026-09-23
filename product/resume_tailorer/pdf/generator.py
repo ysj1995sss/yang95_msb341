@@ -48,16 +48,55 @@ class PDFGenerator:
         "preserve": {"font_size": 9.5, "leading": 13, "margin": 0.6, "bullet_leading": 13},
     }
 
+    # Maps a detected original font family to the closest ATS-safe base-14
+    # equivalent. Never the literal original font -- see
+    # ResumeParser._detect_pdf_style's docstring for why embedding a font
+    # tied to one machine's installed fonts isn't done here.
+    FONT_FAMILIES = {
+        "sans-serif": {"regular": "Helvetica", "bold": "Helvetica-Bold", "italic": "Helvetica-Oblique"},
+        "serif": {"regular": "Times-Roman", "bold": "Times-Bold", "italic": "Times-Italic"},
+    }
+
     def __init__(self):
         # Styles are built per-generate() call now (see _build_styles), since
         # they depend on target_length. __init__ keeps no fixed style state.
         pass
 
-    def _get_length_preset(self, target_length: str) -> dict:
+    @staticmethod
+    def resolve_target_length(target_length: str, style_hints: dict = None) -> str:
+        """Resolve "preserve" down to the concrete "1_page"/"2_page" preset
+        name matching the original's detected page count, so callers that
+        need a single consistent length elsewhere (PDFValidator's page-count
+        gate) enforce the SAME limit that generate() actually targeted,
+        instead of "preserve" silently meaning "anything up to 10 pages" --
+        the mismatch that let a 2-page output pass validation when the
+        original was detected as 1 page (found live, 2026-09-22).
+
+        Args:
+            target_length: One of "1_page", "2_page", "preserve".
+            style_hints: Optional dict; when target_length is "preserve" and
+                style_hints has a "page_count" (detected from the user's
+                actual original PDF -- see ResumeParser._detect_pdf_style),
+                resolves to "1_page" or "2_page" matching that real count.
+
+        Returns:
+            "1_page" or "2_page" if resolvable; otherwise the input
+            unchanged (e.g. "preserve" with no detected page count).
+        """
+        if target_length == "preserve":
+            detected_pages = (style_hints or {}).get("page_count")
+            if detected_pages == 1:
+                return "1_page"
+            if detected_pages and detected_pages >= 2:
+                return "2_page"
+        return target_length
+
+    def _get_length_preset(self, target_length: str, style_hints: dict = None) -> dict:
         """Look up font/margin/leading preset for a target length option.
 
         Args:
             target_length: One of "1_page", "2_page", "preserve".
+            style_hints: Optional dict; see resolve_target_length().
 
         Returns:
             Dict with keys: font_size, leading, margin, bullet_leading.
@@ -65,12 +104,13 @@ class PDFGenerator:
         Raises:
             ValueError: If target_length is not a recognized preset name.
         """
-        if target_length not in self.LENGTH_PRESETS:
+        resolved = self.resolve_target_length(target_length, style_hints)
+        if resolved not in self.LENGTH_PRESETS:
             raise ValueError(
                 f"Unknown target_length '{target_length}'. "
                 f"Must be one of: {list(self.LENGTH_PRESETS.keys())}"
             )
-        return self.LENGTH_PRESETS[target_length]
+        return self.LENGTH_PRESETS[resolved]
 
     def _build_styles(self, preset: dict, style_hints: dict = None):
         """Build Platypus ParagraphStyle objects from a length preset and optional style hints."""
@@ -83,9 +123,12 @@ class PDFGenerator:
         # plain "bold" headings keep the existing +2 sizing.
         heading_size_bump = 3 if heading_style_hint == "bold_larger" else 2
 
+        font_family = (style_hints or {}).get("font_family", "sans-serif")
+        fonts = self.FONT_FAMILIES.get(font_family, self.FONT_FAMILIES["sans-serif"])
+
         name_style = ParagraphStyle(
             name="CandidateName",
-            fontName="Helvetica-Bold",
+            fontName=fonts["bold"],
             fontSize=16,
             leading=19,
             alignment=TA_CENTER,
@@ -93,7 +136,7 @@ class PDFGenerator:
         )
         title_style = ParagraphStyle(
             name="JobTitle",
-            fontName="Helvetica",
+            fontName=fonts["regular"],
             fontSize=10,
             leading=12,
             alignment=TA_CENTER,
@@ -102,7 +145,7 @@ class PDFGenerator:
         )
         section_style = ParagraphStyle(
             name="SectionHeading",
-            fontName="Helvetica-Bold",
+            fontName=fonts["bold"],
             fontSize=body_font + heading_size_bump,
             leading=leading + heading_size_bump,
             spaceBefore=8,
@@ -110,7 +153,7 @@ class PDFGenerator:
         )
         bullet_style = ParagraphStyle(
             name="Bullet",
-            fontName="Helvetica",
+            fontName=fonts["regular"],
             fontSize=body_font,
             leading=bullet_leading,
             leftIndent=14,
@@ -118,7 +161,7 @@ class PDFGenerator:
         )
         body_style = ParagraphStyle(
             name="Body",
-            fontName="Helvetica",
+            fontName=fonts["regular"],
             fontSize=body_font,
             leading=leading,
             spaceAfter=2,
@@ -127,7 +170,7 @@ class PDFGenerator:
         # resume's own layout, instead of falling through to plain body text.
         org_header_style = ParagraphStyle(
             name="OrgHeader",
-            fontName="Helvetica-Bold",
+            fontName=fonts["bold"],
             fontSize=body_font,
             leading=leading,
             spaceBefore=6,
@@ -137,7 +180,7 @@ class PDFGenerator:
         # matching the original resume's layout.
         title_line_style = ParagraphStyle(
             name="TitleLine",
-            fontName="Helvetica-Oblique",
+            fontName=fonts["italic"],
             fontSize=body_font,
             leading=leading,
             spaceAfter=2,
@@ -188,7 +231,7 @@ class PDFGenerator:
         Raises:
             ValueError: If target_length is not a recognized preset.
         """
-        preset = self._get_length_preset(target_length)
+        preset = self._get_length_preset(target_length, style_hints)
         styles = self._build_styles(preset, style_hints)
 
         if output_path is None:

@@ -285,8 +285,15 @@ class ResumeParser:
         if "experience" not in text.lower():
             return work_experience
 
+        # "ADDITIONAL" added after a real resume (2026-09-22) put its
+        # Technical Proficiency / Certificates / Core Competencies lines
+        # under an "ADDITIONAL" heading with no year in it, right after the
+        # last job -- since that heading wasn't a recognized boundary, those
+        # lines had no anchor to stop at and got swallowed as trailing
+        # bullets of the last job, duplicating the same content that
+        # _extract_skills also (correctly) pulls out separately.
         exp_match = re.search(
-            r"(?:work\s+)?experience[:]*\s*\n(.*?)(?:\n(?:EDUCATION|TECHNICAL|SKILLS|CERTIFICATIONS|$))",
+            r"(?:work\s+)?experience[:]*\s*\n(.*?)(?:\n(?:EDUCATION|TECHNICAL|SKILLS|CERTIFICATIONS|ADDITIONAL|$))",
             text,
             re.IGNORECASE | re.DOTALL,
         )
@@ -449,8 +456,17 @@ class ResumeParser:
         # "Core Competencies: Strategic Thinker | Competitive Analysis",
         # which can wrap onto a following line with no repeated label.
         for label in self._INLINE_SKILL_LABELS:
+            # The stop lookahead must tolerate an optional bullet marker
+            # before the next label (e.g. "\n• Certificates: ...") --
+            # without it, a bare "\n[A-Z]" check never matches a bulleted
+            # next line, so one label's capture silently swallows every
+            # subsequent labeled line all the way to end of document
+            # (found live 2026-09-22: "Technical Proficiency: ...SQL"
+            # swallowed the following "Certificates:" and "Core
+            # Competencies:" lines whole, producing a malformed skill like
+            # "Certificates: Prompt Engineering" instead of splitting it).
             match = re.search(
-                r"(?:^|\n)\s*[•\-]?\s*" + re.escape(label) + r"\s*:\s*(.+?)(?:\n\s*\n|\n[A-Z][A-Za-z ]*:|\n[A-Z]{2,}\s*$|\Z)",
+                r"(?:^|\n)\s*[•\-]?\s*" + re.escape(label) + r"\s*:\s*(.+?)(?:\n\s*\n|\n\s*[•\-]?\s*[A-Z][A-Za-z ]*:|\n[A-Z]{2,}\s*$|\Z)",
                 text,
                 re.IGNORECASE | re.DOTALL,
             )
@@ -502,14 +518,143 @@ class ResumeParser:
                 found.append(label)
         return found
 
-    def extract_style_hints(self, raw_text: str) -> dict:
+    # A font whose PDF /BaseFont name matches one of these (case/space/hyphen
+    # -insensitive) is classified serif or sans-serif. Mapped to the closest
+    # ATS-safe base-14 equivalent (Times-Roman / Helvetica) rather than
+    # embedding the literal font file: embedding ties the output to whatever
+    # happens to be installed on one developer's machine, which isn't
+    # portable to a deployed server, and the entire point of restricting to
+    # base-14 fonts is guaranteed ATS-parser compatibility -- an unusual
+    # embedded font is exactly the kind of thing that can break parsing.
+    # Serif vs. sans-serif is the single most visually significant
+    # distinction between resume fonts, so this gets most of the visual
+    # similarity a user asks for without that portability/safety risk.
+    _SERIF_FONT_NAMES = {
+        "timesnewroman", "times", "georgia", "cambria", "garamond",
+        "bookantiqua", "palatino", "minionpro", "cardo", "cambriamath",
+    }
+    _SANS_SERIF_FONT_NAMES = {
+        "arial", "calibri", "helvetica", "segoeui", "verdana", "tahoma",
+        "trebuchetms", "centurygothic", "opensans", "lato", "roboto",
+        "arialnarrow", "franklingothic",
+    }
+
+    _TF_OPERATOR = re.compile(r"(/F\d+)\s+[\d.]+\s+Tf")
+    _TEXT_SHOW_OPERATOR = re.compile(r"\)\s*Tj|\]\s*TJ")
+
+    def _dominant_font_name(self, page) -> str | None:
         """
-        Extract lightweight visual style hints from the original resume text,
+        Find the /BaseFont name actually used for the most VISIBLE TEXT on
+        a page, rather than just the first entry in /Resources/Font -- a
+        PDF writer can register a font it never actually draws with
+        (reportlab always pre-registers Helvetica this way, even when the
+        visible text uses Times-Roman), so picking the first one found
+        silently picks the wrong font.
+
+        A font selected via "/F1 12 Tf" stays the active font for any text
+        drawn afterward until the next Tf, even across separate BT/ET
+        blocks (PDF text state persists in the graphics state) -- so simply
+        counting how many times each font is named in "Tf" operators is
+        misleading when a writer names two fonts once each in adjacent
+        blocks but only draws text with the second. This instead walks the
+        content stream in order and, for each text-showing operator (Tj or
+        TJ), attributes it to whichever font was most recently selected.
+        """
+        resources = page.get("/Resources") or {}
+        fonts = resources.get("/Font")
+        if not fonts:
+            return None
+
+        font_names: dict[str, str] = {}
+        for key, font_ref in fonts.items():
+            try:
+                font_obj = font_ref.get_object()
+                font_names[key] = str(font_obj.get("/BaseFont", ""))
+            except Exception:
+                continue
+        if not font_names:
+            return None
+        if len(font_names) == 1:
+            return next(iter(font_names.values()))
+
+        # page.get_contents() wraps the stream in a fresh pypdf ContentStream,
+        # whose own get_data() reliably came back empty in testing (2026-09-22)
+        # even on a freshly-opened reader. Reading the /Contents stream
+        # object's get_data() directly -- the same call ContentStream itself
+        # ends up making internally -- returns the real bytes every time, so
+        # this bypasses ContentStream rather than retrying it.
+        contents_ref = page.get("/Contents")
+        if contents_ref is None:
+            return next(iter(font_names.values()), None)
+        resolved = contents_ref.get_object()
+        try:
+            if isinstance(resolved, list):
+                raw = "\n".join(
+                    s.get_object().get_data().decode("latin-1", errors="ignore")
+                    for s in resolved
+                )
+            else:
+                raw = resolved.get_data().decode("latin-1", errors="ignore")
+        except Exception:
+            raw = ""
+
+        tf_positions = [(m.start(), m.group(1)) for m in self._TF_OPERATOR.finditer(raw)]
+        usage_counts: dict[str, int] = {}
+        current_font = None
+        tf_idx = 0
+        for show_match in self._TEXT_SHOW_OPERATOR.finditer(raw):
+            show_pos = show_match.start()
+            while tf_idx < len(tf_positions) and tf_positions[tf_idx][0] < show_pos:
+                current_font = tf_positions[tf_idx][1]
+                tf_idx += 1
+            if current_font and current_font in font_names:
+                usage_counts[current_font] = usage_counts.get(current_font, 0) + 1
+
+        if not usage_counts:
+            return next(iter(font_names.values()))
+        dominant_key = max(usage_counts, key=usage_counts.get)
+        return font_names[dominant_key]
+
+    def _detect_pdf_style(self, file_path: str) -> dict:
+        """
+        Detect the original PDF's page count and font family, from the
+        actual PDF file (not just its extracted text) -- used so a tailored
+        resume can be generated in a similar style and length to what the
+        user actually uploaded, instead of always defaulting to Helvetica
+        and a fixed page-length preset regardless of the source.
+        """
+        try:
+            reader = PdfReader(file_path)
+        except Exception:
+            return {}
+
+        result: dict = {"page_count": len(reader.pages)}
+
+        try:
+            if reader.pages:
+                base_font = self._dominant_font_name(reader.pages[0])
+                if base_font:
+                    name = base_font.split("+", 1)[-1].lower().replace(" ", "").replace("-", "")
+                    if any(s in name for s in self._SERIF_FONT_NAMES):
+                        result["font_family"] = "serif"
+                    elif any(s in name for s in self._SANS_SERIF_FONT_NAMES):
+                        result["font_family"] = "sans-serif"
+        except Exception:
+            pass
+
+        return result
+
+    def extract_style_hints(self, raw_text: str, file_path: str | None = None) -> dict:
+        """
+        Extract lightweight visual style hints from the original resume,
         used later to make the tailored PDF resemble the source resume's
-        bullet style and heading emphasis.
+        bullet style, heading emphasis, font family, and length.
 
         Args:
             raw_text: The original resume's extracted plain text.
+            file_path: Optional path to the original PDF file. When given,
+                also detects page count and font family directly from the
+                PDF's own structure (not derivable from text alone).
 
         Returns:
             Dict with keys:
@@ -518,6 +663,10 @@ class ResumeParser:
                 "heading_style": "bold_larger" if a short (<30 char) ALL-CAPS
                     line is found (suggesting a large/bold heading font in
                     the original), else "bold".
+                "page_count" (only if file_path given): the original PDF's
+                    page count.
+                "font_family" (only if file_path given and detected):
+                    "serif" or "sans-serif".
         """
         lines = raw_text.splitlines()
 
@@ -544,10 +693,20 @@ class ResumeParser:
 
         heading_style = "bold_larger" if has_short_caps_heading else "bold"
 
-        return {
+        hints = {
             "bullet_char": dominant_bullet,
             "heading_style": heading_style,
         }
+        if file_path:
+            hints.update(self._detect_pdf_style(file_path))
+        return hints
+
+    # Same rationale as _INLINE_SKILL_LABELS: a resume can list certificates
+    # under an inline "Certificates:"/"Certifications:" line (observed live
+    # 2026-09-22, under an "ADDITIONAL" heading alongside Technical
+    # Proficiency and Core Competencies lines) rather than a dedicated
+    # section or a name matching the acronym allowlist below.
+    _INLINE_CERT_LABELS = ("certificates", "certifications")
 
     def _extract_certifications(self, text: str) -> list[str]:
         """Extract certifications."""
@@ -562,5 +721,18 @@ class ResumeParser:
         for pattern in patterns:
             for match in re.finditer(pattern, text):
                 certifications.append(match.group(0).strip())
+
+        for label in self._INLINE_CERT_LABELS:
+            match = re.search(
+                r"(?:^|\n)\s*[•\-]?\s*" + re.escape(label) + r"\s*:\s*(.+?)(?:\n\s*\n|\n\s*[•\-]?\s*[A-Z][A-Za-z ]*:|\n[A-Z]{2,}\s*$|\Z)",
+                text,
+                re.IGNORECASE | re.DOTALL,
+            )
+            if not match:
+                continue
+            for item in re.split(r"[|,\n]", match.group(1)):
+                clean_item = item.strip().lstrip("•-").strip()
+                if clean_item and len(clean_item) > 1:
+                    certifications.append(clean_item)
 
         return list(set(certifications))  # Deduplicate

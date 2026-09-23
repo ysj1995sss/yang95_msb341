@@ -168,6 +168,76 @@ def test_extract_style_hints_defaults_heading_style_to_bold():
     hints = parser.extract_style_hints(text)
     assert hints["heading_style"] == "bold"
 
+class TestDetectPdfStyle:
+    """
+    Regression tests for font-family and page-count detection, added so
+    that "preserve original length" (spec item 15) actually detects and
+    matches the user's real page count instead of using a fixed preset
+    regardless of the source, and so the output font is at least in the
+    same family (serif/sans-serif) as the original -- both requested
+    directly (2026-09-22) after a user's third round of PDF feedback.
+    """
+
+    def _make_pdf(self, tmp_path, font_name: str, num_pages: int = 1) -> str:
+        from reportlab.pdfgen import canvas
+        from reportlab.lib.pagesizes import LETTER
+
+        path = str(tmp_path / "test.pdf")
+        c = canvas.Canvas(path, pagesize=LETTER)
+        for page in range(num_pages):
+            c.setFont(font_name, 12)
+            c.drawString(72, 750, f"Page {page + 1} content")
+            c.showPage()
+        c.save()
+        return path
+
+    def test_detects_sans_serif_font(self, tmp_path):
+        path = self._make_pdf(tmp_path, "Helvetica")
+        parser = ResumeParser()
+        result = parser._detect_pdf_style(path)
+        assert result.get("font_family") == "sans-serif"
+
+    def test_detects_serif_font(self, tmp_path):
+        path = self._make_pdf(tmp_path, "Times-Roman")
+        parser = ResumeParser()
+        result = parser._detect_pdf_style(path)
+        assert result.get("font_family") == "serif"
+
+    def test_detects_single_page_count(self, tmp_path):
+        path = self._make_pdf(tmp_path, "Helvetica", num_pages=1)
+        parser = ResumeParser()
+        result = parser._detect_pdf_style(path)
+        assert result["page_count"] == 1
+
+    def test_detects_multi_page_count(self, tmp_path):
+        path = self._make_pdf(tmp_path, "Helvetica", num_pages=2)
+        parser = ResumeParser()
+        result = parser._detect_pdf_style(path)
+        assert result["page_count"] == 2
+
+    def test_extract_style_hints_includes_detected_style_when_file_path_given(self, tmp_path):
+        path = self._make_pdf(tmp_path, "Times-Roman", num_pages=2)
+        parser = ResumeParser()
+        hints = parser.extract_style_hints("some text", file_path=path)
+        assert hints["page_count"] == 2
+        assert hints["font_family"] == "serif"
+        # Text-derived hints must still be present too.
+        assert "bullet_char" in hints
+        assert "heading_style" in hints
+
+    def test_extract_style_hints_without_file_path_has_no_style_keys(self):
+        """Backward compatible: existing callers passing only text keep working."""
+        parser = ResumeParser()
+        hints = parser.extract_style_hints("some resume text")
+        assert "page_count" not in hints
+        assert "font_family" not in hints
+
+    def test_detect_pdf_style_handles_a_missing_file_gracefully(self):
+        parser = ResumeParser()
+        result = parser._detect_pdf_style("this/path/does/not/exist.pdf")
+        assert result == {}
+
+
 def test_get_raw_text_dispatches_pdf(sample_resume_path):
     """get_raw_text() extracts text from a PDF via its public dispatch method."""
     parser = ResumeParser()

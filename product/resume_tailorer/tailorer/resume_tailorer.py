@@ -76,6 +76,30 @@ def _strip_markdown_syntax(text: str) -> str:
     return text.replace("**", "").replace("*", "")
 
 
+# _build_user_prompt() shows the model its own CareerTruthProfile rendered
+# with internal labels like "Location:", "Responsibilities:", and
+# "Accomplishments:" (see _profile_to_string) -- a weaker model can mirror
+# that input structure straight into its output instead of transforming it
+# into plain resume prose, especially in conservative mode where it's told
+# to change as little as possible (found live, 2026-09-22: real output kept
+# "Location: Woonsocket, RI" and a bare "Accomplishments:" line). These
+# labels are never valid resume content on their own -- location is always
+# folded into the deterministic header by _reconcile_headers_with_profile,
+# and category labels add nothing a reader needs -- so they're dropped
+# outright rather than chased with yet another formatting instruction.
+_STRAY_LOCATION_LABEL = re.compile(r"^\s*Location\s*:\s*.*$", re.IGNORECASE)
+_STRAY_CATEGORY_LABEL = re.compile(r"^\s*(Responsibilities|Accomplishments)\s*:\s*$", re.IGNORECASE)
+
+
+def _strip_profile_dump_labels(text: str) -> str:
+    lines = [
+        line
+        for line in text.split("\n")
+        if not _STRAY_LOCATION_LABEL.match(line) and not _STRAY_CATEGORY_LABEL.match(line)
+    ]
+    return "\n".join(lines)
+
+
 # The LLM phrases job/education header lines differently on essentially
 # every call -- "Employer | Location Dates" one time, "Title at Employer"
 # the next, "Degree from Institution (Year)" another -- and chasing each
@@ -93,7 +117,16 @@ def _strip_markdown_syntax(text: str) -> str:
 # nothing previously enforced that the LLM's own header text stayed
 # byte-identical to the verified employer name / dates rather than a
 # paraphrase of them.
-_SECTION_HEADING_RE = re.compile(r"^[A-Z][A-Z0-9 &/-]{2,}$")
+# Trailing colon must be optional -- the LLM sometimes writes "WORK
+# EXPERIENCE:" instead of "WORK EXPERIENCE" despite the prompt's explicit
+# "plain ALL CAPS on their own line" instruction (no colon shown in the
+# example), and without it this regex silently failed to recognize the
+# heading at all, which meant _find_section never located the section and
+# header reconciliation below quietly skipped the whole section instead of
+# fixing it (found live, 2026-09-22, against a real resume+job run: neither
+# WORK EXPERIENCE nor EDUCATION got reconciled because both came back with
+# a trailing colon).
+_SECTION_HEADING_RE = re.compile(r"^[A-Z][A-Z0-9 &/-]{2,}:?$")
 
 
 def _split_into_entry_blocks(lines: list[str]) -> list[tuple[list[str], list[str]]]:
@@ -227,6 +260,7 @@ class ResumeTailorer:
         profile: CareerTruthProfile,
         job_analysis: JobAnalysis,
         gap_report: GapReport,
+        conservative: bool = False,
     ) -> str:
         """
         Tailor resume content to match job requirements.
@@ -235,6 +269,10 @@ class ResumeTailorer:
             profile: The Career Truth Profile (the only source of truth)
             job_analysis: Parsed job description with requirements
             gap_report: Gap analysis classifying each requirement A-E
+            conservative: When True, restrict the rewrite to inserting missing
+                ATS keywords/phrases into existing bullets rather than a full
+                rewrite -- requested live (2026-09-22) for a user who wanted
+                their resume's wording and structure left otherwise untouched.
 
         Returns:
             Tailored resume text (string)
@@ -244,13 +282,13 @@ class ResumeTailorer:
         - Only rephrase, reorganize, prioritize existing experience
         - Respect gap categories: fill A/B/C, ignore D/E
         """
-        system_prompt = self._build_system_prompt()
-        user_prompt = self._build_user_prompt(profile, job_analysis, gap_report)
+        system_prompt = self._build_system_prompt(conservative=conservative)
+        user_prompt = self._build_user_prompt(profile, job_analysis, gap_report, conservative=conservative)
         raw = self.llm.complete(system_prompt, user_prompt, max_tokens=2000)
-        cleaned = _strip_markdown_syntax(_strip_non_resume_content(raw))
+        cleaned = _strip_profile_dump_labels(_strip_markdown_syntax(_strip_non_resume_content(raw)))
         return _reconcile_headers_with_profile(cleaned, profile)
 
-    def _build_system_prompt(self) -> str:
+    def _build_system_prompt(self, conservative: bool = False) -> str:
         """
         Build the system prompt that constrains Claude to Career Truth Profile only.
 
@@ -258,7 +296,21 @@ class ResumeTailorer:
         It must explicitly forbid adding experience, skills, certifications,
         numbers, dates, or employers not in the Career Truth Profile.
         """
-        return """You are a professional resume tailoring specialist.
+        conservative_block = ""
+        if conservative:
+            conservative_block = """
+
+CONSERVATIVE MODE - ADDITIONAL CONSTRAINT (this overrides ALLOWED TRANSFORMATIONS above):
+The candidate wants their resume's wording and structure left as close to the
+original as possible. Do NOT rewrite bullets that already communicate a
+requirement adequately, and do NOT reorganize or restructure sections.
+Your ONLY job is to weave the specific missing keywords/phrases from the job
+posting (Category B and C gaps) into the existing bullets with the smallest
+possible edit -- ideally adding or swapping a few words in place, not
+rewriting the whole sentence. Leave every other bullet byte-for-byte
+identical to the profile's wording. Do not add new bullets unless a
+Category B item has no existing bullet it can be woven into."""
+        return f"""You are a professional resume tailoring specialist.{conservative_block}
 
 YOUR CORE CONSTRAINT - CRITICAL FOR SAFETY:
 You may ONLY rewrite resume content using information from the Career Truth Profile provided.
@@ -316,6 +368,7 @@ Your output must be a revised resume that increases alignment with the job while
         profile: CareerTruthProfile,
         job_analysis: JobAnalysis,
         gap_report: GapReport,
+        conservative: bool = False,
     ) -> str:
         """
         Build the user prompt requesting tailored resume.
@@ -324,6 +377,7 @@ Your output must be a revised resume that increases alignment with the job while
             profile: Career Truth Profile
             job_analysis: Parsed job requirements
             gap_report: Gap analysis results
+            conservative: See ResumeTailorer.tailor().
 
         Returns:
             Formatted user prompt for Claude
@@ -331,6 +385,34 @@ Your output must be a revised resume that increases alignment with the job while
         profile_str = self._profile_to_string(profile)
         gaps_str = self._format_gaps(gap_report)
         job_requirements = self._format_job_requirements(job_analysis)
+
+        if conservative:
+            instructions = """INSTRUCTIONS (CONSERVATIVE MODE - minimal edits only):
+1. Start from the resume exactly as described in the Career Truth Profile above
+2. For each Category B/C gap, find the existing bullet it relates to and insert the
+   missing keyword/phrase into that bullet with the smallest edit that fits it in
+3. Do NOT rewrite bullets that don't relate to a gap -- keep them exactly as given
+4. Do NOT reorder or reorganize sections, jobs, or bullets
+5. NEVER add experience, skills, or accomplishments not in the Career Truth Profile
+6. NEVER change dates, employers, titles, or employment types
+7. If a PROFESSIONAL SUMMARY is provided above, keep it as-is unless a gap keyword
+   naturally fits into it with a small edit
+8. Output ONLY the revised resume content (bullet points and sections), ready to be inserted
+   into the original resume template -- no notes, no explanations, no commentary about what
+   you changed or what's missing"""
+        else:
+            instructions = """INSTRUCTIONS:
+1. Review the gap report to understand what's already on the resume, what should be added from existing experience, and what should be rephased
+2. Create a tailored version of the resume that highlights the most relevant experience
+3. Use language from the job description where possible without misrepresenting experience
+4. NEVER add experience, skills, or accomplishments not in the Career Truth Profile
+5. NEVER change dates, employers, titles, or employment types
+6. Organize bullets to emphasize job-relevant accomplishments
+7. If a PROFESSIONAL SUMMARY is provided above, include a short summary paragraph near the
+   top of the output, lightly adapted toward this job -- do not drop it
+8. Output ONLY the revised resume content (bullet points and sections), ready to be inserted
+   into the original resume template -- no notes, no explanations, no commentary about what
+   you changed or what's missing"""
 
         return f"""Please tailor the following resume to match the job requirements below.
 
@@ -343,18 +425,7 @@ JOB REQUIREMENTS:
 GAP ANALYSIS (What to fill and what to ignore):
 {gaps_str}
 
-INSTRUCTIONS:
-1. Review the gap report to understand what's already on the resume, what should be added from existing experience, and what should be rephased
-2. Create a tailored version of the resume that highlights the most relevant experience
-3. Use language from the job description where possible without misrepresenting experience
-4. NEVER add experience, skills, or accomplishments not in the Career Truth Profile
-5. NEVER change dates, employers, titles, or employment types
-6. Organize bullets to emphasize job-relevant accomplishments
-7. If a PROFESSIONAL SUMMARY is provided above, include a short summary paragraph near the
-   top of the output, lightly adapted toward this job -- do not drop it
-8. Output ONLY the revised resume content (bullet points and sections), ready to be inserted
-   into the original resume template -- no notes, no explanations, no commentary about what
-   you changed or what's missing
+{instructions}
 
 Provide the tailored resume content now:"""
 
@@ -582,7 +653,7 @@ Provide the tailored resume content now:"""
         system_prompt = self._build_refinement_system_prompt()
         user_prompt = self._build_refinement_user_prompt(current_resume, improvement_prompt, profile)
         raw = self.llm.complete(system_prompt, user_prompt, max_tokens=2000)
-        cleaned = _strip_markdown_syntax(_strip_non_resume_content(raw))
+        cleaned = _strip_profile_dump_labels(_strip_markdown_syntax(_strip_non_resume_content(raw)))
         return _reconcile_headers_with_profile(cleaned, profile)
 
     def _build_refinement_system_prompt(self) -> str:

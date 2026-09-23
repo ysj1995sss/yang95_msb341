@@ -40,7 +40,12 @@ def _extract_style_hints(resume_file: ResumeFile | None) -> dict | None:
             f.write(resume_file.data)
         parser = ResumeParser()
         raw_text = parser.get_raw_text(tmp_path)
-        return parser.extract_style_hints(raw_text)
+        # Passing tmp_path (not just raw_text) lets this also detect the
+        # original's page count and font family directly from the PDF
+        # structure, so "preserve" length actually means "same length as
+        # what the user uploaded" and the output uses a similar font family
+        # -- not just bullet style/heading emphasis from the text alone.
+        return parser.extract_style_hints(raw_text, file_path=tmp_path)
     except Exception:
         return None
     finally:
@@ -120,8 +125,12 @@ def tailor_preview(
     fit = score_candidate_fit(profile_dict, job_dict)
     candidate_fit_score = fit["score"] if fit["score"] > 0 else None
 
-    initial_tailored = optimizer.tailorer.tailor(profile, job_analysis, gap_report)
-    result = optimizer.optimize(profile, job_analysis, initial_tailored, gap_report)
+    initial_tailored = optimizer.tailorer.tailor(
+        profile, job_analysis, gap_report, conservative=body.conservative
+    )
+    result = optimizer.optimize(
+        profile, job_analysis, initial_tailored, gap_report, conservative=body.conservative
+    )
 
     diff_report = DiffGenerator().generate_diff(profile, result.tailored_resume)
     unsupported_claims = find_unsupported_claims(gap_report, result.tailored_resume)
@@ -132,13 +141,17 @@ def tailor_preview(
         pdf_path = None
         try:
             style_hints = _extract_style_hints(db.get(ResumeFile, user.id))
+            # Resolve "preserve" to the concrete 1_page/2_page preset once so
+            # PDFValidator enforces the SAME page limit generate() targeted,
+            # rather than "preserve"'s own lenient fallback ceiling.
+            effective_length = PDFGenerator.resolve_target_length(body.target_length, style_hints)
             pdf_path = PDFGenerator().generate(
                 result.tailored_resume,
                 profile.name,
                 target_length=body.target_length,
                 style_hints=style_hints,
             )
-            validation = PDFValidator().validate(pdf_path, target_length=body.target_length)
+            validation = PDFValidator().validate(pdf_path, target_length=effective_length)
             pdf_issues = validation.issues
             if validation.passed:
                 with open(pdf_path, "rb") as f:

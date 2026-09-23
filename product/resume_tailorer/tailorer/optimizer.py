@@ -64,6 +64,7 @@ class ResumeTailoringOptimizer:
         job_analysis: JobAnalysis,
         initial_tailored: str,
         gap_report: GapReport,
+        conservative: bool = False,
     ) -> OptimizationResult:
         """
         Optimize the tailored resume iteratively.
@@ -80,10 +81,25 @@ class ResumeTailoringOptimizer:
                 keywords to address" list handed to the refinement prompt,
                 so the optimizer never asks Claude to "better address"
                 something the candidate doesn't actually have.
+            conservative: When True, skip the iterative refinement loop
+                entirely and score the single conservative tailor() pass
+                as-is. Refinement's whole purpose is to reorganize/rephrase
+                for alignment, which is exactly what conservative mode
+                (minimal keyword-only edits) is meant to avoid.
 
         Returns:
             OptimizationResult with final resume, score, iterations, and status
         """
+        if conservative:
+            score, matched, missing = self._score_resume(initial_tailored, job_analysis)
+            return OptimizationResult(
+                tailored_resume=initial_tailored,
+                final_score=score,
+                iterations=1,
+                ceiling_reached=False,
+                missing_qualifications=missing,
+            )
+
         current_tailored = initial_tailored
         previous_score = 0.0
 
