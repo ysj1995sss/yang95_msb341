@@ -11,12 +11,15 @@ place (the DOCX walker) independent of any future edit to this list.
 
 import re
 
+# "EMPLOYMENT" added per a product-revision spec (2026-09-23) listing it as
+# a required heading variant alongside "Work Experience"/"Professional
+# Experience" -- some resumes use it as the section title instead.
 SECTION_BOUNDARY_RE = re.compile(
-    r"^\s*(EDUCATION|(?:WORK\s+)?EXPERIENCE|PROFESSIONAL\s+EXPERIENCE|SKILLS|TECHNICAL|"
+    r"^\s*(EDUCATION|(?:WORK\s+)?EXPERIENCE|PROFESSIONAL\s+EXPERIENCE|EMPLOYMENT|SKILLS|TECHNICAL|"
     r"CERTIFICATIONS|ADDITIONAL)\b",
     re.IGNORECASE,
 )
 
 WORK_EXPERIENCE_HEADING_RE = re.compile(
-    r"^\s*(?:WORK\s+)?EXPERIENCE\b|^\s*PROFESSIONAL\s+EXPERIENCE\b", re.IGNORECASE
+    r"^\s*(?:WORK\s+)?EXPERIENCE\b|^\s*PROFESSIONAL\s+EXPERIENCE\b|^\s*EMPLOYMENT\b", re.IGNORECASE
 )

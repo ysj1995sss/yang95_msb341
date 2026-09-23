@@ -299,7 +299,11 @@ class ResumeParser:
         """
         work_experience = []
 
-        if "experience" not in text.lower():
+        # "employment" alternative added alongside "EMPLOYMENT" heading
+        # support (2026-09-23) -- a resume titling its whole section
+        # "EMPLOYMENT" with no literal word "experience" anywhere would
+        # otherwise never reach the regex below at all.
+        if "experience" not in text.lower() and "employment" not in text.lower():
             return work_experience
 
         # "ADDITIONAL" added after a real resume (2026-09-22) put its
@@ -310,7 +314,8 @@ class ResumeParser:
         # bullets of the last job, duplicating the same content that
         # _extract_skills also (correctly) pulls out separately.
         exp_match = re.search(
-            r"(?:work\s+)?experience[:]*\s*\n(.*?)(?:\n(?:EDUCATION|TECHNICAL|SKILLS|CERTIFICATIONS|ADDITIONAL|$))",
+            r"(?:(?:work|professional)\s+experience|experience|employment)[:]*\s*\n(.*?)"
+            r"(?:\n(?:EDUCATION|TECHNICAL|SKILLS|CERTIFICATIONS|ADDITIONAL|$))",
             text,
             re.IGNORECASE | re.DOTALL,
         )

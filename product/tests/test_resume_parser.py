@@ -102,6 +102,31 @@ class TestWrappedBulletContinuation:
         assert any("91% satisfaction" in b for b in all_bullets)
 
 
+class TestEmploymentHeading:
+    """Regression test for a heading variant a product-revision spec
+    (2026-09-23) explicitly called out: some resumes title the whole
+    section "EMPLOYMENT" instead of "WORK EXPERIENCE"/"PROFESSIONAL
+    EXPERIENCE", with no literal word "experience" anywhere in the resume."""
+
+    def test_employment_heading_is_recognized_with_no_word_experience_present(self):
+        text = (
+            "EMPLOYMENT\n"
+            "Marketing Manager\n"
+            "Acme Corp | Springfield, IL Jan 2022-Dec 2023\n"
+            "• Built a growth strategy\n"
+            "EDUCATION\n"
+        )
+        parser = ResumeParser()
+        jobs = parser._extract_work_experience(text)
+        assert len(jobs) == 1
+        assert jobs[0].employer == "Acme Corp"
+
+    def test_employment_recognized_as_a_section_boundary(self):
+        from resume_tailorer.parsers.section_headings import SECTION_BOUNDARY_RE
+
+        assert SECTION_BOUNDARY_RE.match("EMPLOYMENT")
+
+
 class TestInlineLabeledSkills:
     """
     Regression test for a bug found live (2026-09-22): a real resume labeled
