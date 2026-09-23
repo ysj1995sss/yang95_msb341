@@ -1,0 +1,186 @@
+"""
+Structural walker for a DOCX resume, used by the DOCX master-template
+tailoring pipeline (product/resume_tailorer/docx_export/pipeline.py). Finds
+WHICH paragraphs are bullet points inside the WORK EXPERIENCE section (plus
+the PROFESSIONAL SUMMARY paragraph), by paragraph INDEX -- so that pipeline
+can splice new text into the exact same paragraph objects afterward,
+without ever adding, removing, or reordering a paragraph.
+
+Deliberately does NOT build a CareerTruthProfile or duplicate any of
+ResumeParser's regex-based field extraction -- this only answers "which
+paragraph indices are splice targets," reusing the same anchor-by-year
+algorithm and section-boundary set ResumeParser uses on PDF-flattened text
+(see anchor_detection.py, section_headings.py), so the two never disagree
+about where a job block starts or ends.
+"""
+
+from dataclasses import dataclass, field
+
+from docx.document import Document as DocxDocument
+from docx.oxml.ns import qn
+from docx.text.paragraph import Paragraph
+
+from resume_tailorer.parsers.anchor_detection import find_anchor_blocks
+from resume_tailorer.parsers.section_headings import SECTION_BOUNDARY_RE, WORK_EXPERIENCE_HEADING_RE
+
+_MIN_TITLE_LENGTH = 3
+_NAME_SEARCH_LINES = 5
+
+
+def is_bullet_paragraph(paragraph: Paragraph) -> bool:
+    """
+    A real Word bullet/numbered-list paragraph: style name "List Paragraph"
+    AND a <w:numPr> element present in the paragraph's own XML. Confirmed
+    structural signal from direct inspection of a real resume (2026-09-22)
+    -- paragraph.text NEVER contains a literal "•"/"-" for a genuine Word
+    list item (the glyph is drawn from the numbering definition, not stored
+    in the run text), so a text-prefix heuristic like the PDF path uses
+    would silently see zero bullets on a resume that uses real Word lists.
+    """
+    if paragraph.style is None or paragraph.style.name != "List Paragraph":
+        return False
+    return paragraph._p.find(f".//{qn('w:numPr')}") is not None
+
+
+def _is_heading(paragraph: Paragraph) -> bool:
+    text = paragraph.text.strip()
+    return bool(text) and not is_bullet_paragraph(paragraph) and bool(SECTION_BOUNDARY_RE.match(text))
+
+
+def _looks_like_contact_line(text: str) -> bool:
+    lowered = text.lower()
+    return any(token in lowered for token in ("@", "http", "linkedin", "(")) or any(
+        ch.isdigit() for ch in text
+    )
+
+
+@dataclass
+class JobBlock:
+    title_index: int | None
+    anchor_index: int
+    bullet_paragraph_indices: list[int] = field(default_factory=list)
+
+
+@dataclass
+class Bullet:
+    """One splice target: a paragraph index plus enough job context for the
+    LLM prompt. `job_index` is an index into `DocxStructure.jobs`, or None
+    for a summary-paragraph target."""
+
+    paragraph_index: int
+    text: str
+    section: str  # "summary" | "work_experience"
+    job_index: int | None = None
+
+
+@dataclass
+class DocxStructure:
+    jobs: list[JobBlock] = field(default_factory=list)
+    summary_paragraph_indices: list[int] = field(default_factory=list)
+
+    def splice_targets(self, paragraphs: list[Paragraph]) -> list[Bullet]:
+        """All Bullet objects (summary + work-experience bullets) in
+        document order -- the flattened input fed to DocxBulletTailorer."""
+        targets = [
+            Bullet(paragraph_index=i, text=paragraphs[i].text, section="summary")
+            for i in self.summary_paragraph_indices
+        ]
+        for job_index, job in enumerate(self.jobs):
+            targets.extend(
+                Bullet(
+                    paragraph_index=i,
+                    text=paragraphs[i].text,
+                    section="work_experience",
+                    job_index=job_index,
+                )
+                for i in job.bullet_paragraph_indices
+            )
+        targets.sort(key=lambda b: b.paragraph_index)
+        return targets
+
+
+def _find_work_experience_body(paragraphs: list[Paragraph]) -> tuple[int, int] | None:
+    """Return (start, end) indices of the WORK EXPERIENCE section's body
+    (excluding the heading itself), from the heading to the next
+    SECTION_BOUNDARY_RE heading (e.g. "ADDITIONAL") or end of document."""
+    start = None
+    for i, paragraph in enumerate(paragraphs):
+        text = paragraph.text.strip()
+        if start is None and not is_bullet_paragraph(paragraph) and WORK_EXPERIENCE_HEADING_RE.match(text):
+            start = i + 1
+            continue
+        if start is not None and _is_heading(paragraph) and not WORK_EXPERIENCE_HEADING_RE.match(text):
+            return start, i
+    if start is not None:
+        return start, len(paragraphs)
+    return None
+
+
+def _find_summary_paragraph_indices(paragraphs: list[Paragraph]) -> list[int]:
+    """The free-text paragraph(s) between the name/contact block and the
+    first recognized section heading -- mirrors
+    ResumeParser._extract_summary's boundary logic, adapted to skip the
+    name/contact lines by paragraph position and shape rather than by line
+    index into a flattened string."""
+    first_heading_idx = None
+    for i, paragraph in enumerate(paragraphs):
+        if _is_heading(paragraph):
+            first_heading_idx = i
+            break
+    if first_heading_idx is None:
+        return []
+
+    indices = []
+    for i in range(first_heading_idx):
+        text = paragraphs[i].text.strip()
+        if not text:
+            continue
+        if i < _NAME_SEARCH_LINES and len(text.split()) <= 6:
+            continue  # name line
+        if _looks_like_contact_line(text):
+            continue
+        if is_bullet_paragraph(paragraphs[i]):
+            continue
+        indices.append(i)
+    return indices
+
+
+def extract_docx_structure(doc: DocxDocument) -> DocxStructure:
+    paragraphs = doc.paragraphs
+
+    structure = DocxStructure()
+    structure.summary_paragraph_indices = _find_summary_paragraph_indices(paragraphs)
+
+    body_bounds = _find_work_experience_body(paragraphs)
+    if body_bounds is None:
+        return structure
+
+    start, end = body_bounds
+    body = paragraphs[start:end]
+
+    blocks = find_anchor_blocks(
+        body,
+        get_text=lambda p: p.text,
+        is_bullet=is_bullet_paragraph,
+    )
+
+    for block in blocks:
+        title_index = block.title_index + start if block.title_index is not None else None
+        if title_index is not None:
+            title_text = paragraphs[title_index].text.strip()
+            if len(title_text) < _MIN_TITLE_LENGTH:
+                title_index = None
+
+        bullet_indices = [
+            start + i for i in block.body_indices if is_bullet_paragraph(body[i])
+        ]
+
+        structure.jobs.append(
+            JobBlock(
+                title_index=title_index,
+                anchor_index=block.anchor_index + start,
+                bullet_paragraph_indices=bullet_indices,
+            )
+        )
+
+    return structure

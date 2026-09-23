@@ -46,6 +46,9 @@ class _FakeOptimizer:
             missing_qualifications=[],
         )
 
+    def _score_resume(self, resume_text, job_analysis):
+        return 0.5, [], []
+
 
 def test_tailor_preview_rejects_a_too_sparse_profile(client):
     """
@@ -187,6 +190,101 @@ def test_tailor_preview_flags_unsupported_claims(client):
     assert r.status_code == 200
     data = r.json()
     assert "Kubernetes" in data["unsupported_claims_added"]
+
+
+def test_tailor_preview_uses_docx_pipeline_for_docx_original(client, monkeypatch):
+    """A .docx original must go through run_docx_tailoring_pipeline (the
+    master-template splice pipeline), not PDFGenerator's from-scratch
+    reportlab path -- confirmed by checking the response carries the
+    DOCX-path-only fields, not just a passing status code."""
+    from docx import Document
+    import io as _io
+
+    headers = auth_headers(client)
+    client.put("/profile", json=_PROFILE, headers=headers)
+
+    doc = Document()
+    doc.add_paragraph("Jane Doe")
+    doc.add_paragraph("Built REST APIs with Python and FastAPI")
+    buf = _io.BytesIO()
+    doc.save(buf)
+    client.post(
+        "/profile/upload",
+        files={"file": ("resume.docx", buf.getvalue(), "application/vnd.openxmlformats-officedocument.wordprocessingml.document")},
+        headers=headers,
+    )
+    client.put("/profile", json=_PROFILE, headers=headers)
+
+    from resume_tailorer.docx_export.pipeline import DocxTailoringResult
+
+    fake_result = DocxTailoringResult(
+        docx_bytes=b"fake docx bytes",
+        tailored_scoring_text="WORK EXPERIENCE\nAcme Corp | 2020-2023\nBackend Engineer\n- Built REST APIs with Python and FastAPI",
+        edits=[],
+        original_page_count=1,
+        tailored_page_count=1,
+        page_count_preserved=True,
+        pdf_bytes=b"fake pdf bytes",
+        pdf_validation_issues=[],
+        conversion_available=True,
+        bullet_warnings=["a bullet warning"],
+    )
+
+    monkeypatch.setattr(
+        "app.tailor.router.run_docx_tailoring_pipeline", lambda *a, **k: fake_result
+    )
+    app.dependency_overrides[get_optimizer] = lambda: _FakeOptimizer()
+    try:
+        r = client.post(
+            "/tailor/preview",
+            json={"job_description": "Required: Python, AWS.", "generate_pdf": True},
+            headers=headers,
+        )
+    finally:
+        app.dependency_overrides.pop(get_optimizer, None)
+
+    assert r.status_code == 200
+    data = r.json()
+    assert data["docx_base64"] is not None
+    assert data["page_count_preserved"] is True
+    assert data["docx_conversion_available"] is True
+    assert "a bullet warning" in data["bullet_warnings"]
+    assert data["pdf_base64"] is not None
+
+
+def test_tailor_preview_pdf_original_does_not_use_docx_pipeline(client, monkeypatch):
+    """A .pdf original must never take the DOCX branch -- guards against a
+    future change accidentally widening use_docx_pipeline's condition."""
+    headers = auth_headers(client)
+    client.put("/profile", json=_PROFILE, headers=headers)
+
+    buf = io.BytesIO()
+    c = canvas.Canvas(buf, pagesize=LETTER)
+    c.drawString(72, 750, "- Some bullet from the original resume")
+    c.save()
+    client.post(
+        "/profile/upload",
+        files={"file": ("resume.pdf", buf.getvalue(), "application/pdf")},
+        headers=headers,
+    )
+    client.put("/profile", json=_PROFILE, headers=headers)
+
+    def fail_if_called(*a, **k):
+        raise AssertionError("run_docx_tailoring_pipeline should not be called for a .pdf original")
+
+    monkeypatch.setattr("app.tailor.router.run_docx_tailoring_pipeline", fail_if_called)
+    app.dependency_overrides[get_optimizer] = lambda: _FakeOptimizer()
+    try:
+        r = client.post(
+            "/tailor/preview",
+            json={"job_description": "Required: Python, AWS."},
+            headers=headers,
+        )
+    finally:
+        app.dependency_overrides.pop(get_optimizer, None)
+
+    assert r.status_code == 200
+    assert r.json()["docx_base64"] is None
 
 
 def test_tailor_preview_uses_stored_original_for_style_hints_without_crashing(client):

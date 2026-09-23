@@ -5,6 +5,9 @@ from pypdf import PdfReader
 from docx import Document
 
 from resume_tailorer.models import CareerTruthProfile, WorkExperience, EducationEntry
+from resume_tailorer.parsers.anchor_detection import find_anchor_blocks
+from resume_tailorer.parsers.section_headings import SECTION_BOUNDARY_RE
+from resume_tailorer.parsers.docx_structure import is_bullet_paragraph
 
 # Constants for extraction heuristics
 NAME_SEARCH_LINES = 5  # Number of first lines to check for name
@@ -64,10 +67,26 @@ class ResumeParser:
         return text
 
     def _extract_text_from_docx(self, file_path: str) -> str:
-        """Extract text from a DOCX file."""
+        """
+        Extract text from a DOCX file.
+
+        A real Word bullet/numbered-list paragraph never has a literal
+        "•"/"-" character in its own text -- Word draws the bullet glyph
+        from the numbering definition, not the run text (confirmed by
+        direct inspection of a real resume, 2026-09-22). The regex-based
+        extraction below (_extract_work_experience et al.) only recognizes
+        a line as a bullet when it's PREFIXED with "•"/"-", so a DOCX with
+        real Word list formatting was silently losing every bullet before
+        this fix -- either dropped entirely or merged as a "continuation
+        line" onto whatever text preceded it. Prefixing here, once, keeps
+        that regex-based extraction working unchanged for both PDF- and
+        DOCX-sourced text.
+        """
         doc = Document(file_path)
-        text = "\n".join([para.text for para in doc.paragraphs])
-        return text
+        lines = [
+            f"- {para.text}" if is_bullet_paragraph(para) else para.text for para in doc.paragraphs
+        ]
+        return "\n".join(lines)
 
     def _parse_text(self, text: str) -> CareerTruthProfile:
         """
@@ -107,11 +126,9 @@ class ResumeParser:
             summary=summary,
         )
 
-    _SUMMARY_STOP_HEADINGS = re.compile(
-        r"^\s*(EDUCATION|(?:WORK\s+)?EXPERIENCE|PROFESSIONAL\s+EXPERIENCE|SKILLS|TECHNICAL|"
-        r"CERTIFICATIONS|ADDITIONAL)\b",
-        re.IGNORECASE,
-    )
+    # Shared with the DOCX structural walker (parsers/section_headings.py) so
+    # both formats agree on where a section ends.
+    _SUMMARY_STOP_HEADINGS = SECTION_BOUNDARY_RE
 
     def _extract_summary(self, text: str) -> str:
         """
@@ -312,28 +329,18 @@ class ResumeParser:
         # Corp | ..." got split from its title "Marketing Manager" (while
         # an all-caps company like "CVS Health" happened not to trigger it,
         # since "CVS" isn't `[A-Z][a-z]+`), scrambling employer/title/dates
-        # and losing every bullet for that job.
-        anchor_idxs = [
-            i
-            for i, line in enumerate(lines)
-            if self._YEAR_PATTERN.search(line) and not line.strip().startswith(("•", "-"))
-        ]
+        # and losing every bullet for that job. This anchor/title/body
+        # detection is shared with the DOCX structural walker (see
+        # anchor_detection.find_anchor_blocks) so the same algorithm never
+        # drifts between the two formats.
+        is_bullet_line = lambda line: line.strip().startswith(("•", "-"))
+        blocks = find_anchor_blocks(lines, get_text=lambda line: line, is_bullet=is_bullet_line)
 
-        for a, idx in enumerate(anchor_idxs):
+        for block in blocks:
+            idx = block.anchor_index
             company_line = lines[idx].strip()
 
-            # The title is the nearest preceding non-blank line, as long as
-            # it isn't itself a bullet (which would mean we've walked back
-            # into the previous job's content with no title in between).
-            title_line = ""
-            for j in range(idx - 1, -1, -1):
-                candidate = lines[j].strip()
-                if not candidate:
-                    continue
-                if not candidate.startswith(("•", "-")):
-                    title_line = candidate
-                break
-
+            title_line = lines[block.title_index].strip() if block.title_index is not None else ""
             if not title_line or len(title_line) < MIN_TITLE_LENGTH:
                 continue
             title = title_line.replace("<b>", "").replace("</b>", "")
@@ -343,20 +350,7 @@ class ResumeParser:
             location = parts[1] if len(parts) > 1 else ""
             dates = parts[2] if len(parts) > 2 else ""
 
-            # Bullets run from just after this anchor to just before the
-            # next job's anchor (or end of section) -- but that range's
-            # last non-blank, non-bullet line is the NEXT job's title, so
-            # trim it off rather than swallowing it as a bullet.
-            end_idx = anchor_idxs[a + 1] if a + 1 < len(anchor_idxs) else len(lines)
-            bullet_lines = lines[idx + 1 : end_idx]
-            if a + 1 < len(anchor_idxs):
-                for k in range(len(bullet_lines) - 1, -1, -1):
-                    candidate = bullet_lines[k].strip()
-                    if not candidate:
-                        continue
-                    if not candidate.startswith(("•", "-")):
-                        bullet_lines = bullet_lines[:k]
-                    break
+            bullet_lines = [lines[i] for i in block.body_indices]
 
             # PDF text extraction wraps long bullets onto a second physical
             # line with no bullet marker (e.g. "...identifying up to $120M

@@ -16,11 +16,12 @@ from resume_tailorer.models.career_profile import CareerTruthProfile
 from resume_tailorer.analyzers.job_analyzer import JobAnalyzer
 from resume_tailorer.analyzers.resume_benchmarker import ResumeBenchmarker
 from resume_tailorer.analyzers.gap_analyzer import GapAnalyzer, find_unsupported_claims
-from resume_tailorer.tailorer.optimizer import ResumeTailoringOptimizer
+from resume_tailorer.tailorer.optimizer import ResumeTailoringOptimizer, OptimizationResult
 from resume_tailorer.pdf.generator import PDFGenerator
 from resume_tailorer.pdf.validator import PDFValidator
 from resume_tailorer.diff_generator import DiffGenerator
 from resume_tailorer.parsers import ResumeParser
+from resume_tailorer.docx_export import run_docx_tailoring_pipeline
 
 router = APIRouter(prefix="/tailor", tags=["tailor"])
 
@@ -125,22 +126,69 @@ def tailor_preview(
     fit = score_candidate_fit(profile_dict, job_dict)
     candidate_fit_score = fit["score"] if fit["score"] > 0 else None
 
-    initial_tailored = optimizer.tailorer.tailor(
-        profile, job_analysis, gap_report, conservative=body.conservative
+    resume_file = db.get(ResumeFile, user.id)
+    # DOCX originals go through the master-template splice pipeline (edits
+    # the original's own paragraphs in place, preserving fonts/margins/
+    # layout exactly) instead of a from-scratch reportlab PDF -- see
+    # decisions/006 (and resume_tailorer.docx_export). PDF-only originals
+    # have no editable structure to preserve, so they keep the existing
+    # freeform-rewrite pipeline unchanged. `body.conservative` is simply
+    # not read on the DOCX branch -- splicing into existing paragraphs has
+    # no "full rewrite" mode to toggle in the first place.
+    use_docx_pipeline = (
+        resume_file is not None
+        and os.path.splitext(resume_file.filename)[1].lower() == ".docx"
     )
-    result = optimizer.optimize(
-        profile, job_analysis, initial_tailored, gap_report, conservative=body.conservative
-    )
+
+    docx_result = None
+    if use_docx_pipeline:
+        docx_result = run_docx_tailoring_pipeline(
+            resume_file.data, profile, job_analysis, gap_report, convert_to_pdf=body.generate_pdf
+        )
+        score, matched, missing = optimizer._score_resume(
+            docx_result.tailored_scoring_text, job_analysis
+        )
+        result = OptimizationResult(
+            tailored_resume=docx_result.tailored_scoring_text,
+            final_score=score,
+            iterations=1,
+            ceiling_reached=False,
+            missing_qualifications=missing,
+        )
+    else:
+        initial_tailored = optimizer.tailorer.tailor(
+            profile, job_analysis, gap_report, conservative=body.conservative
+        )
+        result = optimizer.optimize(
+            profile, job_analysis, initial_tailored, gap_report, conservative=body.conservative
+        )
 
     diff_report = DiffGenerator().generate_diff(profile, result.tailored_resume)
     unsupported_claims = find_unsupported_claims(gap_report, result.tailored_resume)
 
     pdf_base64 = None
     pdf_issues: list[str] = []
-    if body.generate_pdf:
+    docx_base64 = None
+    docx_conversion_available = None
+    original_page_count = None
+    tailored_page_count = None
+    page_count_preserved = None
+    bullet_warnings: list[str] = []
+
+    if use_docx_pipeline:
+        docx_base64 = base64.b64encode(docx_result.docx_bytes).decode("ascii")
+        docx_conversion_available = docx_result.conversion_available
+        original_page_count = docx_result.original_page_count
+        tailored_page_count = docx_result.tailored_page_count
+        page_count_preserved = docx_result.page_count_preserved
+        bullet_warnings = docx_result.bullet_warnings
+        pdf_issues = docx_result.pdf_validation_issues
+        if body.generate_pdf and docx_result.pdf_bytes:
+            pdf_base64 = base64.b64encode(docx_result.pdf_bytes).decode("ascii")
+    elif body.generate_pdf:
         pdf_path = None
         try:
-            style_hints = _extract_style_hints(db.get(ResumeFile, user.id))
+            style_hints = _extract_style_hints(resume_file)
             # Resolve "preserve" to the concrete 1_page/2_page preset once so
             # PDFValidator enforces the SAME page limit generate() targeted,
             # rather than "preserve"'s own lenient fallback ceiling.
@@ -191,4 +239,10 @@ def tailor_preview(
         unsupported_claims_added=unsupported_claims,
         pdf_base64=pdf_base64,
         pdf_issues=pdf_issues,
+        docx_base64=docx_base64,
+        original_page_count=original_page_count,
+        tailored_page_count=tailored_page_count,
+        page_count_preserved=page_count_preserved,
+        docx_conversion_available=docx_conversion_available,
+        bullet_warnings=bullet_warnings,
     )

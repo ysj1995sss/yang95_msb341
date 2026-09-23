@@ -1,0 +1,88 @@
+from resume_tailorer.docx_export.bullet_checks import bullet_length_delta
+from resume_tailorer.models import CareerTruthProfile, WorkExperience, EducationEntry
+from resume_tailorer.diff_generator import DiffGenerator
+
+
+class TestBulletLengthDelta:
+    def test_no_warning_within_threshold(self):
+        original = "Managed a team of five engineers"
+        new = "Led a team of five engineers on schedule"
+        assert bullet_length_delta(original, new) == []
+
+    def test_warns_when_growth_exceeds_threshold(self):
+        original = "Short bullet"
+        new = "Short bullet " + "with a lot more words appended here to grow it substantially"
+        warnings = bullet_length_delta(original, new)
+        assert len(warnings) == 1
+        assert "longer" in warnings[0]
+
+    def test_no_warning_for_empty_original(self):
+        assert bullet_length_delta("", "Some new text") == []
+
+    def test_shrinking_a_bullet_never_warns(self):
+        original = "A very long original bullet with lots of detail in it"
+        new = "Shorter now"
+        assert bullet_length_delta(original, new) == []
+
+
+def _profile(**overrides):
+    defaults = dict(
+        contact_info={"name": "Jane Doe"},
+        education=[],
+        work_experience=[],
+        skills=[],
+        tools=[],
+        certifications=[],
+        accomplishments=[],
+    )
+    defaults.update(overrides)
+    return CareerTruthProfile(**defaults)
+
+
+class TestCheckBulletPairFabricationRisk:
+    def test_metric_already_in_original_bullet_is_not_flagged(self):
+        profile = _profile()
+        original = "Dean's List x5 Semesters | GPA: 3.92/4.0 | Top 1% of Class"
+        new = "Dean's List x5 Semesters | GPA: 3.92/4.0 | Top 1% of Class in Marketing"
+        issues = DiffGenerator().check_bullet_pair_fabrication_risk(original, new, profile)
+        assert issues == []
+
+    def test_new_metric_not_in_original_or_profile_is_flagged(self):
+        profile = _profile()
+        original = "Managed a project"
+        new = "Managed a project, boosting revenue by 42%"
+        issues = DiffGenerator().check_bullet_pair_fabrication_risk(original, new, profile)
+        assert any("42%" in issue for issue in issues)
+
+    def test_metric_present_in_education_notes_is_not_flagged(self):
+        """The education-notes gap found live (2026-09-22): a metric only
+        ever stored in EducationEntry.notes must still count as known-true."""
+        profile = _profile(
+            education=[
+                EducationEntry(
+                    degree="B.S.",
+                    field="Hospitality",
+                    institution="Some University",
+                    year=2022,
+                    notes=["Top 1% of Class"],
+                )
+            ]
+        )
+        original = "Some unrelated bullet"
+        new = "Some unrelated bullet, recognized in the Top 1% of Class"
+        issues = DiffGenerator().check_bullet_pair_fabrication_risk(original, new, profile)
+        assert issues == []
+
+    def test_tech_keyword_not_in_original_or_profile_is_flagged(self):
+        profile = _profile()
+        original = "Built internal tools"
+        new = "Built internal tools using Kubernetes"
+        issues = DiffGenerator().check_bullet_pair_fabrication_risk(original, new, profile)
+        assert any("kubernetes" in issue.lower() for issue in issues)
+
+    def test_tech_keyword_present_in_profile_skills_is_not_flagged(self):
+        profile = _profile(skills=["Kubernetes"])
+        original = "Built internal tools"
+        new = "Built internal tools using Kubernetes"
+        issues = DiffGenerator().check_bullet_pair_fabrication_risk(original, new, profile)
+        assert issues == []

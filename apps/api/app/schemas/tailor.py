@@ -56,3 +56,19 @@ class TailorResult(BaseModel):
     unsupported_claims_added: list[str] = Field(default_factory=list)
     pdf_base64: str | None = None
     pdf_issues: list[str] = Field(default_factory=list)
+    # Populated instead of a from-scratch pdf_base64 when the original
+    # upload was a .docx: the ORIGINAL document with tailored bullet text
+    # spliced into its own paragraphs (see resume_tailorer.docx_export).
+    # pdf_base64 is still populated alongside this too when generate_pdf is
+    # true and Word conversion succeeds -- docx_base64 is always the
+    # machine-editable artifact, pdf_base64 is always "a human-readable
+    # file, if one could be produced."
+    docx_base64: str | None = None
+    original_page_count: int | None = None
+    tailored_page_count: int | None = None
+    page_count_preserved: bool | None = None
+    # None when the original wasn't a DOCX at all (this field is only
+    # meaningful on the DOCX path); False means DOCX conversion was
+    # attempted but Word/docx2pdf wasn't available or failed.
+    docx_conversion_available: bool | None = None
+    bullet_warnings: list[str] = Field(default_factory=list)

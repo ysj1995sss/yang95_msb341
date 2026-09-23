@@ -359,6 +359,16 @@ def test_fabrication_warning_deduplicated_across_bullets():
     assert len(kubernetes_issues) == 1
 
 
+def test_invented_metric_is_flagged_as_fabrication():
+    """A percentage that does not appear in the Career Truth Profile is a fabrication risk."""
+    profile = _profile(["Improved system reliability"], skills=["Python"])
+    tailored_text = "- Improved system reliability by 47%\n"
+
+    report = DiffGenerator().generate_diff(profile, tailored_text)
+
+    assert any("47%" in issue for issue in report.issues)
+
+
 def test_diff_generator_importable_from_package_root():
     """DiffGenerator, ResumeDiffReport, BulletChange are exported from resume_tailorer."""
     from resume_tailorer import DiffGenerator as PkgDiffGenerator

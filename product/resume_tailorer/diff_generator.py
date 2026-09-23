@@ -240,38 +240,96 @@ class DiffGenerator:
 
         return False
 
+    _METRIC_PATTERN = re.compile(r"\d+(?:\.\d+)?%")
+    _TECH_KEYWORDS = [
+        "python", "java", "javascript", "c++", "rust", "go",
+        "aws", "azure", "gcp", "kubernetes", "docker", "terraform",
+        "react", "vue", "angular", "node", "flask", "django",
+    ]
+
+    @staticmethod
+    def _profile_blob(profile: CareerTruthProfile) -> str:
+        """
+        Every piece of profile text a "fabrication" check should treat as
+        already-true, lowercased. Previously missing `education[*].notes`
+        and `profile.summary` -- found live (2026-09-22): a verbatim
+        "Top 1% of Class" line (stored as an EducationEntry note, not a
+        work-experience bullet) was flagged as a fabricated "1%" metric
+        purely because this blob never included education notes at all.
+        """
+        parts = list(profile.skills) + list(profile.tools) + list(profile.certifications)
+        for job in profile.work_experience:
+            parts.extend(job.accomplishments)
+            parts.extend(job.responsibilities)
+        for edu in profile.education:
+            parts.extend(edu.notes)
+        if profile.summary:
+            parts.append(profile.summary)
+        return " ".join(parts).lower()
+
+    def check_bullet_pair_fabrication_risk(
+        self, original: str, new: str, profile: CareerTruthProfile
+    ) -> List[str]:
+        """
+        Per-pair fabrication check for the DOCX splice pipeline, where the
+        old-bullet-to-new-bullet mapping is already known by paragraph
+        index -- unlike `_check_fabrication_risks`, which has to pair
+        tailored bullets to profile evidence with no known correspondence
+        to a specific original bullet. A metric/keyword already present in
+        THIS bullet's own original text is never flagged, on top of the
+        profile-wide blob -- carrying over an existing fact isn't a risk.
+        """
+        issues = []
+        trusted_blob = self._profile_blob(profile) + " " + original.lower()
+        new_lower = new.lower()
+
+        for metric in self._METRIC_PATTERN.findall(new):
+            if metric.lower() not in trusted_blob and metric not in trusted_blob:
+                issues.append(
+                    f"⚠️ FABRICATION RISK: metric '{metric}' mentioned in '{new}' "
+                    "but not in the original bullet or profile"
+                )
+
+        for tech in self._TECH_KEYWORDS:
+            pattern = self._tech_pattern(tech)
+            if re.search(pattern, new_lower) and not re.search(pattern, trusted_blob):
+                issues.append(
+                    f"⚠️ FABRICATION RISK: '{tech}' mentioned in '{new}' but not in the original bullet or profile"
+                )
+
+        return issues
+
     def _check_fabrication_risks(
         self, tailored_bullets: List[str], profile: CareerTruthProfile
     ) -> List[str]:
         """Check tailored resume for skills/tools not present anywhere in the profile."""
         issues = []
 
-        # Build the full searchable profile text: skills, tools, and every
-        # accomplishment/responsibility string across all work experience, so a
-        # skill mentioned in prose (or written as "Python 3.11" / "AWS (EC2, S3)")
-        # still counts as "known". Matching is symmetric with the bullet side.
-        profile_text_parts = list(profile.skills) + list(profile.tools)
-        for job in profile.work_experience:
-            profile_text_parts.extend(job.accomplishments)
-            profile_text_parts.extend(job.responsibilities)
-        profile_text = " ".join(profile_text_parts).lower()
+        profile_blob = self._profile_blob(profile)
 
-        tech_keywords = [
-            "python", "java", "javascript", "c++", "rust", "go",
-            "aws", "azure", "gcp", "kubernetes", "docker", "terraform",
-            "react", "vue", "angular", "node", "flask", "django",
-        ]
+        profile_metrics = set(self._METRIC_PATTERN.findall(profile_blob))
+        reported_metrics = set()
+        for bullet in tailored_bullets:
+            for metric in self._METRIC_PATTERN.findall(bullet):
+                if metric in reported_metrics:
+                    continue
+                if metric.lower() not in profile_metrics and metric not in profile_metrics:
+                    issues.append(
+                        f"⚠️ FABRICATION RISK: metric '{metric}' mentioned in '{bullet}' "
+                        "but not in original resume"
+                    )
+                    reported_metrics.add(metric)
 
         # Dedup: don't repeat the same tech keyword across multiple bullets.
         reported = set()
         for bullet in tailored_bullets:
             bullet_lower = bullet.lower()
-            for tech in tech_keywords:
+            for tech in self._TECH_KEYWORDS:
                 if tech in reported:
                     continue
                 pattern = self._tech_pattern(tech)
                 if re.search(pattern, bullet_lower) and not re.search(
-                    pattern, profile_text
+                    pattern, profile_blob
                 ):
                     issues.append(
                         f"⚠️ FABRICATION RISK: '{tech}' mentioned in '{bullet}' but not in original resume"

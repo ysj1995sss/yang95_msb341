@@ -134,12 +134,29 @@ def main():
         for issue in result["fabrication_risk_issues"]:
             print(f"    - {issue}")
 
+    if result.get("docx_base64"):
+        docx_out = Path(args.out).with_suffix(".docx")
+        docx_out.write_bytes(base64.b64decode(result["docx_base64"]))
+        print(f"\n  Tailored DOCX saved to: {docx_out.resolve()}")
+        print("  (Your original resume, tailored bullets spliced in place -- same fonts/margins/layout.)")
+        if result.get("page_count_preserved") is False:
+            print(
+                f"  WARNING: page count changed ({result.get('original_page_count')} -> "
+                f"{result.get('tailored_page_count')} pages)"
+            )
+        elif result.get("docx_conversion_available") is False:
+            print("  NOTE: docx2pdf/Word not available on this machine -- page count could not be verified.")
+        if result.get("bullet_warnings"):
+            print("  Bullet warnings:")
+            for w in result["bullet_warnings"]:
+                print(f"    - {w}")
+
     if result.get("pdf_base64"):
         out_path = Path(args.out)
         out_path.write_bytes(base64.b64decode(result["pdf_base64"]))
         print(f"\n  Tailored PDF saved to: {out_path.resolve()}")
         print("  Open it and read it the way a hiring manager would.")
-    else:
+    elif not result.get("docx_base64"):
         print(f"\n  PDF generation did not produce a usable file. Issues: {result.get('pdf_issues')}")
 
 

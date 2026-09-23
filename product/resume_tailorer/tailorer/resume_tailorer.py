@@ -227,6 +227,188 @@ def _reconcile_headers_with_profile(text: str, profile: CareerTruthProfile) -> s
     return "\n".join(lines)
 
 
+# Module-level so DocxBulletTailorer (product/resume_tailorer/tailorer/
+# docx_bullet_tailorer.py) can build the same profile/gap/job-requirements
+# prompt sections without depending on a ResumeTailorer instance -- these
+# never used `self` for anything but the call itself.
+def profile_to_string(profile: CareerTruthProfile) -> str:
+    """Convert Career Truth Profile to readable text format."""
+    lines = []
+
+    # Contact info
+    lines.append("CONTACT INFORMATION:")
+    lines.append(f"  Name: {profile.contact_info.get('name', 'N/A')}")
+    lines.append(f"  Email: {profile.contact_info.get('email', 'N/A')}")
+    lines.append(f"  Phone: {profile.contact_info.get('phone', 'N/A')}")
+    lines.append(f"  Location: {profile.contact_info.get('location', 'N/A')}")
+    lines.append("")
+
+    # Professional summary (if the original resume had one)
+    if profile.summary:
+        lines.append("PROFESSIONAL SUMMARY:")
+        lines.append(f"  {profile.summary}")
+        lines.append("")
+
+    # Education
+    if profile.education:
+        lines.append("EDUCATION:")
+        for edu in profile.education:
+            lines.append(
+                f"  {edu.degree} in {edu.field} from {edu.institution} ({edu.year})"
+            )
+            if edu.gpa:
+                lines.append(f"    GPA: {edu.gpa}")
+            for note in edu.notes:
+                lines.append(f"    - {note}")
+        lines.append("")
+
+    # Work Experience
+    if profile.work_experience:
+        lines.append("WORK EXPERIENCE:")
+        for job in profile.work_experience:
+            lines.append(f"  {job.title} at {job.employer} ({job.dates})")
+            if job.location:
+                lines.append(f"    Location: {job.location}")
+            if job.employment_type:
+                lines.append(f"    Type: {job.employment_type}")
+            if job.responsibilities:
+                lines.append("    Responsibilities:")
+                for resp in job.responsibilities:
+                    lines.append(f"      - {resp}")
+            if job.accomplishments:
+                lines.append("    Accomplishments:")
+                for acc in job.accomplishments:
+                    lines.append(f"      - {acc}")
+        lines.append("")
+
+    # Skills
+    if profile.skills:
+        lines.append("SKILLS:")
+        lines.append(f"  {', '.join(profile.skills)}")
+        lines.append("")
+
+    # Tools
+    if profile.tools:
+        lines.append("TOOLS & PLATFORMS:")
+        lines.append(f"  {', '.join(profile.tools)}")
+        lines.append("")
+
+    # Certifications
+    if profile.certifications:
+        lines.append("CERTIFICATIONS:")
+        for cert in profile.certifications:
+            lines.append(f"  - {cert}")
+        lines.append("")
+
+    # Accomplishments
+    if profile.accomplishments:
+        lines.append("CAREER ACCOMPLISHMENTS:")
+        for acc in profile.accomplishments:
+            lines.append(f"  - {acc}")
+        lines.append("")
+
+    return "\n".join(lines)
+
+
+def format_gaps(gap_report: GapReport) -> str:
+    """
+    Format gap report for the prompt.
+
+    Categories A/B/C are shown as things to highlight or add.
+    Categories D/E are explicitly excluded from "fill" instructions.
+    """
+    lines = []
+    lines.append(gap_report.summary)
+    lines.append("")
+
+    # Organize by category
+    by_category = {}
+    for item in gap_report.items:
+        if item.category not in by_category:
+            by_category[item.category] = []
+        by_category[item.category].append(item)
+
+    # Category A: Already on resume
+    if GapCategory.A in by_category:
+        lines.append("CATEGORY A - Already on Resume (Optimize presentation):")
+        for item in by_category[GapCategory.A]:
+            lines.append(f"  - {item.requirement}")
+            lines.append(f"    Reason: {item.reason}")
+            lines.append(f"    Evidence: {item.candidate_evidence}")
+        lines.append("")
+
+    # Category B: Supported but missing
+    if GapCategory.B in by_category:
+        lines.append("CATEGORY B - Supported by Experience but Missing (Bring into resume):")
+        for item in by_category[GapCategory.B]:
+            lines.append(f"  - {item.requirement}")
+            lines.append(f"    Reason: {item.reason}")
+            lines.append(f"    Evidence: {item.candidate_evidence}")
+        lines.append("")
+
+    # Category C: Rephrasable
+    if GapCategory.C in by_category:
+        lines.append("CATEGORY C - Rephrasable (Rewrite to match JD language):")
+        for item in by_category[GapCategory.C]:
+            lines.append(f"  - {item.requirement}")
+            lines.append(f"    Reason: {item.reason}")
+            lines.append(f"    Evidence: {item.candidate_evidence}")
+        lines.append("")
+
+    # Category D: Needs confirmation
+    if GapCategory.D in by_category:
+        lines.append("CATEGORY D - Needs Confirmation (DO NOT ADD - needs user review):")
+        for item in by_category[GapCategory.D]:
+            lines.append(f"  - {item.requirement}")
+            lines.append(f"    Reason: {item.reason}")
+            lines.append("    ACTION: System is uncertain. Do not invent. Ask user.")
+        lines.append("")
+
+    # Category E: Truly missing
+    if GapCategory.E in by_category:
+        lines.append("CATEGORY E - Truly Missing (NEVER ADD - do not fabricate):")
+        for item in by_category[GapCategory.E]:
+            lines.append(f"  - {item.requirement}")
+            lines.append(f"    Reason: {item.reason}")
+            lines.append("    ACTION: Candidate does not have this. Do not add. Never invent.")
+        lines.append("")
+
+    return "\n".join(lines)
+
+
+def format_job_requirements(job_analysis: JobAnalysis) -> str:
+    """Format job requirements for the prompt."""
+    lines = []
+
+    if job_analysis.required_qualifications:
+        lines.append("Required Qualifications:")
+        for qual in job_analysis.required_qualifications:
+            lines.append(f"  - {qual}")
+
+    if job_analysis.preferred_qualifications:
+        lines.append("\nPreferred Qualifications:")
+        for qual in job_analysis.preferred_qualifications:
+            lines.append(f"  - {qual}")
+
+    if job_analysis.skills_required:
+        lines.append("\nSkills Required:")
+        for skill in job_analysis.skills_required:
+            lines.append(f"  - {skill}")
+
+    if job_analysis.tools_required:
+        lines.append("\nTools Required:")
+        for tool in job_analysis.tools_required:
+            lines.append(f"  - {tool}")
+
+    if job_analysis.education_required:
+        lines.append(f"\nEducation: {job_analysis.education_required}")
+
+    if job_analysis.experience_required:
+        lines.append(f"\nExperience: {job_analysis.experience_required}")
+
+    return "\n".join(lines)
+
+
 class ResumeTailorer:
     """
     LLM-powered resume tailoring engine.
@@ -430,201 +612,13 @@ GAP ANALYSIS (What to fill and what to ignore):
 Provide the tailored resume content now:"""
 
     def _profile_to_string(self, profile: CareerTruthProfile) -> str:
-        """
-        Convert Career Truth Profile to readable text format.
-
-        Args:
-            profile: CareerTruthProfile object
-
-        Returns:
-            Formatted profile text
-        """
-        lines = []
-
-        # Contact info
-        lines.append("CONTACT INFORMATION:")
-        lines.append(f"  Name: {profile.contact_info.get('name', 'N/A')}")
-        lines.append(f"  Email: {profile.contact_info.get('email', 'N/A')}")
-        lines.append(f"  Phone: {profile.contact_info.get('phone', 'N/A')}")
-        lines.append(f"  Location: {profile.contact_info.get('location', 'N/A')}")
-        lines.append("")
-
-        # Professional summary (if the original resume had one)
-        if profile.summary:
-            lines.append("PROFESSIONAL SUMMARY:")
-            lines.append(f"  {profile.summary}")
-            lines.append("")
-
-        # Education
-        if profile.education:
-            lines.append("EDUCATION:")
-            for edu in profile.education:
-                lines.append(
-                    f"  {edu.degree} in {edu.field} from {edu.institution} ({edu.year})"
-                )
-                if edu.gpa:
-                    lines.append(f"    GPA: {edu.gpa}")
-                for note in edu.notes:
-                    lines.append(f"    - {note}")
-            lines.append("")
-
-        # Work Experience
-        if profile.work_experience:
-            lines.append("WORK EXPERIENCE:")
-            for job in profile.work_experience:
-                lines.append(f"  {job.title} at {job.employer} ({job.dates})")
-                if job.location:
-                    lines.append(f"    Location: {job.location}")
-                if job.employment_type:
-                    lines.append(f"    Type: {job.employment_type}")
-                if job.responsibilities:
-                    lines.append("    Responsibilities:")
-                    for resp in job.responsibilities:
-                        lines.append(f"      - {resp}")
-                if job.accomplishments:
-                    lines.append("    Accomplishments:")
-                    for acc in job.accomplishments:
-                        lines.append(f"      - {acc}")
-            lines.append("")
-
-        # Skills
-        if profile.skills:
-            lines.append("SKILLS:")
-            lines.append(f"  {', '.join(profile.skills)}")
-            lines.append("")
-
-        # Tools
-        if profile.tools:
-            lines.append("TOOLS & PLATFORMS:")
-            lines.append(f"  {', '.join(profile.tools)}")
-            lines.append("")
-
-        # Certifications
-        if profile.certifications:
-            lines.append("CERTIFICATIONS:")
-            for cert in profile.certifications:
-                lines.append(f"  - {cert}")
-            lines.append("")
-
-        # Accomplishments
-        if profile.accomplishments:
-            lines.append("CAREER ACCOMPLISHMENTS:")
-            for acc in profile.accomplishments:
-                lines.append(f"  - {acc}")
-            lines.append("")
-
-        return "\n".join(lines)
+        return profile_to_string(profile)
 
     def _format_gaps(self, gap_report: GapReport) -> str:
-        """
-        Format gap report for the prompt.
-
-        Categories A/B/C are shown as things to highlight or add.
-        Categories D/E are explicitly excluded from "fill" instructions.
-
-        Args:
-            gap_report: GapReport from gap analyzer
-
-        Returns:
-            Formatted gaps text
-        """
-        lines = []
-        lines.append(gap_report.summary)
-        lines.append("")
-
-        # Organize by category
-        by_category = {}
-        for item in gap_report.items:
-            if item.category not in by_category:
-                by_category[item.category] = []
-            by_category[item.category].append(item)
-
-        # Category A: Already on resume
-        if GapCategory.A in by_category:
-            lines.append("CATEGORY A - Already on Resume (Optimize presentation):")
-            for item in by_category[GapCategory.A]:
-                lines.append(f"  - {item.requirement}")
-                lines.append(f"    Reason: {item.reason}")
-                lines.append(f"    Evidence: {item.candidate_evidence}")
-            lines.append("")
-
-        # Category B: Supported but missing
-        if GapCategory.B in by_category:
-            lines.append("CATEGORY B - Supported by Experience but Missing (Bring into resume):")
-            for item in by_category[GapCategory.B]:
-                lines.append(f"  - {item.requirement}")
-                lines.append(f"    Reason: {item.reason}")
-                lines.append(f"    Evidence: {item.candidate_evidence}")
-            lines.append("")
-
-        # Category C: Rephrasable
-        if GapCategory.C in by_category:
-            lines.append("CATEGORY C - Rephrasable (Rewrite to match JD language):")
-            for item in by_category[GapCategory.C]:
-                lines.append(f"  - {item.requirement}")
-                lines.append(f"    Reason: {item.reason}")
-                lines.append(f"    Evidence: {item.candidate_evidence}")
-            lines.append("")
-
-        # Category D: Needs confirmation
-        if GapCategory.D in by_category:
-            lines.append("CATEGORY D - Needs Confirmation (DO NOT ADD - needs user review):")
-            for item in by_category[GapCategory.D]:
-                lines.append(f"  - {item.requirement}")
-                lines.append(f"    Reason: {item.reason}")
-                lines.append("    ACTION: System is uncertain. Do not invent. Ask user.")
-            lines.append("")
-
-        # Category E: Truly missing
-        if GapCategory.E in by_category:
-            lines.append("CATEGORY E - Truly Missing (NEVER ADD - do not fabricate):")
-            for item in by_category[GapCategory.E]:
-                lines.append(f"  - {item.requirement}")
-                lines.append(f"    Reason: {item.reason}")
-                lines.append("    ACTION: Candidate does not have this. Do not add. Never invent.")
-            lines.append("")
-
-        return "\n".join(lines)
+        return format_gaps(gap_report)
 
     def _format_job_requirements(self, job_analysis: JobAnalysis) -> str:
-        """
-        Format job requirements for the prompt.
-
-        Args:
-            job_analysis: JobAnalysis from job analyzer
-
-        Returns:
-            Formatted job requirements
-        """
-        lines = []
-
-        if job_analysis.required_qualifications:
-            lines.append("Required Qualifications:")
-            for qual in job_analysis.required_qualifications:
-                lines.append(f"  - {qual}")
-
-        if job_analysis.preferred_qualifications:
-            lines.append("\nPreferred Qualifications:")
-            for qual in job_analysis.preferred_qualifications:
-                lines.append(f"  - {qual}")
-
-        if job_analysis.skills_required:
-            lines.append("\nSkills Required:")
-            for skill in job_analysis.skills_required:
-                lines.append(f"  - {skill}")
-
-        if job_analysis.tools_required:
-            lines.append("\nTools Required:")
-            for tool in job_analysis.tools_required:
-                lines.append(f"  - {tool}")
-
-        if job_analysis.education_required:
-            lines.append(f"\nEducation: {job_analysis.education_required}")
-
-        if job_analysis.experience_required:
-            lines.append(f"\nExperience: {job_analysis.experience_required}")
-
-        return "\n".join(lines)
+        return format_job_requirements(job_analysis)
 
     def _refine_resume(
         self,
