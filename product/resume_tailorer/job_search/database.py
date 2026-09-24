@@ -358,7 +358,11 @@ class JobDatabase:
             salary_max=row["salary_max"],
             experience_required=row["experience_required"],
             education_required=row["education_required"],
-            sponsorship_available=bool(row["sponsorship_available"]),
+            sponsorship_available=(
+                None
+                if row["sponsorship_available"] is None
+                else bool(row["sponsorship_available"])
+            ),
             work_mode=row["work_mode"],
             url=row["url"],
             ats_platform=row["ats_platform"],
