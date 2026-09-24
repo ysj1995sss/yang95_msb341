@@ -174,6 +174,11 @@ def tailor_preview(
     tailored_page_count = None
     page_count_preserved = None
     bullet_warnings: list[str] = []
+    bullets_evaluated = 0
+    bullets_changed = 0
+    bullets_rejected = 0
+    addressable_requirements = 0
+    tailoring_seems_shallow = False
 
     if use_docx_pipeline:
         docx_base64 = base64.b64encode(docx_result.docx_bytes).decode("ascii")
@@ -183,6 +188,11 @@ def tailor_preview(
         page_count_preserved = docx_result.page_count_preserved
         bullet_warnings = docx_result.bullet_warnings
         pdf_issues = docx_result.pdf_validation_issues
+        bullets_evaluated = docx_result.bullets_evaluated
+        bullets_changed = docx_result.bullets_changed
+        bullets_rejected = docx_result.bullets_rejected
+        addressable_requirements = docx_result.addressable_requirements
+        tailoring_seems_shallow = docx_result.tailoring_seems_shallow
         if body.generate_pdf and docx_result.pdf_bytes:
             pdf_base64 = base64.b64encode(docx_result.pdf_bytes).decode("ascii")
     elif body.generate_pdf:
@@ -245,4 +255,9 @@ def tailor_preview(
         page_count_preserved=page_count_preserved,
         docx_conversion_available=docx_conversion_available,
         bullet_warnings=bullet_warnings,
+        bullets_evaluated=bullets_evaluated,
+        bullets_changed=bullets_changed,
+        bullets_rejected=bullets_rejected,
+        addressable_requirements=addressable_requirements,
+        tailoring_seems_shallow=tailoring_seems_shallow,
     )

@@ -15,15 +15,13 @@ from docx import Document
 
 from resume_tailorer.models import CareerTruthProfile
 from resume_tailorer.analyzers.job_analyzer import JobAnalysis
-from resume_tailorer.analyzers.gap_analyzer import GapReport
+from resume_tailorer.analyzers.gap_analyzer import GapCategory, GapReport
 from resume_tailorer.parsers.docx_structure import extract_docx_structure, DocxStructure
 from resume_tailorer.tailorer.docx_bullet_tailorer import DocxBulletTailorer, BulletEdit
 from resume_tailorer.tailorer.resume_tailorer import _job_header_lines
 from resume_tailorer.docx_export.splicer import splice_bullets_into_docx, save_docx
 from resume_tailorer.docx_export.converter import convert_docx_to_pdf, DocxConversionUnavailable
-from resume_tailorer.docx_export.bullet_checks import bullet_length_delta
 from resume_tailorer.pdf.validator import PDFValidator
-from resume_tailorer.diff_generator import DiffGenerator
 
 
 @dataclass
@@ -38,6 +36,17 @@ class DocxTailoringResult:
     pdf_validation_issues: list[str] = field(default_factory=list)
     conversion_available: bool = False
     bullet_warnings: list[str] = field(default_factory=list)
+    # Problem 7's self-check: raw counts plus a flag for when tailoring
+    # looks suspiciously shallow given how much addressable evidence the
+    # gap report found -- surfaced as a warning for a human to review, not
+    # an automatic retry (this LLM backend is flaky enough that a second
+    # blind pass isn't guaranteed to do better, and doubles latency/cost
+    # for every request).
+    bullets_evaluated: int = 0
+    bullets_changed: int = 0
+    bullets_rejected: int = 0
+    addressable_requirements: int = 0
+    tailoring_seems_shallow: bool = False
 
 
 def run_docx_tailoring_pipeline(
@@ -63,16 +72,13 @@ def run_docx_tailoring_pipeline(
     tailorer = bullet_tailorer or DocxBulletTailorer()
     tailoring_result = tailorer.tailor_bullets(bullets, profile, job_analysis, gap_report)
 
+    # Length-cap, semantic-drift, and fabrication-risk checks all now run
+    # as HARD rejects inside DocxBulletTailorer._parse_and_validate itself
+    # (found live, 2026-09-23: prompt instructions alone weren't reliably
+    # followed for any of the three), so an accepted `changed=True` edit
+    # here has already passed all of them -- re-running the same checks
+    # post-hoc would always return empty and was dead weight.
     warnings = list(tailoring_result.warnings)
-    diff_gen = DiffGenerator()
-    for edit in tailoring_result.edits:
-        if edit.changed:
-            warnings.extend(bullet_length_delta(edit.original_text, edit.new_text))
-            warnings.extend(
-                diff_gen.check_bullet_pair_fabrication_risk(
-                    edit.original_text, edit.new_text, profile
-                )
-            )
 
     spliced_doc = splice_bullets_into_docx(doc, tailoring_result.edits)
 
@@ -122,6 +128,24 @@ def run_docx_tailoring_pipeline(
 
     scoring_text = _synthesize_scoring_text(profile, structure, tailoring_result.edits)
 
+    bullets_changed = sum(1 for e in tailoring_result.edits if e.changed)
+    bullets_rejected = sum(1 for e in tailoring_result.edits if e.rejected_reason)
+    addressable_requirements = sum(
+        1 for item in gap_report.items if item.category in (GapCategory.A, GapCategory.B, GapCategory.C)
+    )
+    # Threshold is deliberately loose (a real signal, not a precise
+    # measurement): flag when there's clearly more addressable evidence
+    # than the model actually used. Found live (2026-09-23): a real
+    # tailoring pass changed exactly 2 bullets while 11 requirements had
+    # real evidence elsewhere in the resume -- this would have caught it.
+    tailoring_seems_shallow = bullets_changed <= 2 and addressable_requirements > 4
+    if tailoring_seems_shallow:
+        warnings.append(
+            f"Tailoring may be too shallow: only {bullets_changed} bullet(s) changed while "
+            f"{addressable_requirements} job requirements have real evidence in the resume. "
+            "Consider reviewing the gap report for evidence the tailoring pass didn't surface."
+        )
+
     return DocxTailoringResult(
         docx_bytes=docx_bytes,
         tailored_scoring_text=scoring_text,
@@ -133,6 +157,11 @@ def run_docx_tailoring_pipeline(
         pdf_validation_issues=pdf_validation_issues,
         conversion_available=conversion_available,
         bullet_warnings=warnings,
+        bullets_evaluated=len(bullets),
+        bullets_changed=bullets_changed,
+        bullets_rejected=bullets_rejected,
+        addressable_requirements=addressable_requirements,
+        tailoring_seems_shallow=tailoring_seems_shallow,
     )
 
 

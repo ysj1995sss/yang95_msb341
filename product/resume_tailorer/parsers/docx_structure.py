@@ -15,6 +15,7 @@ about where a job block starts or ends.
 """
 
 from dataclasses import dataclass, field
+import re
 
 from docx.document import Document as DocxDocument
 from docx.oxml.ns import qn
@@ -25,6 +26,12 @@ from resume_tailorer.parsers.section_headings import SECTION_BOUNDARY_RE, WORK_E
 
 _MIN_TITLE_LENGTH = 3
 _NAME_SEARCH_LINES = 5
+
+# Only "Core Competencies" is a rankable list of skills where REORDERING
+# by relevance makes sense -- "Technical Proficiency"/"Certificates" lines
+# elsewhere in the same ADDITIONAL section are tools/credentials, not
+# competencies to prioritize, so they're deliberately not a splice target.
+_COMPETENCY_LABEL_RE = re.compile(r"^\s*core\s+competencies\s*:", re.IGNORECASE)
 
 
 def is_bullet_paragraph(paragraph: Paragraph) -> bool:
@@ -65,11 +72,11 @@ class JobBlock:
 class Bullet:
     """One splice target: a paragraph index plus enough job context for the
     LLM prompt. `job_index` is an index into `DocxStructure.jobs`, or None
-    for a summary-paragraph target."""
+    for a summary-paragraph or competencies target."""
 
     paragraph_index: int
     text: str
-    section: str  # "summary" | "work_experience"
+    section: str  # "summary" | "work_experience" | "competencies"
     job_index: int | None = None
 
 
@@ -77,10 +84,12 @@ class Bullet:
 class DocxStructure:
     jobs: list[JobBlock] = field(default_factory=list)
     summary_paragraph_indices: list[int] = field(default_factory=list)
+    competency_paragraph_index: int | None = None
 
     def splice_targets(self, paragraphs: list[Paragraph]) -> list[Bullet]:
-        """All Bullet objects (summary + work-experience bullets) in
-        document order -- the flattened input fed to DocxBulletTailorer."""
+        """All Bullet objects (summary + work-experience bullets +
+        competencies line) in document order -- the flattened input fed to
+        DocxBulletTailorer."""
         targets = [
             Bullet(paragraph_index=i, text=paragraphs[i].text, section="summary")
             for i in self.summary_paragraph_indices
@@ -94,6 +103,14 @@ class DocxStructure:
                     job_index=job_index,
                 )
                 for i in job.bullet_paragraph_indices
+            )
+        if self.competency_paragraph_index is not None:
+            targets.append(
+                Bullet(
+                    paragraph_index=self.competency_paragraph_index,
+                    text=paragraphs[self.competency_paragraph_index].text,
+                    section="competencies",
+                )
             )
         targets.sort(key=lambda b: b.paragraph_index)
         return targets
@@ -145,11 +162,19 @@ def _find_summary_paragraph_indices(paragraphs: list[Paragraph]) -> list[int]:
     return indices
 
 
+def _find_competency_paragraph_index(paragraphs: list[Paragraph]) -> int | None:
+    for i, paragraph in enumerate(paragraphs):
+        if is_bullet_paragraph(paragraph) and _COMPETENCY_LABEL_RE.match(paragraph.text.strip()):
+            return i
+    return None
+
+
 def extract_docx_structure(doc: DocxDocument) -> DocxStructure:
     paragraphs = doc.paragraphs
 
     structure = DocxStructure()
     structure.summary_paragraph_indices = _find_summary_paragraph_indices(paragraphs)
+    structure.competency_paragraph_index = _find_competency_paragraph_index(paragraphs)
 
     body_bounds = _find_work_experience_body(paragraphs)
     if body_bounds is None:

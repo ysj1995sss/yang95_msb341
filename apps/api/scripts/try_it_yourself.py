@@ -124,6 +124,15 @@ def main():
     print(f"  Optimization iterations: {result['iterations']}")
     print(f"  {result['gap_summary']}")
 
+    if result.get("bullets_evaluated"):
+        print(
+            f"  Bullets: {result['bullets_evaluated']} evaluated, {result['bullets_changed']} changed, "
+            f"{result['bullets_rejected']} rejected by a safety check "
+            f"({result['addressable_requirements']} job requirements had real evidence in the resume)"
+        )
+        if result.get("tailoring_seems_shallow"):
+            print("  ⚠ Tailoring may be too shallow -- see bullet warnings below.")
+
     if result["unsupported_claims_added"]:
         print("\n  \u26a0 REVIEW BEFORE USING -- the system could not verify these against your profile:")
         for claim in result["unsupported_claims_added"]:

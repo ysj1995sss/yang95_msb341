@@ -7,7 +7,7 @@ from docx.oxml.ns import qn
 
 from resume_tailorer.models import CareerTruthProfile, WorkExperience
 from resume_tailorer.analyzers import JobAnalyzer
-from resume_tailorer.analyzers.gap_analyzer import GapReport
+from resume_tailorer.analyzers.gap_analyzer import GapCategory, GapItem, GapReport
 from resume_tailorer.tailorer.docx_bullet_tailorer import BulletEdit, BulletTailoringResult
 from resume_tailorer.docx_export.converter import DocxConversionUnavailable
 from resume_tailorer.docx_export import pipeline as pipeline_module
@@ -173,6 +173,50 @@ def test_convert_to_pdf_false_skips_conversion_entirely(
     assert result.conversion_available is False
     assert result.pdf_bytes is None
     assert result.docx_bytes
+
+
+def test_shallow_tailoring_is_flagged_when_evidence_goes_unused(
+    tmp_path, monkeypatch, sample_profile, sample_job_analysis
+):
+    """Problem 7's self-check: found live (2026-09-23) -- a real pass
+    changed only 2 bullets while 11 requirements had real evidence
+    elsewhere in the resume. This should surface a warning, not silently
+    ship a shallow result."""
+    monkeypatch.setattr(
+        pipeline_module, "convert_docx_to_pdf",
+        lambda src, dst: (_ for _ in ()).throw(DocxConversionUnavailable("skip")),
+    )
+    gap_report = GapReport(
+        items=[
+            GapItem(requirement=f"Requirement {i}", category=GapCategory.B, reason="evidence exists", candidate_evidence="x")
+            for i in range(5)
+        ],
+        summary="5 gaps found",
+    )
+    original_bytes = _sample_docx_bytes(tmp_path)
+    result = run_docx_tailoring_pipeline(
+        original_bytes, sample_profile, sample_job_analysis, gap_report,
+        bullet_tailorer=_StubBulletTailorer(),
+    )
+    assert result.bullets_changed == 1
+    assert result.addressable_requirements == 5
+    assert result.tailoring_seems_shallow is True
+    assert any("shallow" in w.lower() for w in result.bullet_warnings)
+
+
+def test_not_flagged_shallow_when_little_evidence_exists(
+    tmp_path, monkeypatch, sample_profile, sample_job_analysis, sample_gap_report
+):
+    monkeypatch.setattr(
+        pipeline_module, "convert_docx_to_pdf",
+        lambda src, dst: (_ for _ in ()).throw(DocxConversionUnavailable("skip")),
+    )
+    original_bytes = _sample_docx_bytes(tmp_path)
+    result = run_docx_tailoring_pipeline(
+        original_bytes, sample_profile, sample_job_analysis, sample_gap_report,
+        bullet_tailorer=_StubBulletTailorer(),
+    )
+    assert result.tailoring_seems_shallow is False
 
 
 def test_job_count_mismatch_falls_back_without_crashing(

@@ -72,3 +72,13 @@ class TailorResult(BaseModel):
     # attempted but Word/docx2pdf wasn't available or failed.
     docx_conversion_available: bool | None = None
     bullet_warnings: list[str] = Field(default_factory=list)
+    # Only meaningful on the DOCX path (0 otherwise) -- a self-check on
+    # tailoring quality, not just formatting: how many bullets were
+    # evaluated/changed/rejected by a code-level guardrail, how many job
+    # requirements had real resume evidence, and whether the pass looks
+    # suspiciously shallow given that evidence count.
+    bullets_evaluated: int = 0
+    bullets_changed: int = 0
+    bullets_rejected: int = 0
+    addressable_requirements: int = 0
+    tailoring_seems_shallow: bool = False

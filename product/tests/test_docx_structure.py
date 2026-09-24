@@ -45,6 +45,7 @@ def _build_sample_resume() -> Document:
     _add_bullet_paragraph(doc, "Led a team")
     doc.add_paragraph("ADDITIONAL")
     _add_bullet_paragraph(doc, "Technical Proficiency: Excel, SQL")
+    _add_bullet_paragraph(doc, "Core Competencies: Strategic Thinker | Project Management | Stakeholder Management")
     return doc
 
 
@@ -100,6 +101,28 @@ class TestExtractDocxStructure:
         )
         assert additional_bullet_idx not in all_we_bullets
 
+    def test_finds_core_competencies_paragraph(self):
+        doc = _build_sample_resume()
+        structure = extract_docx_structure(doc)
+        assert structure.competency_paragraph_index is not None
+        text = doc.paragraphs[structure.competency_paragraph_index].text
+        assert text.startswith("Core Competencies:")
+
+    def test_technical_proficiency_not_mistaken_for_competencies(self):
+        doc = _build_sample_resume()
+        structure = extract_docx_structure(doc)
+        text = doc.paragraphs[structure.competency_paragraph_index].text
+        assert "Technical Proficiency" not in text
+
+    def test_no_competencies_line_returns_none(self):
+        doc = Document()
+        doc.add_paragraph("Jane Doe")
+        doc.add_paragraph("A summary paragraph here.")
+        doc.add_paragraph("EDUCATION")
+        doc.add_paragraph("Some University | 2020")
+        structure = extract_docx_structure(doc)
+        assert structure.competency_paragraph_index is None
+
     def test_splice_targets_flattened_in_document_order(self):
         doc = _build_sample_resume()
         structure = extract_docx_structure(doc)
@@ -107,8 +130,11 @@ class TestExtractDocxStructure:
         indices = [t.paragraph_index for t in targets]
         assert indices == sorted(indices)
         assert any(t.section == "summary" for t in targets)
+        assert any(t.section == "competencies" for t in targets)
         assert all(
-            t.section == "work_experience" for t in targets if t.section != "summary"
+            t.section in ("work_experience", "competencies")
+            for t in targets
+            if t.section != "summary"
         )
 
     def test_no_experience_section_returns_empty_jobs(self):

@@ -246,6 +246,87 @@ class DiffGenerator:
         "aws", "azure", "gcp", "kubernetes", "docker", "terraform",
         "react", "vue", "angular", "node", "flask", "django",
     ]
+    # Deliberately small and generic (articles/prepositions/conjunctions),
+    # not domain-specific -- this check needs to work for a marketing
+    # resume exactly as well as a tech one, unlike _TECH_KEYWORDS above.
+    _STOPWORDS = {
+        "a", "an", "the", "and", "or", "of", "to", "for", "with", "in", "on",
+        "at", "by", "from", "into", "across", "through", "as", "that", "this",
+        "these", "those", "is", "was", "were", "are", "be", "been", "being",
+        "it", "its", "their", "them", "they", "which", "who", "will", "not",
+        "such", "than", "then", "over", "under", "up", "down", "out", "per",
+    }
+    # A synonym swap among common resume action verbs/connectors is always
+    # safe rephrasing -- it changes HOW an accomplishment is described, not
+    # WHAT it claims -- so these are exempt from the "genuinely new word"
+    # check below. Only a new NOUN/ADJECTIVE characterizing the
+    # accomplishment itself (e.g. "loyalty", found live 2026-09-23) should
+    # trip that check; a new verb like "developed" or a connector like
+    # "using" should not. Not exhaustive by design -- broad enough to cover
+    # common resume verbs without trying to enumerate every synonym.
+    _SAFE_REPHRASE_WORDS = {
+        "led", "built", "developed", "managed", "drove", "increased", "achieved",
+        "created", "delivered", "executed", "launched", "spearheaded", "directed",
+        "coordinated", "established", "implemented", "generated", "optimized",
+        "negotiated", "secured", "using", "utilizing", "leveraging", "supported",
+        "enabled", "facilitated", "designed", "improved", "boosted", "grew",
+        "expanded", "streamlined", "enhanced", "conducted", "analyzed",
+        "presented", "collaborated", "partnered", "translated", "aligned",
+        "distilled", "adopted", "targeting", "targeted", "identifying",
+        "identified", "synthesizing", "synthesized", "crafting", "crafted",
+        "refined", "diagnosed", "resulting", "leading", "driving", "recognized",
+    }
+
+    # Common suffixes stripped before comparing words, so a plain verb-tense
+    # or plural change ("identifying" vs "identify", "strategies" vs
+    # "strategy") isn't mistaken for dropping the word entirely -- only
+    # applied to words long enough that stripping still leaves a real stem
+    # (avoids "was"->"w" nonsense).
+    _SUFFIXES = ("ing", "edly", "ed", "ies", "es", "s")
+
+    @classmethod
+    def _stem(cls, word: str) -> str:
+        for suffix in cls._SUFFIXES:
+            if word.endswith(suffix) and len(word) - len(suffix) >= 3:
+                stem = word[: -len(suffix)]
+                return stem + "y" if suffix == "ies" else stem
+        return word
+
+    @classmethod
+    def _content_words(cls, text: str) -> set:
+        return {
+            w for w in re.findall(r"[a-zA-Z']+", text.lower())
+            if len(w) > 3 and w not in cls._STOPWORDS
+        }
+
+    @classmethod
+    def _content_stems(cls, text: str) -> set:
+        return {cls._stem(w) for w in cls._content_words(text)}
+
+    def check_semantic_drift(self, original: str, new: str) -> List[str]:
+        """
+        Hard, code-level guard against narrowing or changing an existing
+        bullet's claim -- found live (2026-09-23): "front-store growth
+        strategy" was rewritten to "front-store acquisition strategy",
+        silently narrowing a broad growth claim to a specific acquisition
+        claim even though "acquisition" was itself a legitimate word used
+        elsewhere in the resume. That's a DIFFERENT failure mode from
+        fabrication (the word wasn't invented) -- it's substituting one of
+        the original bullet's own content words for a different one,
+        changing what the bullet actually claims. A rephrase may ADD words
+        freely; it must never DROP a substantive word the original bullet
+        used to say what was accomplished. Compares STEMS (not exact
+        words) so a plain tense/plural change doesn't false-positive.
+        """
+        original_words = self._content_words(original)
+        new_stems = self._content_stems(new)
+        dropped = {w for w in original_words if self._stem(w) not in new_stems}
+        if dropped:
+            return [
+                f"SEMANTIC DRIFT: dropped word(s) {sorted(dropped)} from the original bullet "
+                f"'{original}' -- rewrite changes what was claimed, not just how it's phrased"
+            ]
+        return []
 
     @staticmethod
     def _profile_blob(profile: CareerTruthProfile) -> str:
@@ -296,6 +377,36 @@ class DiffGenerator:
                 issues.append(
                     f"⚠️ FABRICATION RISK: '{tech}' mentioned in '{new}' but not in the original bullet or profile"
                 )
+
+        # Generalizes the tech-keyword check above to any domain -- found
+        # live, 2026-09-23, TWICE: "loyalty" was added to describe a
+        # program on a marketing resume, a term _TECH_KEYWORDS could never
+        # catch since it only knows tech stack names. A first version of
+        # this check only flagged 2+ new words at once (reasoning: a single
+        # new word is often just normal stylistic rephrasing -- a different
+        # verb, a connector), but a live re-test showed that threshold
+        # missing the exact "loyalty" case again, since it was the only new
+        # word in that edit. Callers (DocxBulletTailorer) now treat any hit
+        # here as a HARD REJECT, not just a warning, so a _SAFE_REPHRASE_WORDS
+        # exemption for common resume action verbs/connectors is essential --
+        # without it, nearly every legitimate rephrase (which almost always
+        # introduces at least one new verb) would get rejected too. Only a
+        # new NOUN/ADJECTIVE characterizing the accomplishment itself still
+        # trips this.
+        trusted_stems = self._content_stems(trusted_blob)
+        original_stems = self._content_stems(original)
+        safe_stems = {self._stem(w) for w in self._SAFE_REPHRASE_WORDS}
+        genuinely_new = {
+            w for w in self._content_words(new)
+            if self._stem(w) not in trusted_stems
+            and self._stem(w) not in original_stems
+            and self._stem(w) not in safe_stems
+        }
+        if genuinely_new:
+            issues.append(
+                f"⚠️ POSSIBLY UNVERIFIED: new term(s) {sorted(genuinely_new)} in '{new}' "
+                "not grounded in the original bullet or profile -- review before using"
+            )
 
         return issues
 
