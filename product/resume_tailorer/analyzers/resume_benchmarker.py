@@ -1,7 +1,12 @@
 from dataclasses import dataclass
 from resume_tailorer.models import CareerTruthProfile
 from resume_tailorer.analyzers.job_analyzer import JobAnalysis
-from resume_tailorer.utils.scoring import calculate_keyword_alignment
+from resume_tailorer.analyzers.competency_map import (
+    extract_profile_sentences,
+    find_education_status_evidence,
+    find_transferable_evidence,
+)
+from resume_tailorer.utils.scoring import calculate_keyword_alignment, _semantic_match_qualification
 
 
 @dataclass
@@ -54,8 +59,26 @@ class ResumeBenchmarker:
 
         for job in profile.work_experience:
             parts.append(job.title)
+            parts.append(job.dates)
             parts.extend(job.responsibilities)
             parts.extend(job.accomplishments)
+
+        # Education/consulting-project evidence participates in the
+        # baseline score too (found live, 2026-09-23: a Mondelez/Nielsen-
+        # Circana consulting project stored as an EducationEntry note was
+        # invisible to benchmarking entirely, even though it's real CPG/
+        # business-analysis evidence). The degree/institution/year fields
+        # themselves were ALSO missing -- a requirement naming "MBA" and
+        # "2027" scored as completely unsupported despite the profile
+        # literally having an MBA graduating 2027, just never in `.notes`.
+        for edu in profile.education:
+            parts.append(edu.degree)
+            parts.append(edu.field)
+            parts.append(edu.institution)
+            parts.append(str(edu.year))
+            parts.extend(edu.notes)
+        if profile.summary:
+            parts.append(profile.summary)
 
         return " ".join(parts).lower()
 
@@ -84,17 +107,18 @@ class ResumeBenchmarker:
         return covered, missing
 
     def _has_qualification(self, profile: CareerTruthProfile, qualification: str) -> bool:
-        """Check if a qualification is represented in the profile."""
-        qual_lower = qualification.lower()
+        """
+        Check if a qualification is represented in the profile.
 
-        # Check work experience
-        for job in profile.work_experience:
-            combined = (job.title + " " + " ".join(job.responsibilities) + " " + " ".join(job.accomplishments)).lower()
-            if any(word in combined for word in qual_lower.split() if len(word) > 3):
-                return True
-
-        # Check skills
-        if any(skill.lower() in qual_lower for skill in profile.skills):
+        Also consults the curated competency map so the baseline score
+        reflects transferable evidence (e.g. "on-time delivery" + "risk
+        mitigation" demonstrating "project management") instead of only
+        literal word overlap -- found live (2026-09-23): a resume with
+        substantial real evidence scored a baseline as low as 12% purely
+        because the job description's own phrasing never appeared verbatim.
+        """
+        if _semantic_match_qualification(self._profile_to_text(profile), qualification):
             return True
-
-        return False
+        if find_transferable_evidence(qualification, extract_profile_sentences(profile)) is not None:
+            return True
+        return find_education_status_evidence(qualification, profile) is not None

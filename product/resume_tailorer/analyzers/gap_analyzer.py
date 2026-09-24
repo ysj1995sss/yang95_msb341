@@ -4,6 +4,11 @@ from enum import Enum
 from resume_tailorer.models import CareerTruthProfile
 from resume_tailorer.analyzers.job_analyzer import JobAnalysis
 from resume_tailorer.analyzers.resume_benchmarker import ResumeBenchmark
+from resume_tailorer.analyzers.competency_map import (
+    extract_profile_sentences,
+    find_education_status_evidence,
+    find_transferable_evidence,
+)
 from resume_tailorer.utils.scoring import (
     _semantic_match_qualification,
     qualification_match_ratio,
@@ -65,9 +70,31 @@ class GapAnalyzer:
         return GapReport(items=items, summary=summary)
 
     def _classify_requirement(self, requirement: str, profile: CareerTruthProfile, job_analysis: JobAnalysis) -> GapItem:
-        """Classify a single requirement."""
+        """
+        Classify a single requirement.
+
+        Priority order (highest-confidence evidence first): literal/near-
+        literal match (A) > competency-map STRONG match (B -- e.g. "on-time
+        delivery" + "risk mitigation" strongly demonstrate "project
+        management" even though the resume never uses that phrase) >
+        partial lexical overlap (C) > competency-map PARTIAL match (C) >
+        literal-substring implicit match (B) > preferred-with-no-evidence
+        (D) > nothing found (E). Found live (2026-09-23): purely lexical
+        matching put almost everything into E for a resume whose real
+        bullets clearly demonstrated the requirement, just never in the
+        job description's own words -- this is the fix.
+        """
         profile_text = self._profile_to_text(profile)
         match_ratio = qualification_match_ratio(profile_text, requirement)
+
+        education_evidence = find_education_status_evidence(requirement, profile)
+        if education_evidence:
+            return GapItem(
+                requirement=requirement,
+                category=GapCategory.A,
+                reason="Matches an in-progress or completed degree in the candidate's education history",
+                candidate_evidence=education_evidence,
+            )
 
         if match_ratio >= 0.7:
             return GapItem(
@@ -77,12 +104,35 @@ class GapAnalyzer:
                 candidate_evidence=self._evidence_snippet(profile, requirement),
             )
 
+        transferable = find_transferable_evidence(requirement, extract_profile_sentences(profile))
+        if transferable and transferable.level == "strong":
+            return GapItem(
+                requirement=requirement,
+                category=GapCategory.B,
+                reason=(
+                    f"Strongly supported by verified actions demonstrating "
+                    f"'{transferable.competency}', even though the resume doesn't use that exact phrase"
+                ),
+                candidate_evidence=transferable.evidence_text,
+            )
+
         if 0.4 <= match_ratio < 0.7:
             return GapItem(
                 requirement=requirement,
                 category=GapCategory.C,
                 reason="Current resume content could be rephrased to match JD language",
                 candidate_evidence=self._evidence_snippet(profile, requirement),
+            )
+
+        if transferable:  # partial-level match
+            return GapItem(
+                requirement=requirement,
+                category=GapCategory.C,
+                reason=(
+                    f"Transferable/partial evidence for '{transferable.competency}' -- "
+                    "existing wording can be adjusted to surface this, not invented"
+                ),
+                candidate_evidence=transferable.evidence_text,
             )
 
         if self._has_implicit_experience(requirement, profile):
@@ -139,6 +189,23 @@ class GapAnalyzer:
                 candidate_evidence="Inferred from job responsibilities",
             )
 
+        # Competency-map transferable evidence (same logic as
+        # _classify_requirement -- a standalone skill token like "Project
+        # Management" deserves the same evidence-based treatment as a full
+        # requirement sentence, not just a literal-substring check).
+        transferable = find_transferable_evidence(skill, extract_profile_sentences(profile))
+        if transferable:
+            category = GapCategory.B if transferable.level == "strong" else GapCategory.C
+            return GapItem(
+                requirement=skill,
+                category=category,
+                reason=(
+                    f"{'Strongly supported' if transferable.level == 'strong' else 'Transferable/partial evidence'} "
+                    f"by verified actions demonstrating '{transferable.competency}'"
+                ),
+                candidate_evidence=transferable.evidence_text,
+            )
+
         # Truly missing
         return GapItem(
             requirement=skill,
@@ -183,8 +250,27 @@ class GapAnalyzer:
         for job in profile.work_experience:
             parts.append(job.title)
             parts.append(job.employer)
+            parts.append(job.dates)
             parts.extend(job.responsibilities)
             parts.extend(job.accomplishments)
+        # Education/consulting-project evidence participates in matching
+        # too (found live, 2026-09-23: a Mondelez/Nielsen-Circana
+        # consulting project, stored as an EducationEntry note rather than
+        # a work_experience bullet, is real CPG/business-analysis evidence
+        # that was previously invisible to gap classification entirely).
+        # The degree/institution/year fields themselves were ALSO missing
+        # here (only `.notes` was included) -- a real gap found live on
+        # the same test: a requirement naming "MBA" and "2027" scored as
+        # completely unsupported despite the profile literally having an
+        # MBA with a 2027 graduation year, just never in a `.notes` string.
+        for edu in profile.education:
+            parts.append(edu.degree)
+            parts.append(edu.field)
+            parts.append(edu.institution)
+            parts.append(str(edu.year))
+            parts.extend(edu.notes)
+        if profile.summary:
+            parts.append(profile.summary)
         return " ".join(parts)
 
     def _evidence_snippet(self, profile: CareerTruthProfile, requirement: str) -> str:

@@ -381,6 +381,64 @@ def test_optimizer_calculates_correct_score():
     assert len(missing) == 2
 
 
+def test_score_resume_with_profile_recognizes_transferable_evidence_in_tailored_text():
+    """Found live (2026-09-23): ResumeBenchmarker.benchmark() (the ORIGINAL
+    score) was upgraded to recognize competency-map transferable evidence,
+    but _score_resume (the TAILORED score) still only did literal-word
+    matching -- so a resume could score LOWER after tailoring than its own
+    untouched original purely from a methodology mismatch, not any real
+    regression in content. Passing `profile` must close that gap."""
+    optimizer = ResumeTailoringOptimizer(llm=_mock_llm())
+    job_analysis = MagicMock()
+    job_analysis.skills_required = []
+    job_analysis.tools_required = []
+    job_analysis.required_qualifications = ["cross-functional project management"]
+
+    profile = CareerTruthProfile(
+        contact_info={}, education=[], work_experience=[], skills=[], tools=[],
+        certifications=[], accomplishments=[],
+    )
+    tailored_text = "Led a 10-person team and achieved 100% on-time delivery through risk mitigation."
+
+    # Note: _score_resume's returned "missing" list is missing SKILLS/TOOLS
+    # keywords (from calculate_keyword_alignment), not qualifications -- an
+    # existing, pre-this-fix contract this test does not change. The
+    # qualification-level evidence credit only shows up in `score`.
+    score_without_profile, _, _ = optimizer._score_resume(tailored_text, job_analysis)
+    assert score_without_profile == pytest.approx(0.0)
+
+    score_with_profile, _, _ = optimizer._score_resume(tailored_text, job_analysis, profile)
+    assert score_with_profile == pytest.approx(0.4)
+    assert score_with_profile > score_without_profile
+
+
+def test_score_resume_with_profile_recognizes_in_progress_degree():
+    optimizer = ResumeTailoringOptimizer(llm=_mock_llm())
+    job_analysis = MagicMock()
+    job_analysis.skills_required = []
+    job_analysis.tools_required = []
+    job_analysis.required_qualifications = [
+        "Currently enrolled in an accredited MBA program with an intended graduation of Spring 2027."
+    ]
+
+    profile = CareerTruthProfile(
+        contact_info={},
+        education=[
+            EducationEntry(
+                degree="Master of Business Administration",
+                field="",
+                institution="Brigham Young University",
+                year=2027,
+            )
+        ],
+        work_experience=[], skills=[], tools=[], certifications=[], accomplishments=[],
+    )
+    tailored_text = "EDUCATION\nBrigham Young University | 2027\nMaster of Business Administration"
+
+    score, _, _ = optimizer._score_resume(tailored_text, job_analysis, profile)
+    assert score == pytest.approx(0.4)
+
+
 def test_optimizer_uses_llm_client():
     """Test that optimizer uses ResumeTailorer with an injected LLMClient."""
     llm = _mock_llm()

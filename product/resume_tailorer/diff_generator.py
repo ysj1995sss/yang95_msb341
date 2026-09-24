@@ -6,6 +6,7 @@ import difflib
 import re
 
 from .models import CareerTruthProfile
+from .analyzers.competency_map import COMPETENCY_EVIDENCE_PATTERNS
 
 
 @dataclass
@@ -303,6 +304,35 @@ class DiffGenerator:
     def _content_stems(cls, text: str) -> set:
         return {cls._stem(w) for w in cls._content_words(text)}
 
+    # Number-bearing tokens (a metric, a scale, a count) -- these anchor
+    # the bullet's factual scope/outcome and must never silently
+    # disappear in a rewrite, regardless of where in the bullet they sit.
+    # The word-based check below (_content_words, `[a-zA-Z']+`) is
+    # entirely blind to these -- "15+", "100%", "$120M", "10-person",
+    # "60s", "42s", "3x"/"3×" contain no run of 4+ letters -- so this is a
+    # real gap it closes, not just a restatement of the word check.
+    _METRIC_TOKEN_RE = re.compile(
+        r"\$?\d[\d,.]*\s*(?:%|k|m|b|x|×|\+|-person|-year|s\b)?", re.IGNORECASE
+    )
+
+    # A bullet's CORE clause (who/what/how-much) is where a word swap
+    # changes the underlying claim (the "growth"->"acquisition" bug); the
+    # ELABORATION clause after one of these markers is usually purpose/
+    # method/outcome framing, where rewording is normal, safe paraphrasing
+    # (found live, 2026-09-23: "...to align portfolios and build
+    # cross-cultural trust" rephrased to "...coordinating priorities and
+    # strengthening cross-cultural collaboration" preserves the real claim
+    # despite heavy wording changes, entirely within this clause). Only
+    # the FIRST marker split matters -- everything after it is elaboration.
+    _ELABORATION_SPLIT_RE = re.compile(r"\bto\b|\bby\b|,|;|\band\b", re.IGNORECASE)
+
+    @classmethod
+    def _split_core_and_elaboration(cls, text: str) -> tuple[str, str]:
+        match = cls._ELABORATION_SPLIT_RE.search(text)
+        if not match or match.start() < 8:  # too early to be a meaningful split
+            return text, ""
+        return text[: match.start()], text[match.start() :]
+
     def check_semantic_drift(self, original: str, new: str) -> List[str]:
         """
         Hard, code-level guard against narrowing or changing an existing
@@ -313,31 +343,49 @@ class DiffGenerator:
         elsewhere in the resume. That's a DIFFERENT failure mode from
         fabrication (the word wasn't invented) -- it's substituting one of
         the original bullet's own content words for a different one,
-        changing what the bullet actually claims. A rephrase may ADD words
-        freely; it must never DROP a substantive word the original bullet
-        used to say what was accomplished. Compares STEMS (not exact
-        words) so a plain tense/plural change doesn't false-positive.
+        changing what the bullet actually claims.
 
-        _SAFE_REPHRASE_WORDS (common resume action verbs/connectors) are
-        exempt from "must not drop" -- found live (2026-09-23), a SECOND
-        real bug from the same check: rewriting "Developed a front-store
-        growth strategy" to start with a different verb (e.g. "Led")
-        wrongly counted as dropping "developed" and blocked an otherwise
-        legitimate rephrase. Swapping one action verb for another changes
-        HOW the accomplishment is described, not WHAT was accomplished --
-        exactly the same distinction the fabrication check already makes.
+        Two protections, addressing a follow-up fix request that the
+        original word-for-word version was "too literal":
+
+        1. METRICS are hard-protected everywhere in the bullet (a check
+           the original version didn't actually have -- numbers contain no
+           4+ letter run, so the word-based check below never saw them).
+        2. Only the bullet's CORE clause (before the first purpose/method/
+           list marker -- "to", "by", a comma, a semicolon, "and") requires
+           every content word to survive. The ELABORATION clause after that
+           marker can be reworded freely (per the fix request's own
+           example: "...to align portfolios and build cross-cultural
+           trust" -> "...coordinating priorities and strengthening
+           cross-cultural collaboration" must PASS, not be rejected merely
+           because the wording changed).
+
+        _SAFE_REPHRASE_WORDS (common resume action verbs/connectors) stay
+        exempt from "must not drop" in the core clause too -- swapping the
+        leading verb (e.g. "Developed" -> "Led") changes HOW something is
+        described, not WHAT was accomplished.
         """
-        original_words = self._content_words(original)
+        original_metrics = set(m.group().strip() for m in self._METRIC_TOKEN_RE.finditer(original) if m.group().strip())
+        new_metrics = set(m.group().strip() for m in self._METRIC_TOKEN_RE.finditer(new) if m.group().strip())
+        dropped_metrics = original_metrics - new_metrics
+        if dropped_metrics:
+            return [
+                f"SEMANTIC DRIFT: dropped metric(s) {sorted(dropped_metrics)} from the original bullet "
+                f"'{original}' -- a number/scale disappearing changes the claim"
+            ]
+
+        core, _elaboration = self._split_core_and_elaboration(original)
+        core_words = self._content_words(core)
         new_stems = self._content_stems(new)
         safe_stems = {self._stem(w) for w in self._SAFE_REPHRASE_WORDS}
         dropped = {
-            w for w in original_words
+            w for w in core_words
             if self._stem(w) not in new_stems and self._stem(w) not in safe_stems
         }
         if dropped:
             return [
-                f"SEMANTIC DRIFT: dropped word(s) {sorted(dropped)} from the original bullet "
-                f"'{original}' -- rewrite changes what was claimed, not just how it's phrased"
+                f"SEMANTIC DRIFT: dropped word(s) {sorted(dropped)} from the original bullet's core "
+                f"claim '{core.strip()}' -- rewrite changes what was claimed, not just how it's phrased"
             ]
         return []
 
@@ -360,6 +408,29 @@ class DiffGenerator:
         if profile.summary:
             parts.append(profile.summary)
         return " ".join(parts).lower()
+
+    @staticmethod
+    def _competency_label_words_evidenced_by(original: str) -> set:
+        """
+        Words from a competency's own name (e.g. "project", "management")
+        are exempt from the 'genuinely new word' fabrication check below
+        when the ORIGINAL bullet already strongly matches that competency's
+        curated evidence patterns -- e.g. a bullet that already says "100%
+        on-time delivery" and "risk mitigation" has already earned the
+        label "project management" as safe, evidence-backed abstraction
+        (fix-request Problem 6). Naming a competency the bullet already
+        demonstrates isn't a new unverified claim; it's restating the same
+        fact at a higher level. Deliberately requires a STRONG match on the
+        bullet's OWN original text (not the whole profile) to stay narrow.
+        """
+        words = set()
+        original_lower = original.lower()
+        for competency, patterns in COMPETENCY_EVIDENCE_PATTERNS.items():
+            for pattern in patterns["strong"]:
+                if re.search(pattern, original_lower, re.IGNORECASE):
+                    words.update(re.findall(r"[a-z]{3,}", competency))
+                    break
+        return words
 
     def check_bullet_pair_fabrication_risk(
         self, original: str, new: str, profile: CareerTruthProfile
@@ -408,7 +479,10 @@ class DiffGenerator:
         # trips this.
         trusted_stems = self._content_stems(trusted_blob)
         original_stems = self._content_stems(original)
-        safe_stems = {self._stem(w) for w in self._SAFE_REPHRASE_WORDS}
+        competency_backed_words = self._competency_label_words_evidenced_by(original)
+        safe_stems = {self._stem(w) for w in self._SAFE_REPHRASE_WORDS} | {
+            self._stem(w) for w in competency_backed_words
+        }
         genuinely_new = {
             w for w in self._content_words(new)
             if self._stem(w) not in trusted_stems

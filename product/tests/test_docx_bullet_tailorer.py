@@ -257,7 +257,7 @@ class TestParseAndValidate:
         edit = result.edits[0]
         assert edit.changed is False
         assert edit.new_text == bullets[0].text
-        assert any("item set changed" in w.lower() for w in result.warnings)
+        assert any("item count changed" in w.lower() for w in result.warnings)
 
     def test_competency_reorder_that_adds_a_new_item_is_rejected(
         self, sample_profile, sample_job_analysis, sample_gap_report
@@ -275,6 +275,66 @@ class TestParseAndValidate:
         result = tailorer.tailor_bullets(bullets, sample_profile, sample_job_analysis, sample_gap_report)
         edit = result.edits[0]
         assert edit.changed is False
+
+    def test_competency_swap_backed_by_evidence_is_accepted(
+        self, sample_job_analysis, sample_gap_report
+    ):
+        """Problem 6/10 of a follow-up fix request: swapping a
+        less-relevant competency for one the profile's own actions
+        already demonstrate is evidence-backed abstraction, not
+        fabrication, and should be allowed (bounded, re-validated against
+        the same curated map, never trusting the model's own claim)."""
+        profile = CareerTruthProfile(
+            contact_info={"name": "Jane Doe", "email": "jane@example.com"},
+            education=[],
+            work_experience=[
+                WorkExperience(
+                    employer="Acme Corp",
+                    title="Ops Lead",
+                    dates="2022-2024",
+                    responsibilities=[],
+                    accomplishments=[
+                        "Achieved 100% on-time delivery through risk mitigation and workflow mapping"
+                    ],
+                )
+            ],
+            skills=[], tools=[], certifications=[], accomplishments=[],
+        )
+        bullets = [
+            Bullet(
+                paragraph_index=20,
+                text="Core Competencies: Strategic Thinker | Market Research | Baking",
+                section="competencies",
+            )
+        ]
+        swapped = "Core Competencies: Strategic Thinker | Market Research | Project Management"
+        response = json.dumps([{"paragraph_index": 20, "change": "rewrite", "new_text": swapped}])
+        tailorer = _tailorer_with_response(response)
+        result = tailorer.tailor_bullets(bullets, profile, sample_job_analysis, sample_gap_report)
+        edit = result.edits[0]
+        assert edit.changed is True
+        assert edit.new_text == swapped
+
+    def test_competency_swap_not_backed_by_evidence_is_rejected(
+        self, sample_profile, sample_job_analysis, sample_gap_report
+    ):
+        """The same swap mechanism must reject an item the profile does
+        NOT actually demonstrate -- swapping is bounded evidence-backed
+        abstraction, not a loophole for adding anything."""
+        bullets = [
+            Bullet(
+                paragraph_index=20,
+                text="Core Competencies: Strategic Thinker | Market Research | Baking",
+                section="competencies",
+            )
+        ]
+        swapped = "Core Competencies: Strategic Thinker | Market Research | Financial Acumen"
+        response = json.dumps([{"paragraph_index": 20, "change": "rewrite", "new_text": swapped}])
+        tailorer = _tailorer_with_response(response)
+        result = tailorer.tailor_bullets(bullets, sample_profile, sample_job_analysis, sample_gap_report)
+        edit = result.edits[0]
+        assert edit.changed is False
+        assert any("not backed by evidence" in w.lower() for w in result.warnings)
 
     def test_rewrite_adding_unverified_characterization_is_rejected_and_kept(
         self, sample_profile, sample_job_analysis, sample_gap_report
@@ -334,6 +394,58 @@ class TestParseAndValidate:
         edit = next(e for e in result.edits if e.paragraph_index == 10)
         assert edit.changed is False
         assert result.warnings == []
+
+    def test_repair_loop_recovers_a_bullet_after_a_safer_second_attempt(
+        self, sample_bullets, sample_profile, sample_job_analysis, sample_gap_report
+    ):
+        """Problem 12 of a follow-up fix request: 'do not give up after one
+        safe rewrite fails' -- a rejected bullet gets ONE bounded repair
+        attempt with the rejection reason fed back, and a genuinely safer
+        second attempt should be accepted."""
+        too_long = _BULLET_10_TEXT + " and then did quite a bit more on top of that as well, over and over again"
+        first_response = json.dumps([{"paragraph_index": 10, "change": "rewrite", "new_text": too_long}])
+        safer_response = json.dumps(
+            [{"paragraph_index": 10, "change": "rewrite", "new_text": _BULLET_10_TEXT + " via SQL"}]
+        )
+        llm = MagicMock(spec=LLMClient)
+        llm.complete.side_effect = [first_response, safer_response]
+        tailorer = DocxBulletTailorer(llm=llm)
+
+        result = tailorer.tailor_bullets(sample_bullets, sample_profile, sample_job_analysis, sample_gap_report)
+
+        edit = next(e for e in result.edits if e.paragraph_index == 10)
+        assert edit.changed is True
+        assert edit.new_text == _BULLET_10_TEXT + " via SQL"
+        assert llm.complete.call_count == 2
+
+    def test_repair_loop_gives_up_gracefully_when_second_attempt_also_fails(
+        self, sample_bullets, sample_profile, sample_job_analysis, sample_gap_report
+    ):
+        too_long = _BULLET_10_TEXT + " and then did quite a bit more on top of that as well, over and over again"
+        still_too_long = _BULLET_10_TEXT + " and then did even more additional extra work besides that too"
+        llm = MagicMock(spec=LLMClient)
+        llm.complete.side_effect = [
+            json.dumps([{"paragraph_index": 10, "change": "rewrite", "new_text": too_long}]),
+            json.dumps([{"paragraph_index": 10, "change": "rewrite", "new_text": still_too_long}]),
+        ]
+        tailorer = DocxBulletTailorer(llm=llm)
+
+        result = tailorer.tailor_bullets(
+            sample_bullets, sample_profile, sample_job_analysis, sample_gap_report, max_repair_attempts=1
+        )
+
+        edit = next(e for e in result.edits if e.paragraph_index == 10)
+        assert edit.changed is False
+        assert edit.new_text == _BULLET_10_TEXT
+        assert llm.complete.call_count == 2
+
+    def test_no_repair_call_when_nothing_was_rejected(
+        self, sample_bullets, sample_profile, sample_job_analysis, sample_gap_report
+    ):
+        response = json.dumps([{"paragraph_index": 10, "change": "keep", "new_text": ""}])
+        tailorer = _tailorer_with_response(response)
+        tailorer.tailor_bullets(sample_bullets, sample_profile, sample_job_analysis, sample_gap_report)
+        assert tailorer.llm.complete.call_count == 1
 
     def test_empty_bullet_list_returns_empty_result_without_calling_llm(
         self, sample_profile, sample_job_analysis, sample_gap_report

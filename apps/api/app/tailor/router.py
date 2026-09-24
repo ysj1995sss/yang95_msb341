@@ -146,7 +146,7 @@ def tailor_preview(
             resume_file.data, profile, job_analysis, gap_report, convert_to_pdf=body.generate_pdf
         )
         score, matched, missing = optimizer._score_resume(
-            docx_result.tailored_scoring_text, job_analysis
+            docx_result.tailored_scoring_text, job_analysis, profile
         )
         result = OptimizationResult(
             tailored_resume=docx_result.tailored_scoring_text,

@@ -45,3 +45,24 @@ def test_benchmarker_scores_original_resume(sample_profile, sample_job_analysis)
     assert 0 <= benchmark.original_match_score <= 1.0
     assert len(benchmark.keywords_matched) >= 0
     assert len(benchmark.keywords_missing) >= 0
+
+
+def test_generic_word_overlap_does_not_cover_a_qualification(sample_profile):
+    """Sharing 'team' or 'years' with a JD line is not evidence the candidate has that qualification."""
+    from resume_tailorer.analyzers.job_analyzer import JobAnalysis
+
+    job_analysis = JobAnalysis(
+        required_qualifications=["strong communication and stakeholder leadership"],
+        preferred_qualifications=[],
+        responsibilities=[],
+        skills_required=[],
+        tools_required=[],
+        education_required=None,
+        experience_required=None,
+        weighted_keywords=[],
+    )
+
+    benchmark = ResumeBenchmarker().benchmark(sample_profile, job_analysis)
+
+    assert "strong communication and stakeholder leadership" in benchmark.qualifications_missing
+    assert "strong communication and stakeholder leadership" not in benchmark.qualifications_covered

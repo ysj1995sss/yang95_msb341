@@ -128,6 +128,28 @@ class TestCheckBulletPairFabricationRisk:
         issues = DiffGenerator().check_bullet_pair_fabrication_risk(original, new, profile)
         assert issues == []
 
+    def test_competency_label_backed_by_this_bullets_own_strong_evidence_is_not_flagged(self):
+        """Problem 6 (safe abstraction): a bullet that already says '100%
+        on-time delivery' and 'risk mitigation' has already earned the label
+        'project management' -- naming that competency explicitly is not a
+        new unverified claim, it's restating the bullet's own evidence."""
+        profile = _profile()
+        original = "Achieved 100% on-time delivery across 200+ performances through risk mitigation"
+        new = "Achieved 100% on-time project management delivery across 200+ performances through risk mitigation"
+        issues = DiffGenerator().check_bullet_pair_fabrication_risk(original, new, profile)
+        assert issues == []
+
+    def test_competency_label_not_backed_by_this_bullets_evidence_is_still_flagged(self):
+        """The exemption is narrow: it only applies when THIS bullet's own
+        text matches a strong competency pattern. An unrelated bullet
+        claiming 'project management' with no such evidence must still be
+        flagged, so the exemption can't be used to launder any label in."""
+        profile = _profile()
+        original = "Baked pastries for a local coffee shop"
+        new = "Baked pastries for a local coffee shop using project management"
+        issues = DiffGenerator().check_bullet_pair_fabrication_risk(original, new, profile)
+        assert any("project" in issue.lower() or "management" in issue.lower() for issue in issues)
+
 
 class TestCheckSemanticDrift:
     def test_no_drift_when_all_original_words_preserved(self):
@@ -163,4 +185,43 @@ class TestCheckSemanticDrift:
         changes HOW something is described, not WHAT was accomplished."""
         original = "Developed a front-store growth strategy identifying incremental sales"
         new = "Led a front-store growth strategy identifying incremental sales"
+        assert DiffGenerator().check_semantic_drift(original, new) == []
+
+    def test_elaboration_clause_can_be_freely_reworded(self):
+        """The user's own worked example from a follow-up fix request: the
+        CORE clause (who/what/scale) is unchanged, only the purpose/
+        outcome clause after 'to' is reworded -- must PASS even though
+        several words changed, because the underlying claim is preserved."""
+        original = (
+            "Managed senior and international stakeholders across 15+ cities "
+            "to align portfolios and build cross-cultural trust"
+        )
+        new = (
+            "Managed senior and international stakeholders across 15+ cities, "
+            "coordinating priorities and strengthening cross-cultural collaboration"
+        )
+        assert DiffGenerator().check_semantic_drift(original, new) == []
+
+    def test_core_clause_word_swap_still_flagged_even_with_a_to_clause_later(self):
+        """The core/elaboration split must not become a loophole -- a
+        narrowing swap BEFORE the split marker is still rejected."""
+        original = "Developed a front-store growth strategy to identify incremental sales"
+        new = "Developed a front-store acquisition strategy to identify incremental sales"
+        issues = DiffGenerator().check_semantic_drift(original, new)
+        assert len(issues) == 1
+        assert "growth" in issues[0]
+
+    def test_dropping_a_metric_is_flagged_even_though_metrics_are_not_letter_words(self):
+        """Metrics contain no run of 4+ letters, so the word-based check
+        alone is blind to them -- a real gap found while implementing the
+        core/elaboration split, closed with a dedicated metric check."""
+        original = "Led a 10-person team and achieved 100% on-time delivery across 200+ performances"
+        new = "Led a 10-person team and achieved on-time delivery across performances"
+        issues = DiffGenerator().check_semantic_drift(original, new)
+        assert len(issues) == 1
+        assert "100%" in issues[0] or "200+" in issues[0]
+
+    def test_metric_preserved_in_elaboration_clause_passes(self):
+        original = "Managed a team of 15+ people to deliver on-time results"
+        new = "Managed a team of 15+ people, delivering measurable on-time outcomes"
         assert DiffGenerator().check_semantic_drift(original, new) == []

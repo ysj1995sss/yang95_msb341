@@ -14,6 +14,7 @@ import re
 from resume_tailorer.models import CareerTruthProfile
 from resume_tailorer.analyzers.job_analyzer import JobAnalysis
 from resume_tailorer.analyzers.gap_analyzer import GapReport
+from resume_tailorer.analyzers.competency_map import extract_profile_sentences, supported_competencies
 from resume_tailorer.diff_generator import DiffGenerator
 from resume_tailorer.llm.client import LLMClient
 from resume_tailorer.llm.settings import LLMSettings, resolve_settings
@@ -87,14 +88,115 @@ class DocxBulletTailorer:
         profile: CareerTruthProfile,
         job_analysis: JobAnalysis,
         gap_report: GapReport,
+        max_repair_attempts: int = 1,
     ) -> BulletTailoringResult:
+        """
+        max_repair_attempts: when a proposed rewrite is rejected by a
+        safety check, the request's own rejection reason is fed back to
+        the model in a bounded follow-up call asking for a safer
+        alternative, rather than giving up on the whole bullet after one
+        failed attempt (found live, 2026-09-23: a request explicitly
+        asked for this -- "do not give up after one safe rewrite fails").
+        1 attempt by default (2 LLM calls total, worst case) to bound
+        cost/latency against a backend already known to be flaky; a
+        second repair attempt rarely does much better than the first once
+        the model has already been told exactly why it failed.
+        """
         if not bullets:
             return BulletTailoringResult(edits=[], warnings=[])
 
+        by_index = {b.paragraph_index: b for b in bullets}
         system_prompt = self._build_system_prompt()
         user_prompt = self._build_user_prompt(bullets, profile, job_analysis, gap_report)
         raw = self.llm.complete(system_prompt, user_prompt, max_tokens=2000)
-        return self._parse_and_validate(raw, bullets, profile)
+        result = self._parse_and_validate(raw, bullets, profile)
+
+        for _ in range(max_repair_attempts):
+            rejected = [e for e in result.edits if e.rejected_reason]
+            if not rejected:
+                break
+            rejected_bullets = [by_index[e.paragraph_index] for e in rejected]
+            repair_prompt = self._build_repair_prompt(rejected, by_index)
+            raw_repair = self.llm.complete(system_prompt, repair_prompt, max_tokens=1000)
+            repair_result = self._parse_and_validate(raw_repair, rejected_bullets, profile)
+            result = self._merge_repair(result, repair_result)
+
+        return result
+
+    def _build_repair_prompt(
+        self, rejected: list[BulletEdit], by_index: dict[int, Bullet]
+    ) -> str:
+        items = []
+        for edit in rejected:
+            bullet = by_index[edit.paragraph_index]
+            items.append(
+                {
+                    "paragraph_index": bullet.paragraph_index,
+                    "section": bullet.section,
+                    "text": bullet.text,
+                    "text_length": len(bullet.text),
+                    "max_new_text_length": round(len(bullet.text) * _MAX_LENGTH_GROWTH),
+                    "your_previous_attempt_was_rejected_because": edit.rejected_reason,
+                }
+            )
+        bullets_json = json.dumps(items, indent=2)
+        return f"""Your previous rewrite for the bullets below was rejected by a safety check -- each
+one shows exactly why. Propose a SAFER alternative that fixes that specific problem (e.g. if
+rejected for dropping a word, add job-relevant language without removing that word; if rejected
+for an unverified term, remove that term or replace it with something the evidence actually
+supports). If no safe improvement is possible without repeating the same problem, use "change":
+"keep" for that bullet rather than trying again with the same issue.
+
+BULLETS TO REPAIR:
+{bullets_json}
+
+Return the JSON array now, in the same format as before:"""
+
+    @staticmethod
+    def _merge_repair(
+        original: BulletTailoringResult, repair: BulletTailoringResult
+    ) -> BulletTailoringResult:
+        """Repaired bullets replace their original outcome (whether the
+        repair succeeded or failed again with a new reason); every other
+        bullet's outcome is untouched."""
+        repair_by_index = {e.paragraph_index: e for e in repair.edits}
+        merged_edits = [repair_by_index.get(e.paragraph_index, e) for e in original.edits]
+        return BulletTailoringResult(
+            edits=merged_edits, warnings=original.warnings + repair.warnings
+        )
+
+    @staticmethod
+    def _validate_competency_edit(
+        orig_label: str,
+        orig_items: list[str],
+        new_label: str,
+        new_items: list[str],
+        profile: CareerTruthProfile,
+    ) -> str | None:
+        """Returns a rejection reason, or None if the edit is a valid
+        reorder and/or bounded evidence-backed swap of the Core
+        Competencies line."""
+        if new_label != orig_label:
+            return "label changed"
+        if len(new_items) != len(orig_items):
+            return "item count changed"
+
+        orig_lower = [i.lower() for i in orig_items]
+        new_lower = [i.lower() for i in new_items]
+        removed = [i for i in orig_lower if i not in new_lower]
+        added = [i for i in new_lower if i not in orig_lower]
+        if len(added) != len(removed):
+            return "item set changed inconsistently"
+        if len(added) > 2:
+            return f"too many items swapped ({len(added)}); at most 2 allowed per pass"
+        if not added:
+            return None  # pure reorder
+
+        evidence_backed = supported_competencies(extract_profile_sentences(profile))
+        unverified = [item for item in added if item not in evidence_backed]
+        if unverified:
+            return f"new item(s) {unverified} are not backed by evidence in the profile"
+        return None
 
     def _build_system_prompt(self) -> str:
         return """You are a resume tailoring specialist editing a resume IN PLACE. Your job is
@@ -161,9 +263,12 @@ back into the original document's own paragraphs. Because of this:
 - Only rewrite a bullet if doing so genuinely helps address a specific job requirement backed
   by real evidence (Category A/B/C in the gap report -- NEVER category D or E). Leave every
   other bullet unchanged.
-- For the "competencies" section (if shown below), you may ONLY reorder the existing
-  pipe-separated items to put the most job-relevant ones first -- never add, remove, or reword
-  an item. "new_text" must contain exactly the same items, separated by " | ", just reordered.
+- For the "competencies" section (if shown below), you may reorder the existing pipe-separated
+  items to put the most job-relevant ones first, AND you may swap out up to 2 less-relevant
+  items for ones from the "evidence_backed_alternatives" list shown with that bullet -- these
+  are competencies the profile's own actions already demonstrate, just not currently named in
+  this list. Never introduce an item that ISN'T in "evidence_backed_alternatives", never reword
+  an existing item, and keep the total item count the same.
 
 OUTPUT FORMAT - CRITICAL:
 Return ONLY a JSON array, no markdown code fences, no commentary before or after it. Include
@@ -197,6 +302,13 @@ When "change" is "keep", "new_text" is ignored -- the original text is always us
                 job = profile.work_experience[bullet.job_index]
                 item["employer"] = job.employer
                 item["title"] = job.title
+            if bullet.section == "competencies":
+                _label, current_items = _split_competency_line(bullet.text)
+                current_lower = {i.lower() for i in current_items}
+                evidence_backed = supported_competencies(extract_profile_sentences(profile))
+                item["evidence_backed_alternatives"] = [
+                    key.title() for key in evidence_backed if key not in current_lower
+                ]
             bullet_items.append(item)
         bullets_json = json.dumps(bullet_items, indent=2)
 
@@ -297,24 +409,22 @@ Return the JSON array now:"""
                 continue
 
             if bullet.section == "competencies":
-                # Reorder-only: the LLM may only permute the existing
-                # pipe-separated items, never add/remove/reword one (Problem
-                # 6 -- "keep approximately the same number of competencies,
-                # only include one when evidence exists"). A stricter,
-                # exact-itemset check than the generic length/drift checks
-                # below, which would tolerate reordering fine but wouldn't
-                # catch e.g. a merged or reworded item that happens to keep
-                # the same content words.
+                # Reorder AND up to 2 evidence-backed swaps (Problem 6/10:
+                # "keep approximately the same number of competencies, only
+                # include one when evidence exists" -- prioritizing a more
+                # job-relevant, ALREADY-DEMONSTRATED competency over a less
+                # relevant one is not fabrication, it's evidence-backed
+                # abstraction). Never trusts the model's own judgment of
+                # what's "evidence-backed" -- re-validates every added item
+                # against the same curated competency map used to build the
+                # prompt's suggestion list in the first place.
                 orig_label, orig_items = _split_competency_line(bullet.text)
                 new_label, new_items = _split_competency_line(new_text)
-                if new_label != orig_label or sorted(new_items) != sorted(orig_items):
-                    reason = "competencies item set changed"
-                    warnings.append(
-                        f"Rejected a competencies reorder for paragraph {paragraph_index}: "
-                        "item set changed (must reorder the exact same items); kept original."
-                    )
+                rejection = self._validate_competency_edit(orig_label, orig_items, new_label, new_items, profile)
+                if rejection:
+                    warnings.append(f"Rejected a competencies edit for paragraph {paragraph_index}: {rejection}")
                     resolved[paragraph_index] = BulletEdit(
-                        paragraph_index, bullet.text, bullet.text, changed=False, rejected_reason=reason
+                        paragraph_index, bullet.text, bullet.text, changed=False, rejected_reason=rejection
                     )
                 else:
                     resolved[paragraph_index] = BulletEdit(

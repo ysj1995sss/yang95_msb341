@@ -12,6 +12,7 @@ from resume_tailorer.analyzers import JobAnalysis
 from resume_tailorer.analyzers.gap_analyzer import GapReport, GapCategory
 from resume_tailorer.tailorer.resume_tailorer import ResumeTailorer
 from resume_tailorer.utils.scoring import calculate_keyword_alignment, calculate_qualification_alignment
+from resume_tailorer.analyzers.competency_map import find_education_status_evidence, find_transferable_evidence
 
 
 @dataclass
@@ -91,7 +92,7 @@ class ResumeTailoringOptimizer:
             OptimizationResult with final resume, score, iterations, and status
         """
         if conservative:
-            score, matched, missing = self._score_resume(initial_tailored, job_analysis)
+            score, matched, missing = self._score_resume(initial_tailored, job_analysis, profile)
             return OptimizationResult(
                 tailored_resume=initial_tailored,
                 final_score=score,
@@ -115,7 +116,7 @@ class ResumeTailoringOptimizer:
 
         for iteration in range(self.max_iterations):
             # Score current version
-            score, matched, missing = self._score_resume(current_tailored, job_analysis)
+            score, matched, missing = self._score_resume(current_tailored, job_analysis, profile)
 
             # Check if target reached
             if score >= self.target_score:
@@ -152,7 +153,7 @@ class ResumeTailoringOptimizer:
             )
 
         # Max iterations reached
-        final_score, matched, missing = self._score_resume(current_tailored, job_analysis)
+        final_score, matched, missing = self._score_resume(current_tailored, job_analysis, profile)
         return OptimizationResult(
             tailored_resume=current_tailored,
             final_score=final_score,
@@ -162,7 +163,7 @@ class ResumeTailoringOptimizer:
         )
 
     def _score_resume(
-        self, resume_text: str, job_analysis: JobAnalysis
+        self, resume_text: str, job_analysis: JobAnalysis, profile: CareerTruthProfile | None = None
     ) -> tuple[float, list[str], list[str]]:
         """
         Score the resume against job requirements.
@@ -172,9 +173,28 @@ class ResumeTailoringOptimizer:
         required qualifications) so that OptimizationResult.final_score is
         directly comparable to ResumeBenchmark.original_match_score.
 
+        Found live (2026-09-23): this previously used ONLY literal-word
+        qualification matching, while ResumeBenchmarker.benchmark() had
+        since been upgraded to also recognize transferable competency-map
+        evidence and in-progress/completed degrees. The two scores were no
+        longer comparable -- a resume could score LOWER after tailoring than
+        its own untouched original, purely because the original's score used
+        a more evidence-aware methodology than the tailored score did. When
+        `profile` is provided, qualifications that fail literal matching are
+        re-checked the same way ResumeBenchmarker does: competency-map
+        transferable evidence (against sentences from the resume text being
+        scored, so credit reflects what THIS version of the resume actually
+        conveys) and degree/enrollment-status evidence (against the
+        profile's own education history, which doesn't change during
+        tailoring).
+
         Args:
             resume_text: The resume text to score
             job_analysis: Job description analysis with requirements
+            profile: Source-of-truth profile, used for evidence-aware
+                fallback matching when literal matching fails. Optional so
+                existing callers/tests that don't have a profile handy still
+                work (falling back to literal-only matching).
 
         Returns:
             Tuple of (score, matched_keywords, missing_keywords)
@@ -182,9 +202,24 @@ class ResumeTailoringOptimizer:
         all_keywords = job_analysis.skills_required + job_analysis.tools_required
         keyword_score, matched, missing = calculate_keyword_alignment(resume_text, all_keywords)
 
-        qual_score, _covered, _missing_quals = calculate_qualification_alignment(
+        qual_score, qual_covered, qual_missing = calculate_qualification_alignment(
             resume_text, job_analysis.required_qualifications[:5]
         )
+
+        if profile is not None and qual_missing:
+            resume_sentences = [line.strip() for line in resume_text.splitlines() if line.strip()]
+            still_missing = []
+            for qual in qual_missing:
+                if (
+                    find_transferable_evidence(qual, resume_sentences) is not None
+                    or find_education_status_evidence(qual, profile) is not None
+                ):
+                    qual_covered.append(qual)
+                else:
+                    still_missing.append(qual)
+            qual_missing = still_missing
+            total = len(job_analysis.required_qualifications[:5])
+            qual_score = len(qual_covered) / total if total > 0 else 0.0
 
         score = (keyword_score * 0.6) + (qual_score * 0.4)
         return score, matched, missing

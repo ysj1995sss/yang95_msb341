@@ -46,7 +46,7 @@ class _FakeOptimizer:
             missing_qualifications=[],
         )
 
-    def _score_resume(self, resume_text, job_analysis):
+    def _score_resume(self, resume_text, job_analysis, profile=None):
         return 0.5, [], []
 
 

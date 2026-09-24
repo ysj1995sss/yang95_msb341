@@ -1,5 +1,5 @@
 import pytest
-from resume_tailorer.models import CareerTruthProfile, WorkExperience
+from resume_tailorer.models import CareerTruthProfile, EducationEntry, WorkExperience
 from resume_tailorer.analyzers import JobAnalyzer
 from resume_tailorer.analyzers.job_analyzer import JobAnalysis
 from resume_tailorer.analyzers.resume_benchmarker import ResumeBenchmarker, ResumeBenchmark
@@ -111,6 +111,140 @@ def test_real_python_api_experience_is_category_a(sample_profile):
     gaps = GapAnalyzer().analyze(sample_profile, job_analysis, benchmark)
     item = next(g for g in gaps.items if g.requirement == "experience building Python APIs")
     assert item.category == GapCategory.A
+
+
+def _empty_benchmark() -> "ResumeBenchmark":
+    return ResumeBenchmark(
+        original_match_score=0.0,
+        keywords_matched=[],
+        keywords_missing=[],
+        qualifications_covered=[],
+        qualifications_missing=[],
+    )
+
+
+def _job_requiring(*required_qualifications: str) -> JobAnalysis:
+    return JobAnalysis(
+        required_qualifications=list(required_qualifications),
+        preferred_qualifications=[],
+        responsibilities=[],
+        skills_required=[],
+        tools_required=[],
+        education_required=None,
+        experience_required=None,
+        weighted_keywords=[],
+    )
+
+
+class TestTransferableEvidenceRegression:
+    """
+    Regression suite for a real failure found live (2026-09-23): purely
+    lexical requirement matching treated "the exact JD phrase is absent"
+    as "unsupported," even when the resume contains clear, truthful,
+    transferable evidence for the competency. These map directly onto the
+    fix request's Test A-E cases, run through the real GapAnalyzer (not
+    just the underlying competency_map module) so a regression in the
+    classification wiring itself is caught, not just in the matcher.
+    """
+
+    def _gmdp_style_profile(self) -> CareerTruthProfile:
+        return CareerTruthProfile(
+            contact_info={"name": "Shangjun Yang", "email": "yang95@byu.edu"},
+            education=[],
+            work_experience=[
+                WorkExperience(
+                    employer="International Broadway",
+                    title="Operational Specialist",
+                    dates="Dec 2023-Apr 2024",
+                    responsibilities=[],
+                    accomplishments=[
+                        "Led a 10-person operations team, diagnosed process bottlenecks through workflow mapping",
+                        "Achieved 100% on-time delivery across 200+ performances via real-time communication and risk mitigation",
+                    ],
+                ),
+                WorkExperience(
+                    employer="CVS Health",
+                    title="Marketing Strategy MBA Corporate Intern",
+                    dates="May 2026-Aug 2026",
+                    responsibilities=[],
+                    accomplishments=[
+                        "Aligned 30+ cross-functional stakeholders and distilled complex consumer research into "
+                        "executive-ready recommendations, presented to C-suite and VP leaders",
+                    ],
+                ),
+            ],
+            skills=[],
+            tools=[],
+            certifications=[],
+            accomplishments=[],
+        )
+
+    def test_a_project_management_is_not_unsupported(self):
+        """Test A: 'project management' never appears literally, but
+        on-time delivery + risk mitigation strongly demonstrate it --
+        must land in B or C, never E."""
+        profile = self._gmdp_style_profile()
+        job_analysis = _job_requiring("cross-functional project management")
+        gaps = GapAnalyzer().analyze(profile, job_analysis, _empty_benchmark())
+        item = next(g for g in gaps.items if g.requirement == "cross-functional project management")
+        assert item.category in (GapCategory.A, GapCategory.B, GapCategory.C)
+        assert item.candidate_evidence and item.candidate_evidence not in ("None", "Unknown")
+
+    def test_b_business_analysis_from_analyzing_data(self):
+        """Test B: 'business analysis' via a Mondelez/Nielsen-Circana
+        consulting project stored in education notes, not work
+        experience -- must participate in matching at all."""
+        profile = self._gmdp_style_profile()
+        profile.education.append(
+            EducationEntry(
+                degree="MBA",
+                field="Business",
+                institution="BYU",
+                year=2027,
+                notes=[
+                    "Consulted Mondelēz: Analyzed Nielsen/Circana data to diagnose business "
+                    "challenge and develop brand growth"
+                ],
+            )
+        )
+        job_analysis = _job_requiring("business analysis")
+        gaps = GapAnalyzer().analyze(profile, job_analysis, _empty_benchmark())
+        item = next(g for g in gaps.items if g.requirement == "business analysis")
+        assert item.category in (GapCategory.A, GapCategory.B, GapCategory.C)
+
+    def test_c_executive_communication_from_presenting_to_leadership(self):
+        """Test C: 'executive communication' via presenting to C-suite/VP
+        leaders -- should score as strong/direct evidence."""
+        profile = self._gmdp_style_profile()
+        job_analysis = _job_requiring("executive communication")
+        gaps = GapAnalyzer().analyze(profile, job_analysis, _empty_benchmark())
+        item = next(g for g in gaps.items if g.requirement == "executive communication")
+        assert item.category in (GapCategory.A, GapCategory.B)
+
+    def test_d_cpg_experience_is_partial_not_zero(self):
+        """Test D: CPG experience via a consulting project must register
+        as evidence (not zero, not full employment)."""
+        profile = self._gmdp_style_profile()
+        profile.education.append(
+            EducationEntry(
+                degree="MBA", field="Business", institution="BYU", year=2027,
+                notes=["Consulted Mondelēz using Nielsen/Circana data."],
+            )
+        )
+        job_analysis = _job_requiring("CPG experience")
+        gaps = GapAnalyzer().analyze(profile, job_analysis, _empty_benchmark())
+        item = next(g for g in gaps.items if g.requirement == "CPG experience")
+        assert item.category != GapCategory.E
+
+    def test_e_missing_years_of_experience_remains_an_honest_gap(self):
+        """Test E: a hard eligibility requirement with no supporting
+        evidence anywhere must still classify as missing -- transferable-
+        evidence recognition must never paper over a real gap."""
+        profile = self._gmdp_style_profile()
+        job_analysis = _job_requiring("4+ years of prior professional experience")
+        gaps = GapAnalyzer().analyze(profile, job_analysis, _empty_benchmark())
+        item = next(g for g in gaps.items if g.requirement == "4+ years of prior professional experience")
+        assert item.category in (GapCategory.D, GapCategory.E)
 
 
 class TestFindUnsupportedClaims:
