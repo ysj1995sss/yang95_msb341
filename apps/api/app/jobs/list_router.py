@@ -8,6 +8,8 @@ from app.db import get_db
 from app.jobs.ranking import is_excluded_by_goals
 from app.models import Goals, Job, User, UserJob
 from app.schemas.job import JobListItem, JobStateIn, JobStateOut
+from resume_tailorer.job_search.api_quality import evaluate_api_job_quality
+from resume_tailorer.job_search.dashboard import filter_api_job_dicts
 from resume_tailorer.job_search.models import (
     canonicalize_triage_action,
     triage_storage_value,
@@ -35,6 +37,7 @@ def _to_list_item(user_job: UserJob, job: Job) -> JobListItem:
                 breakdown = parsed
         except json.JSONDecodeError:
             breakdown = None
+    quality = evaluate_api_job_quality(data)
     return JobListItem(
         job_id=job.id,
         user_job_id=user_job.id,
@@ -56,12 +59,22 @@ def _to_list_item(user_job: UserJob, job: Job) -> JobListItem:
         discovered_at=data.get("discovered_at") or "",
         external_ids=data.get("external_ids") or {},
         fit_breakdown=breakdown,
+        quality_status=quality.value,
     )
 
 
 def list_jobs(
     state: str | None = Query(None),
     min_fit: float | None = Query(None),
+    max_fit: float | None = Query(None),
+    min_salary: int | None = Query(None),
+    sponsorship: str | None = Query(None),
+    work_mode: str | None = Query(None),
+    source: str | None = Query(None),
+    quality: str | None = Query(None),
+    keyword: str | None = Query(None),
+    sort_by: str = Query("fit_score"),
+    sort_dir: str = Query("desc"),
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
@@ -85,12 +98,25 @@ def list_jobs(
             current = canonicalize_triage_action(user_job.state)
             if current != wanted:
                 continue
-        if min_fit is not None:
-            score = user_job.fit_score
-            if score is None or score < min_fit:
-                continue
         items.append(_to_list_item(user_job, job))
-    return items
+
+    as_dicts = [item.model_dump() for item in items]
+    filtered = filter_api_job_dicts(
+        as_dicts,
+        min_fit=min_fit,
+        max_fit=max_fit,
+        min_salary=min_salary,
+        sponsorship=sponsorship,
+        work_mode=work_mode,
+        source=source,
+        quality=quality,
+        keyword=keyword,
+        sort_by=sort_by,
+        sort_dir=sort_dir,
+    )
+    # Rehydrate preserving order from filter_api_job_dicts
+    by_id = {item.job_id: item for item in items}
+    return [by_id[d["job_id"]] for d in filtered if d["job_id"] in by_id]
 
 
 def transition_job_state(

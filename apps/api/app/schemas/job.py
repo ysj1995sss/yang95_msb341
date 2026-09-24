@@ -71,3 +71,4 @@ class JobListItem(BaseModel):
     ats_platform: str | None = None
     discovered_at: str
     external_ids: dict[str, str] = Field(default_factory=dict)
+    quality_status: str | None = None
