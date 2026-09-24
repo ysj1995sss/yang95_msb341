@@ -10,6 +10,9 @@ from resume_tailorer.job_search.scrapers.base_scraper import BaseScraper
 class LinkedInScraper(BaseScraper):
     """Scraper for LinkedIn job postings."""
 
+    availability = "LIMITED"
+    capabilities = ("SEARCH",)
+
     def __init__(self, api_key: str = None):
         """Initialize LinkedIn scraper.
 

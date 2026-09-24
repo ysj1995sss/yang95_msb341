@@ -1,23 +1,25 @@
 """
-Candidate fit scoring backed by the existing resume_tailorer.CandidateFitScorer
-(skills 40% / experience-level 30% / education 20% / sponsorship 10%),
-instead of job-copilot's naive keyword-overlap heuristic. Since the stored
-profile is already CareerTruthProfile.to_dict() (see app.models.Profile),
-no adapter is needed here -- CareerTruthProfile.from_dict() round-trips it
-directly.
+Candidate fit scoring backed by resume_tailorer.CandidateFitScorer (cf-v2).
 """
+
+import re
 
 from resume_tailorer.models.career_profile import CareerTruthProfile
 from resume_tailorer.job_search.candidate_fit import CandidateFitScorer
 from resume_tailorer.job_search.models import JobPosting, JobSource
+from resume_tailorer.job_search.normalize import normalize_sponsorship, YES, NO
 
-FitBreakdown = dict[str, str]
-FitResult = dict[str, float | FitBreakdown]
+FitBreakdown = dict
+FitResult = dict[str, float | FitBreakdown | None]
 
 _scorer = CandidateFitScorer()
 
 _EMPTY_PROFILE = CareerTruthProfile(
     contact_info={}, education=[], work_experience=[], skills=[], tools=[], certifications=[], accomplishments=[]
+)
+
+_EMPLOYMENT_TYPES = frozenset(
+    {"full-time", "part-time", "contract", "internship", "temporary", "unknown"}
 )
 
 
@@ -27,6 +29,18 @@ def _profile_dict_to_engine(profile: dict) -> CareerTruthProfile:
     return CareerTruthProfile.from_dict(profile)
 
 
+def _experience_from_job(job: dict) -> str | None:
+    for key in ("experience_required", "experience", "years_experience"):
+        raw = job.get(key)
+        if raw and str(raw).strip().lower() not in _EMPLOYMENT_TYPES:
+            return str(raw)
+    desc = job.get("description") or ""
+    match = re.search(r"(\d+)\+?\s*[\-–]?\s*(\d+)?\s*(years|yrs)", desc, re.IGNORECASE)
+    if match:
+        return match.group(0)
+    return None
+
+
 def _job_dict_to_posting(job: dict) -> JobPosting:
     source_raw = (job.get("source") or "company_pages").lower()
     try:
@@ -34,18 +48,27 @@ def _job_dict_to_posting(job: dict) -> JobPosting:
     except ValueError:
         source = JobSource.COMPANY_PAGES
 
-    sponsorship_raw = job.get("sponsorship")
-    sponsorship_available = {"yes": True, "no": False}.get(sponsorship_raw)
+    sponsorship_state = normalize_sponsorship(job.get("sponsorship"))
+    if sponsorship_state == YES:
+        sponsorship_available: bool | None = True
+    elif sponsorship_state == NO:
+        sponsorship_available = False
+    else:
+        sponsorship_available = None
 
     return JobPosting(
         source=source,
-        source_id=job.get("original_url") or job.get("title", ""),
+        source_id=(
+            (job.get("external_ids") or {}).get(source_raw)
+            or job.get("original_url")
+            or job.get("title", "")
+        ),
         company=job.get("company") or "",
         title=job.get("title") or "",
         location=job.get("location") or "",
         description=job.get("description") or "",
-        experience_required=job.get("employment_type"),
-        education_required=None,
+        experience_required=_experience_from_job(job),
+        education_required=job.get("education_required") or job.get("education"),
         sponsorship_available=sponsorship_available,
         work_mode=job.get("work_mode"),
         url=job.get("original_url") or "",
@@ -62,14 +85,14 @@ def score_candidate_fit(profile: dict, job: dict) -> FitResult:
         }
 
     posting = _job_dict_to_posting(job)
-    score = _scorer.score_fit(engine_profile, posting)
+    detailed = _scorer.score_fit_detailed(engine_profile, posting)
+    score = detailed.overall_fit
     if score is None:
-        return {
-            "score": 0.0,
-            "breakdown": {"reason": "Not enough job/profile data to score fit honestly"},
-        }
+        score = _scorer.score_fit(engine_profile, posting)
 
+    breakdown = detailed.to_dict()
+    breakdown["method"] = "cf-v2 eligibility/core/preferred/evidence"
     return {
-        "score": score,
-        "breakdown": {"method": "skills 40% / experience 30% / education 20% / sponsorship 10%"},
+        "score": float(score),
+        "breakdown": breakdown,
     }

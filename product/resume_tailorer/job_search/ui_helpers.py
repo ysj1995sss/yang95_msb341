@@ -7,11 +7,31 @@ Job Search UI can be unit tested without a browser or a running Streamlit app.
 
 from typing import Any, Dict, List, Optional, Tuple
 
-from resume_tailorer.job_search.models import JobPosting, SearchGoals
+from resume_tailorer.job_search.models import (
+    FitResult,
+    JobPosting,
+    SearchGoals,
+    TriageAction,
+    canonicalize_triage_action,
+)
+from resume_tailorer.job_search.normalize import (
+    NOT_STATED,
+    NO,
+    POSSIBLE,
+    UNKNOWN,
+    YES,
+    normalize_sponsorship,
+)
 
-# Selection actions recognized by the dashboard filter, other than "all"
-# and "unreviewed" which are handled specially.
-_KNOWN_ACTIONS = {"interested", "saved", "skipped", "applied"}
+_KNOWN_ACTIONS = {
+    TriageAction.SAVE.value,
+    TriageAction.APPLY.value,
+    TriageAction.PASS.value,
+    "interested",
+    "saved",
+    "skipped",
+    "applied",
+}
 
 
 def _parse_comma_separated(value: Any) -> List[str]:
@@ -26,23 +46,7 @@ def _parse_comma_separated(value: Any) -> List[str]:
 
 
 def build_search_goals_from_form(form_data: Dict[str, Any]) -> SearchGoals:
-    """Build a SearchGoals object from a dict of raw form inputs.
-
-    Args:
-        form_data: Dict of values collected from the Streamlit search goals form.
-            Expected keys: job_title, industries, min_salary, max_salary,
-            location, remote_preference, sponsorship_required, experience_level,
-            company_size, target_companies, exclude_companies, employment_type,
-            relocation_willing.
-            `target_companies` / `exclude_companies` may be a comma-separated
-            string or a list; both are normalized to a list of strings.
-
-    Returns:
-        A validated SearchGoals instance.
-
-    Raises:
-        ValueError: If a required field is missing/blank, or min_salary > max_salary.
-    """
+    """Build a SearchGoals object from a dict of raw form inputs."""
     job_title = (form_data.get("job_title") or "").strip()
     if not job_title:
         raise ValueError("job_title is required")
@@ -81,7 +85,6 @@ def build_search_goals_from_form(form_data: Dict[str, Any]) -> SearchGoals:
 
 
 def _format_salary(salary_min: Optional[int], salary_max: Optional[int]) -> str:
-    """Format a salary range as e.g. '$100K-$150K'."""
     if salary_min is None and salary_max is None:
         return "Not specified"
 
@@ -95,8 +98,19 @@ def _format_salary(salary_min: Optional[int], salary_max: Optional[int]) -> str:
     return f"Up to {_to_k(salary_max)}"
 
 
+def _format_sponsorship(value: Optional[bool]) -> str:
+    state = normalize_sponsorship(value)
+    labels = {
+        YES: "Yes",
+        NO: "No",
+        POSSIBLE: "Possible",
+        NOT_STATED: "Not stated",
+        UNKNOWN: "Unknown",
+    }
+    return labels.get(state, "Unknown")
+
+
 def _format_date(dt) -> str:
-    """Format a date-like object, falling back to 'Unknown'."""
     if dt is None:
         return "Unknown"
     try:
@@ -105,51 +119,61 @@ def _format_date(dt) -> str:
         return str(dt)
 
 
-def format_job_for_display(job: JobPosting, fit_score: Optional[float] = None) -> Dict[str, str]:
-    """Format a JobPosting (and optional fit score) into display-ready strings.
+def format_job_for_display(
+    job: JobPosting,
+    fit_score: Optional[float] = None,
+    fit_result: Optional[FitResult] = None,
+) -> Dict[str, str]:
+    """Format a JobPosting (and optional fit) into display-ready strings."""
+    overall = fit_score
+    if fit_result is not None and fit_result.overall_fit is not None:
+        overall = fit_result.overall_fit
 
-    Args:
-        job: JobPosting to format.
-        fit_score: Optional 0-100 fit score.
-
-    Returns:
-        Dict of formatted strings suitable for a dashboard table/expander row.
-    """
-    return {
+    display = {
         "Company": job.company or "Unknown",
         "Title": job.title or "Unknown",
         "Location": job.location or "Unknown",
         "Salary": _format_salary(job.salary_min, job.salary_max),
         "Work Mode": job.work_mode or "Not specified",
-        "Sponsorship": "Yes" if job.sponsorship_available else "No",
+        "Sponsorship": _format_sponsorship(job.sponsorship_available),
         "Posted Date": _format_date(job.posted_date),
+        "Deadline": _format_date(job.application_deadline),
         "Source": job.source.value if job.source else "Unknown",
-        "Fit Score": "N/A" if fit_score is None else f"{round(fit_score)}%",
+        "Fit Score": "N/A" if overall is None else f"{round(overall)}%",
         "URL": job.url or "",
     }
+    if fit_result is not None:
+        def _pct(v: Optional[float]) -> str:
+            return "N/A" if v is None else f"{round(v)}%"
+
+        display["Fit Eligibility"] = _pct(fit_result.eligibility)
+        display["Fit Core"] = _pct(fit_result.core_capabilities)
+        display["Fit Preferred"] = _pct(fit_result.preferred_qualifications)
+        display["Fit Evidence Confidence"] = _pct(fit_result.evidence_confidence)
+        display["Fit Strong"] = "; ".join(fit_result.strong_matches[:5]) or "—"
+        display["Fit Partial"] = "; ".join(fit_result.partial_matches[:5]) or "—"
+        display["Fit Gaps"] = "; ".join(fit_result.true_gaps[:5]) or "—"
+    return display
 
 
 def filter_jobs_by_action(
     jobs_with_selections: List[Tuple[JobPosting, Optional[str]]],
     action_filter: str,
 ) -> List[JobPosting]:
-    """Filter jobs by the user's latest selection/action status.
-
-    Args:
-        jobs_with_selections: List of (JobPosting, action) tuples, where action
-            is the user's latest recorded action for that job (e.g.
-            "interested", "saved", "skipped", "applied") or None if the job
-            has not been reviewed yet.
-        action_filter: One of "all", "interested", "saved", "skipped",
-            "applied", "unreviewed".
-
-    Returns:
-        List of JobPosting objects matching the filter.
-    """
+    """Filter jobs by the user's latest selection/action status."""
     if action_filter == "all":
         return [job for job, _ in jobs_with_selections]
 
     if action_filter == "unreviewed":
-        return [job for job, action in jobs_with_selections if action is None]
+        return [
+            job
+            for job, action in jobs_with_selections
+            if canonicalize_triage_action(action) == TriageAction.UNREVIEWED
+        ]
 
-    return [job for job, action in jobs_with_selections if action == action_filter]
+    wanted = canonicalize_triage_action(action_filter)
+    return [
+        job
+        for job, action in jobs_with_selections
+        if canonicalize_triage_action(action) == wanted
+    ]

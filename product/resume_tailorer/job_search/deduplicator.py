@@ -3,12 +3,17 @@
 from typing import List, Dict, Tuple
 from dataclasses import replace
 from resume_tailorer.job_search.models import JobPosting, JobSource
+from resume_tailorer.job_search.fingerprint import normalize_url
+from resume_tailorer.job_search.normalize import (
+    normalize_company,
+    normalize_location,
+    normalize_title,
+)
 
 
 class JobDeduplicator:
     """Merges duplicate jobs scraped from multiple sources."""
 
-    # Source priority order (higher index = higher priority)
     SOURCE_PRIORITY = {
         JobSource.COMPANY_PAGES: 5,
         JobSource.GREENHOUSE: 5,
@@ -22,73 +27,89 @@ class JobDeduplicator:
     }
 
     def deduplicate(self, postings: List[JobPosting]) -> List[JobPosting]:
-        """
-        Deduplicate job postings by grouping on (company, title, location).
+        """Deduplicate job postings.
 
-        For each group, selects the best source based on priority order,
-        and merges all alternative URLs into the selected posting.
-
-        Args:
-            postings: List of JobPosting objects from multiple sources
-
-        Returns:
-            List of deduplicated JobPosting objects with alternative_sources filled
+        Grouping:
+        1. Same normalized URL → same group (always merge).
+        2. Else same normalized (company, title, location), but do NOT merge
+           two postings from the same source with distinct non-empty source_ids.
+           Cross-source matches still merge.
         """
         if not postings:
             return []
 
-        # Group postings by (company, title, location)
-        groups: Dict[Tuple[str, str, str], List[JobPosting]] = {}
+        url_groups: Dict[str, List[JobPosting]] = {}
+        no_url: List[JobPosting] = []
         for posting in postings:
-            key = (posting.company, posting.title, posting.location)
-            if key not in groups:
-                groups[key] = []
-            groups[key].append(posting)
+            url_key = normalize_url(posting.url)
+            if url_key:
+                url_groups.setdefault(url_key, []).append(posting)
+            else:
+                no_url.append(posting)
 
-        # Process each group
-        result = []
-        for group in groups.values():
-            # Select the best posting from the group
-            best_posting = self._select_best_posting(group)
+        merged_from_url: List[JobPosting] = [
+            self._merge_group(group) for group in url_groups.values()
+        ]
 
-            # Collect alternative URLs from other sources in the group
-            alternative_urls = []
-            for posting in group:
-                if posting is not best_posting and posting.url:
+        candidates = merged_from_url + no_url
+        clusters: List[List[JobPosting]] = []
+        for posting in candidates:
+            placed = False
+            for cluster in clusters:
+                if self._can_join_cluster(posting, cluster):
+                    cluster.append(posting)
+                    placed = True
+                    break
+            if not placed:
+                clusters.append([posting])
+
+        return [self._merge_group(cluster) for cluster in clusters]
+
+    def _ct_key(self, posting: JobPosting) -> Tuple[str, str, str]:
+        return (
+            normalize_company(posting.company),
+            normalize_title(posting.title),
+            normalize_location(posting.location),
+        )
+
+    def _can_join_cluster(self, posting: JobPosting, cluster: List[JobPosting]) -> bool:
+        if not cluster:
+            return True
+        if self._ct_key(posting) != self._ct_key(cluster[0]):
+            return False
+
+        posting_url = normalize_url(posting.url)
+        if posting_url:
+            for member in cluster:
+                if normalize_url(member.url) == posting_url:
+                    return True
+
+        posting_sid = (posting.source_id or "").strip()
+        for member in cluster:
+            member_sid = (member.source_id or "").strip()
+            if (
+                posting.source == member.source
+                and posting_sid
+                and member_sid
+                and posting_sid != member_sid
+            ):
+                return False
+        return True
+
+    def _merge_group(self, group: List[JobPosting]) -> JobPosting:
+        best_posting = self._select_best_posting(group)
+        alternative_urls = []
+        for posting in group:
+            if posting is not best_posting and posting.url:
+                if posting.url not in alternative_urls and posting.url != best_posting.url:
                     alternative_urls.append(posting.url)
-
-            # Create new posting with alternative sources
-            deduplicated_posting = replace(
-                best_posting,
-                alternative_sources=alternative_urls
-            )
-            result.append(deduplicated_posting)
-
-        return result
+        return replace(best_posting, alternative_sources=alternative_urls)
 
     def _select_best_posting(self, group: List[JobPosting]) -> JobPosting:
-        """
-        Select the best posting from a group based on source priority.
-
-        Priority order:
-        1. Employer career page / Greenhouse (highest)
-        2. LinkedIn
-        3. Indeed
-        4. Handshake, Monster, Lever, Ashby
-        5. Other sources (lowest)
-
-        Args:
-            group: List of JobPosting objects with same (company, title, location)
-
-        Returns:
-            JobPosting object from the highest priority source
-        """
         if not group:
             return None
 
-        # Sort by priority (descending) and return the first one
         def get_priority(posting: JobPosting) -> int:
             return self.SOURCE_PRIORITY.get(posting.source, 0)
 
-        best = max(group, key=get_priority)
-        return best
+        return max(group, key=get_priority)

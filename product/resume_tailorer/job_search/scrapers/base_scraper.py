@@ -12,6 +12,9 @@ from resume_tailorer.job_search.models import SearchGoals, JobPosting
 class BaseScraper(ABC):
     """Abstract base class for job scrapers across different platforms."""
 
+    availability: str = "LIMITED"  # AVAILABLE | LIMITED | MANUAL | UNAVAILABLE
+    capabilities: tuple = ("SEARCH",)
+
     def __init__(self, api_key: Optional[str] = None):
         """Initialize scraper with optional API key.
 

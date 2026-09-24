@@ -10,6 +10,9 @@ from resume_tailorer.job_search.scrapers.base_scraper import BaseScraper
 class IndeedScraper(BaseScraper):
     """Scraper for Indeed job postings."""
 
+    availability = "LIMITED"
+    capabilities = ("SEARCH",)
+
     def __init__(self, api_key: str = None):
         """Initialize Indeed scraper.
 
