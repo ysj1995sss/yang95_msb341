@@ -317,10 +317,23 @@ class DiffGenerator:
         freely; it must never DROP a substantive word the original bullet
         used to say what was accomplished. Compares STEMS (not exact
         words) so a plain tense/plural change doesn't false-positive.
+
+        _SAFE_REPHRASE_WORDS (common resume action verbs/connectors) are
+        exempt from "must not drop" -- found live (2026-09-23), a SECOND
+        real bug from the same check: rewriting "Developed a front-store
+        growth strategy" to start with a different verb (e.g. "Led")
+        wrongly counted as dropping "developed" and blocked an otherwise
+        legitimate rephrase. Swapping one action verb for another changes
+        HOW the accomplishment is described, not WHAT was accomplished --
+        exactly the same distinction the fabrication check already makes.
         """
         original_words = self._content_words(original)
         new_stems = self._content_stems(new)
-        dropped = {w for w in original_words if self._stem(w) not in new_stems}
+        safe_stems = {self._stem(w) for w in self._SAFE_REPHRASE_WORDS}
+        dropped = {
+            w for w in original_words
+            if self._stem(w) not in new_stems and self._stem(w) not in safe_stems
+        }
         if dropped:
             return [
                 f"SEMANTIC DRIFT: dropped word(s) {sorted(dropped)} from the original bullet "

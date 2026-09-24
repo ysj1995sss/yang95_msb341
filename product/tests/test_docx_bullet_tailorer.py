@@ -300,6 +300,41 @@ class TestParseAndValidate:
         assert edit.new_text == bullets[0].text
         assert any("unverified" in w.lower() for w in result.warnings)
 
+    def test_recovers_a_rewrite_echoed_under_the_input_text_key(
+        self, sample_bullets, sample_profile, sample_job_analysis, sample_gap_report
+    ):
+        """Found live (2026-09-23): the model echoed the input bullet
+        objects back almost verbatim -- including a "text" key, the
+        INPUT's own field name -- instead of the requested {"change",
+        "new_text"} shape, but had genuinely rewritten the content inside
+        that "text" field. This must be recovered, not silently discarded
+        as 'the model chose to keep everything unchanged'."""
+        rewritten = _BULLET_10_TEXT + " via SQL"
+        response = json.dumps(
+            [{"paragraph_index": 10, "section": "work_experience", "text": rewritten}]
+        )
+        tailorer = _tailorer_with_response(response)
+        result = tailorer.tailor_bullets(sample_bullets, sample_profile, sample_job_analysis, sample_gap_report)
+        edit = next(e for e in result.edits if e.paragraph_index == 10)
+        assert edit.changed is True
+        assert edit.new_text == rewritten
+        assert any("recovered" in w.lower() for w in result.warnings)
+
+    def test_echoed_text_identical_to_original_is_not_treated_as_a_rewrite(
+        self, sample_bullets, sample_profile, sample_job_analysis, sample_gap_report
+    ):
+        """The model echoing the bullet BACK UNCHANGED under "text" (no
+        "change"/"new_text" at all) must resolve as a genuine keep, not a
+        spurious no-op 'rewrite' warning."""
+        response = json.dumps(
+            [{"paragraph_index": 10, "section": "work_experience", "text": _BULLET_10_TEXT}]
+        )
+        tailorer = _tailorer_with_response(response)
+        result = tailorer.tailor_bullets(sample_bullets, sample_profile, sample_job_analysis, sample_gap_report)
+        edit = next(e for e in result.edits if e.paragraph_index == 10)
+        assert edit.changed is False
+        assert result.warnings == []
+
     def test_empty_bullet_list_returns_empty_result_without_calling_llm(
         self, sample_profile, sample_job_analysis, sample_gap_report
     ):

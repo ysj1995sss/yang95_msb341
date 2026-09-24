@@ -252,13 +252,35 @@ Return the JSON array now:"""
 
             bullet = by_index[paragraph_index]
             change = element.get("change")
+            raw_new_text = element.get("new_text")
+
+            # Defensive fallback for a malformed-but-recoverable response
+            # shape found live (2026-09-23): the model echoed the INPUT
+            # bullet objects back almost verbatim -- including a "text"
+            # field, the input's own key name -- instead of the requested
+            # {"change", "new_text"} output shape, but had actually
+            # rewritten the bullet's content inside that "text" field. If
+            # "change"/"new_text" are absent but "text" differs from the
+            # bullet's real original, treat "text" as the intended
+            # new_text rather than silently discarding real tailoring work
+            # just because it arrived under the wrong key.
+            if change != "rewrite" and raw_new_text is None:
+                echoed_text = element.get("text")
+                if isinstance(echoed_text, str) and echoed_text.strip() != bullet.text.strip():
+                    change = "rewrite"
+                    raw_new_text = echoed_text
+                    warnings.append(
+                        f"Recovered a rewrite for paragraph {paragraph_index} from a malformed "
+                        "response (model echoed the input's \"text\" key instead of \"new_text\")."
+                    )
+
             if change != "rewrite":
                 resolved[paragraph_index] = BulletEdit(
                     paragraph_index, bullet.text, bullet.text, changed=False
                 )
                 continue
 
-            new_text = element.get("new_text", "")
+            new_text = raw_new_text if raw_new_text is not None else ""
             if not isinstance(new_text, str):
                 new_text = ""
             new_text = _strip_markdown_syntax(new_text)

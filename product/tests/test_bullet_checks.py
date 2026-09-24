@@ -154,3 +154,13 @@ class TestCheckSemanticDrift:
         original = "Led a 10-person team to cut costs"
         new = "Led the 10-person team to cut costs"
         assert DiffGenerator().check_semantic_drift(original, new) == []
+
+    def test_swapping_the_leading_verb_is_not_flagged(self):
+        """A SECOND real bug found live (2026-09-23) from the same check:
+        rewriting the bullet to start with a different verb ('Led' instead
+        of 'Developed') wrongly counted as dropping 'developed' and
+        blocked an otherwise legitimate rephrase. A verb-for-verb swap
+        changes HOW something is described, not WHAT was accomplished."""
+        original = "Developed a front-store growth strategy identifying incremental sales"
+        new = "Led a front-store growth strategy identifying incremental sales"
+        assert DiffGenerator().check_semantic_drift(original, new) == []
