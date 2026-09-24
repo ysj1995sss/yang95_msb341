@@ -4,8 +4,8 @@ Coordinates: user goals → scraper selection → scraping → deduplication →
 """
 
 from datetime import datetime
-from typing import List, Optional, Tuple
-from resume_tailorer.job_search.models import SearchGoals, JobPosting, JobSource
+from typing import Any, Dict, List, Optional, Tuple
+from resume_tailorer.job_search.models import SearchGoals, JobPosting, JobSource, FitResult
 from resume_tailorer.job_search.database import JobDatabase
 from resume_tailorer.job_search.deduplicator import JobDeduplicator
 from resume_tailorer.job_search.candidate_fit import CandidateFitScorer
@@ -20,6 +20,28 @@ from resume_tailorer.models.career_profile import CareerTruthProfile
 from resume_tailorer.applications.database import ApplicationDatabase
 from resume_tailorer.applications.models import ApplicationMode, ApplicationSubmission
 from resume_tailorer.applications.submission_engine import SubmissionEngine
+
+PENDING_TAILOR_JOB_KEY = "pending_tailor_job"
+
+
+def build_tailor_snapshot(
+    job: JobPosting,
+    fit: FitResult | None = None,
+    *,
+    selected_at: datetime | None = None,
+) -> Dict[str, Any]:
+    """Build the APPLY → Step 10 handoff payload (job + fit snapshot)."""
+    job_id = f"{job.source.value}_{job.source_id}"
+    fit_dict = fit.to_dict() if fit is not None else {}
+    return {
+        "job_id": job_id,
+        "title": job.title,
+        "company": job.company,
+        "description": job.description or "",
+        "url": job.url or "",
+        "candidate_fit": fit_dict,
+        "selected_at": (selected_at or datetime.now()).isoformat(),
+    }
 
 
 class JobService:

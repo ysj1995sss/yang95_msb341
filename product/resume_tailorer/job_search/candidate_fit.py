@@ -5,20 +5,39 @@ This is DIFFERENT from Resume Match Score:
 - Candidate Fit: Based on actual qualifications in CareerTruthProfile
 - Resume Match: Based on how well resume communicates those qualifications
 
-Scoring: Weighted average of skills (40%), experience (30%), education (20%), sponsorship (10%)
+cf-v2: Eligibility / Core / Preferred / Evidence Confidence + overall,
+with competency-map transferable evidence.
 """
+
+from __future__ import annotations
 
 import re
 from datetime import datetime
 from typing import List, Optional
+
+from resume_tailorer.analyzers.competency_map import (
+    COMPETENCY_EVIDENCE_PATTERNS,
+    extract_profile_sentences,
+    find_education_status_evidence,
+    find_transferable_evidence,
+)
 from resume_tailorer.models.career_profile import CareerTruthProfile
-from resume_tailorer.job_search.models import JobPosting
+from resume_tailorer.job_search.models import (
+    DIRECT_VERIFIED,
+    FitEvidence,
+    FitResult,
+    JobPosting,
+    STRONGLY_SUPPORTED,
+    TRANSFERABLE_PARTIAL,
+    UNSUPPORTED,
+)
 
 
 class CandidateFitScorer:
     """Scores how well a candidate's qualifications match a job's requirements (0-100)."""
 
-    # Common technical skills to extract from job descriptions
+    SCORING_VERSION = "cf-v2"
+
     TECHNICAL_SKILLS = {
         "python", "java", "javascript", "c++", "c#", "go", "rust", "ruby",
         "react", "vue", "angular", "nodejs", "node.js", "express",
@@ -46,415 +65,457 @@ class CandidateFitScorer:
         "system design", "architecture",
         "leadership", "mentoring", "management",
         "communication", "collaboration",
+        "project management", "business analysis", "data analytics",
     }
 
     def score_fit(self, profile: CareerTruthProfile, job: JobPosting) -> float:
-        """
-        Score how well candidate's qualifications match job requirements (0-100).
-
-        Components:
-        - Skills Match (40%): intersection of candidate skills vs required skills
-        - Experience Level (30%): years of experience vs requirement (entry/mid/senior)
-        - Education (20%): degree type match
-        - Sponsorship (10%): whether job offers sponsorship if needed
-
-        Args:
-            profile: Candidate's CareerTruthProfile with actual qualifications
-            job: JobPosting with requirements
-
-        Returns:
-            Float score 0-100
-        """
-        # Score each component
-        skills_score = self._score_skills(profile, job)
-        experience_score = self._score_experience(profile, job)
-        education_score = self._score_education(profile, job)
-        sponsorship_score = self._score_sponsorship(profile, job)
-
-        # Weighted average
-        final_score = (
-            skills_score * 0.40 +
-            experience_score * 0.30 +
-            education_score * 0.20 +
-            sponsorship_score * 0.10
-        )
-
-        return round(float(final_score), 1)
-
-    def _score_skills(self, profile: CareerTruthProfile, job: JobPosting) -> float:
-        """
-        Score skills match: intersection of candidate skills vs required skills.
-
-        Returns 0-100 based on (matched / required) * 100, capped at 100.
-        Defaults to 80 if no required skills found.
-        """
-        # Extract required skills from job description
-        required_skills = self._extract_required_skills(job.description, job.experience_required)
-
-        if not required_skills:
-            return 80.0  # Default to neutral if no skills found
-
-        # Get candidate skills (case-insensitive)
-        candidate_skills_lower = {s.lower() for s in profile.skills}
-        candidate_tools_lower = {t.lower() for t in profile.tools}
-        all_candidate_qualifications = candidate_skills_lower | candidate_tools_lower
-
-        # Find matches
-        matched_count = 0
-        for skill in required_skills:
-            if skill.lower() in all_candidate_qualifications:
-                matched_count += 1
-
-        # Calculate score
-        if required_skills:
-            return min((matched_count / len(required_skills)) * 100, 100.0)
+        """Overall fit 0-100. Neutral ~80 when the posting has nothing scoreable."""
+        detailed = self.score_fit_detailed(profile, job)
+        if detailed.overall_fit is not None:
+            return float(detailed.overall_fit)
         return 80.0
 
+    def score_fit_detailed(self, profile: CareerTruthProfile, job: JobPosting) -> FitResult:
+        """Explainable Candidate Fit with component scores and evidence."""
+        sentences = extract_profile_sentences(profile)
+        evidence: List[FitEvidence] = []
+        strong_matches: List[str] = []
+        partial_matches: List[str] = []
+        true_gaps: List[str] = []
+        unknown: List[str] = []
+
+        required_skills = self._extract_required_skills(
+            job.description, job.experience_required
+        )
+        preferred_skills = self._extract_preferred_skills(job.description)
+        preferred_set = {s.lower() for s in preferred_skills}
+        required_skills = [s for s in required_skills if s.lower() not in preferred_set]
+
+        core_hits = 0.0
+        core_total = 0
+        evidenced = 0
+        considered = 0
+
+        for skill in required_skills:
+            core_total += 1
+            considered += 1
+            level, quote = self._match_requirement(skill, profile, sentences)
+            if level in (DIRECT_VERIFIED, STRONGLY_SUPPORTED):
+                core_hits += 1
+                evidenced += 1
+                strong_matches.append(skill)
+                evidence.append(FitEvidence(skill, level, quote))
+            elif level == TRANSFERABLE_PARTIAL:
+                core_hits += 0.6
+                evidenced += 1
+                partial_matches.append(skill)
+                evidence.append(FitEvidence(skill, level, quote))
+            else:
+                true_gaps.append(skill)
+                evidence.append(FitEvidence(skill, UNSUPPORTED, ""))
+
+        req_text = self._section_after(
+            (job.description or "").lower(),
+            ("requirements:", "required:", "you must", "minimum qualifications"),
+        ) or (job.description or "").lower()[:900]
+        for competency in COMPETENCY_EVIDENCE_PATTERNS:
+            if competency.lower() not in req_text:
+                continue
+            if any(competency.lower() == s.lower() for s in required_skills):
+                continue
+            core_total += 1
+            considered += 1
+            te = find_transferable_evidence(competency, sentences)
+            if te and te.level == "strong":
+                core_hits += 1
+                evidenced += 1
+                strong_matches.append(competency)
+                evidence.append(
+                    FitEvidence(competency, STRONGLY_SUPPORTED, te.evidence_text)
+                )
+            elif te and te.level == "partial":
+                core_hits += 0.6
+                evidenced += 1
+                partial_matches.append(competency)
+                evidence.append(
+                    FitEvidence(competency, TRANSFERABLE_PARTIAL, te.evidence_text)
+                )
+            else:
+                true_gaps.append(competency)
+                evidence.append(FitEvidence(competency, UNSUPPORTED, ""))
+
+        core_capabilities: Optional[float]
+        if core_total == 0:
+            core_capabilities = None
+            unknown.append("required skills not stated")
+        else:
+            core_capabilities = min(100.0, (core_hits / core_total) * 100.0)
+
+        pref_hits = 0.0
+        pref_total = len(preferred_skills)
+        preferred_qualifications: Optional[float]
+        if pref_total == 0:
+            preferred_qualifications = None
+        else:
+            for skill in preferred_skills:
+                considered += 1
+                level, quote = self._match_requirement(skill, profile, sentences)
+                if level in (DIRECT_VERIFIED, STRONGLY_SUPPORTED):
+                    pref_hits += 1
+                    evidenced += 1
+                    strong_matches.append(f"preferred: {skill}")
+                    evidence.append(FitEvidence(f"preferred: {skill}", level, quote))
+                elif level == TRANSFERABLE_PARTIAL:
+                    pref_hits += 0.6
+                    evidenced += 1
+                    partial_matches.append(f"preferred: {skill}")
+                    evidence.append(FitEvidence(f"preferred: {skill}", level, quote))
+                else:
+                    unknown.append(f"preferred unmet: {skill}")
+                    evidence.append(FitEvidence(f"preferred: {skill}", UNSUPPORTED, ""))
+            preferred_qualifications = min(100.0, (pref_hits / pref_total) * 100.0)
+
+        experience_text = job.experience_required
+        if not experience_text or str(experience_text).strip().lower() in (
+            "unknown",
+            "full-time",
+            "part-time",
+            "contract",
+            "internship",
+        ):
+            if experience_text and str(experience_text).strip().lower() in (
+                "full-time",
+                "part-time",
+                "contract",
+                "internship",
+            ):
+                experience_text = None
+            years_from_desc = self._extract_experience_years(job.description or "")
+            if years_from_desc is not None:
+                experience_text = f"{years_from_desc}+ years"
+
+        education_score = self._score_education(profile, job)
+        experience_score = self._score_experience_from_text(profile, experience_text)
+        sponsorship_score = self._score_sponsorship(profile, job)
+
+        if job.education_required:
+            considered += 1
+            edu_ev = find_education_status_evidence(job.education_required, profile)
+            if edu_ev:
+                evidenced += 1
+                strong_matches.append("education requirement")
+                evidence.append(
+                    FitEvidence(job.education_required, DIRECT_VERIFIED, edu_ev)
+                )
+            elif education_score is not None and education_score < 50:
+                true_gaps.append(job.education_required)
+
+        if experience_text:
+            considered += 1
+            if experience_score is not None and experience_score >= 70:
+                evidenced += 1
+            elif experience_score is not None and experience_score < 70:
+                true_gaps.append(f"experience: {experience_text}")
+
+        eligibility_parts: List[tuple[float, float]] = []
+        if education_score is not None:
+            eligibility_parts.append((education_score, 0.4))
+        if experience_score is not None:
+            eligibility_parts.append((experience_score, 0.5))
+        if sponsorship_score is not None:
+            eligibility_parts.append((sponsorship_score, 0.1))
+
+        eligibility: Optional[float]
+        if not eligibility_parts:
+            eligibility = None
+            unknown.append("eligibility requirements not stated")
+        else:
+            tw = sum(w for _, w in eligibility_parts)
+            eligibility = sum(s * w for s, w in eligibility_parts) / tw
+
+        evidence_confidence: Optional[float]
+        if considered == 0:
+            evidence_confidence = None
+        else:
+            evidence_confidence = min(100.0, (evidenced / considered) * 100.0)
+
+        components: List[tuple[float, float]] = []
+        if eligibility is not None:
+            components.append((eligibility, 0.25))
+        if core_capabilities is not None:
+            components.append((core_capabilities, 0.45))
+        if preferred_qualifications is not None:
+            components.append((preferred_qualifications, 0.15))
+        if evidence_confidence is not None:
+            components.append((evidence_confidence, 0.15))
+
+        if core_capabilities is None and experience_score is None:
+            overall = None
+        elif not components:
+            overall = None
+        else:
+            tw = sum(w for _, w in components)
+            overall = round(sum(s * w for s, w in components) / tw, 1)
+
+        return FitResult(
+            overall_fit=overall,
+            eligibility=round(eligibility, 1) if eligibility is not None else None,
+            core_capabilities=(
+                round(core_capabilities, 1) if core_capabilities is not None else None
+            ),
+            preferred_qualifications=(
+                round(preferred_qualifications, 1)
+                if preferred_qualifications is not None
+                else None
+            ),
+            evidence_confidence=(
+                round(evidence_confidence, 1) if evidence_confidence is not None else None
+            ),
+            strong_matches=strong_matches,
+            partial_matches=partial_matches,
+            true_gaps=true_gaps,
+            unknown=unknown,
+            evidence=evidence,
+            scoring_version=self.SCORING_VERSION,
+        )
+
+    def _match_requirement(
+        self,
+        requirement: str,
+        profile: CareerTruthProfile,
+        sentences: List[str],
+    ) -> tuple[str, str]:
+        req_lower = requirement.lower()
+        candidate_skills = {s.lower() for s in profile.skills}
+        candidate_tools = {t.lower() for t in profile.tools}
+        if req_lower in candidate_skills or req_lower in candidate_tools:
+            return DIRECT_VERIFIED, requirement
+
+        te = find_transferable_evidence(requirement, sentences)
+        if te and te.level == "strong":
+            return STRONGLY_SUPPORTED, te.evidence_text
+        if te and te.level == "partial":
+            return TRANSFERABLE_PARTIAL, te.evidence_text
+
+        for sentence in sentences:
+            if req_lower in sentence.lower():
+                return STRONGLY_SUPPORTED, sentence
+
+        return UNSUPPORTED, ""
+
     def _score_experience(self, profile: CareerTruthProfile, job: JobPosting) -> float:
-        """
-        Score experience level match.
+        score = self._score_experience_from_text(profile, job.experience_required)
+        return 80.0 if score is None else score
 
-        Levels:
-        - Entry: 0-2 years
-        - Mid: 3-7 years
-        - Senior: 8+ years
+    def _score_experience_from_text(
+        self, profile: CareerTruthProfile, experience_text: Optional[str]
+    ) -> Optional[float]:
+        if not experience_text or str(experience_text).strip().lower() == "unknown":
+            return None
+        if str(experience_text).strip().lower() in (
+            "full-time",
+            "part-time",
+            "contract",
+            "internship",
+            "temporary",
+        ):
+            return None
 
-        Match scoring:
-        - Exact level match: 100
-        - One level off: 70
-        - Two+ levels off: 40
-
-        Defaults to 80 if no requirement specified.
-        """
-        if not job.experience_required:
-            return 80.0
-
-        # Extract required years (minimum)
-        required_years = self._extract_experience_years(job.experience_required)
+        required_years = self._extract_experience_years(experience_text)
         if required_years is None:
-            return 80.0
+            return None
 
-        # Calculate candidate's total years of experience
         candidate_years = self._calculate_total_experience_years(profile)
 
-        # Determine levels
         def get_level(years: int) -> str:
             if years <= 2:
                 return "entry"
             elif years <= 7:
                 return "mid"
-            else:
-                return "senior"
+            return "senior"
 
-        required_level = get_level(required_years)
-        candidate_level = get_level(candidate_years)
-
-        # Map levels to numeric values for distance calculation
         level_values = {"entry": 0, "mid": 1, "senior": 2}
-        required_val = level_values[required_level]
-        candidate_val = level_values[candidate_level]
-
-        distance = abs(required_val - candidate_val)
-
+        distance = abs(
+            level_values[get_level(required_years)]
+            - level_values[get_level(candidate_years)]
+        )
         if distance == 0:
             return 100.0
-        elif distance == 1:
+        if distance == 1:
             return 70.0
-        else:  # distance >= 2
-            return 40.0
+        return 40.0
 
-    def _score_education(self, profile: CareerTruthProfile, job: JobPosting) -> float:
-        """
-        Score education match.
+    def _score_education(self, profile: CareerTruthProfile, job: JobPosting) -> Optional[float]:
+        if not job.education_required or str(job.education_required).strip().lower() == "unknown":
+            return None
 
-        Scoring:
-        - Exact match or overqualified: 100
-        - Related field: 80
-        - Has degree (any type): 50
-        - No degree: 30
-
-        Defaults to 80 if no requirement specified.
-        """
-        if not job.education_required:
-            return 80.0
-
-        # Parse required education
         required_type = self._parse_education_requirement(job.education_required)
-
-        # Check candidate education
         if not profile.education:
-            return 30.0  # No degree
+            return 30.0
 
-        # Get candidate degree info
-        candidate_degree_type = None
-        candidate_field = None
-        has_any_degree = True
+        education = profile.education[0]
+        candidate_degree_type = self._categorize_degree(education.degree)
+        candidate_field = education.field.lower() if education.field else ""
 
-        if profile.education:
-            education = profile.education[0]  # Use first/primary education
-            candidate_degree_type = self._categorize_degree(education.degree)
-            candidate_field = education.field.lower() if education.field else ""
-
-        # Determine match level
         if required_type == "no_requirement":
             return 80.0
 
-        if not has_any_degree:
-            return 30.0
-
-        # Check if candidate is overqualified (higher degree than required)
         if candidate_degree_type and required_type:
-            candidate_level = self._degree_level(candidate_degree_type)
-            required_level = self._degree_level(required_type)
-
-            if candidate_level > required_level:
-                return 100.0  # Overqualified is OK
-
-        # Check for exact type match (e.g., Bachelor's for Bachelor's)
-        if candidate_degree_type and required_type:
+            if self._degree_level(candidate_degree_type) > self._degree_level(required_type):
+                return 100.0
             if candidate_degree_type == required_type:
-                # Check if field is related
                 if self._is_field_related(candidate_field, required_type):
                     return 100.0
-                else:
-                    return 80.0  # Right degree, different field
-
-            # Check if related (e.g., Master's for Bachelor's requirement)
+                return 80.0
             if self._are_degree_types_related(candidate_degree_type, required_type):
                 return 80.0
-
-        # Has a degree but different type
         return 50.0
 
-    def _score_sponsorship(self, profile: CareerTruthProfile, job: JobPosting) -> float:
-        """
-        Score sponsorship availability.
-
-        For now, assume candidate doesn't need sponsorship.
-        Score: 100 if sponsorship available or not needed, 0 if needed but not available.
-
-        Returns 100 (assume candidate doesn't need sponsorship unless data shows otherwise).
-        """
-        # TODO: Once CareerTruthProfile tracks sponsorship needs, implement logic:
-        # if profile.needs_sponsorship and not job.sponsorship_available:
-        #     return 0.0
+    def _score_sponsorship(self, profile: CareerTruthProfile, job: JobPosting) -> Optional[float]:
+        if job.sponsorship_available is None:
+            return None
+        # Known status is scorable; without candidate need-flag, do not treat
+        # "job does not sponsor" as a candidate capability failure.
         return 100.0
 
-    def _extract_required_skills(self, description: str, experience_text: Optional[str] = None) -> List[str]:
-        """
-        Extract required skills/keywords from job description.
-
-        Matches against TECHNICAL_SKILLS set using word boundaries.
-        Returns list of matched skills.
-        """
-        combined_text = description.lower()
-        if experience_text:
-            combined_text += " " + experience_text.lower()
+    def _extract_required_skills(
+        self, description: str, experience_text: Optional[str] = None
+    ) -> List[str]:
+        combined_text = (description or "").lower()
+        required_section = self._section_after(
+            combined_text,
+            ("requirements:", "required:", "you must", "minimum qualifications"),
+        )
+        preferred_section = self._section_after(
+            combined_text, ("preferred:", "nice to have", "preferred qualifications")
+        )
+        search_text = required_section if required_section else combined_text
+        if preferred_section and not required_section:
+            search_text = combined_text.replace(preferred_section, " ")
+        if experience_text and str(experience_text).strip().lower() not in (
+            "full-time",
+            "part-time",
+            "contract",
+            "internship",
+        ):
+            search_text += " " + experience_text.lower()
 
         matched_skills = []
         for skill in self.TECHNICAL_SKILLS:
-            # Use word boundary matching to avoid substring matches like "rest" in "interesting"
-            pattern = r'\b' + re.escape(skill) + r'\b'
-            if re.search(pattern, combined_text):
+            pattern = r"\b" + re.escape(skill) + r"\b"
+            if re.search(pattern, search_text):
                 matched_skills.append(skill)
-
         return matched_skills
 
+    def _extract_preferred_skills(self, description: str) -> List[str]:
+        text = (description or "").lower()
+        preferred_section = self._section_after(
+            text, ("preferred:", "nice to have", "preferred qualifications")
+        )
+        if not preferred_section:
+            return []
+        matched = []
+        for skill in self.TECHNICAL_SKILLS:
+            pattern = r"\b" + re.escape(skill) + r"\b"
+            if re.search(pattern, preferred_section):
+                matched.append(skill)
+        return matched
+
+    def _section_after(self, text: str, markers: tuple[str, ...]) -> str:
+        for marker in markers:
+            idx = text.find(marker)
+            if idx >= 0:
+                return text[idx : idx + 800]
+        return ""
+
     def _extract_experience_years(self, experience_text: str) -> Optional[int]:
-        """
-        Extract minimum years from experience requirement text.
-
-        Patterns:
-        - "5+ years" -> 5
-        - "5-10 years" -> 5
-        - "3 years experience" -> 3
-        - "0-2 years" -> 0
-
-        Returns minimum year value or None.
-        """
         if not experience_text:
             return None
-
-        # Try to find range pattern (e.g., "3-5 years")
-        range_match = re.search(r'(\d+)\s*[\-–]\s*(\d+)', experience_text)
+        range_match = re.search(r"(\d+)\s*[\-–]\s*(\d+)", experience_text)
         if range_match:
             return int(range_match.group(1))
-
-        # Try to find single number with + or years
-        single_match = re.search(r'(\d+)\+?\s*(years|yrs)?', experience_text)
+        single_match = re.search(
+            r"(\d+)\+?\s*(years|yrs)", experience_text, re.IGNORECASE
+        )
         if single_match:
             return int(single_match.group(1))
-
         return None
 
     def _calculate_total_experience_years(self, profile: CareerTruthProfile) -> int:
-        """
-        Calculate total years of experience from work_experience entries.
-
-        Handles date formats like "2020-2022", "Jan 2020 - Present", etc.
-        Uses simple heuristic: count entries as 2 years each if dates unclear.
-        """
         if not profile.work_experience:
             return 0
-
         total_years = 0
-
         for exp in profile.work_experience:
             years = self._extract_years_from_dates(exp.dates)
-            if years:
-                total_years += years
-            else:
-                # Default to 2 years if can't parse dates
-                total_years += 2
-
+            total_years += years if years else 2
         return total_years
 
     def _extract_years_from_dates(self, dates_str: str) -> Optional[int]:
-        """
-        Extract years worked from date string.
-
-        Patterns:
-        - "2020-2022" -> 2 years
-        - "Jan 2020 - Present" -> current_year - 2020
-        - "2020-Present" -> current_year - 2020
-        """
         if not dates_str:
             return None
-
-        # Pattern: "YYYY-YYYY"
-        year_match = re.search(r'(\d{4})\s*[\-–]\s*(\d{4})', dates_str)
+        year_match = re.search(r"(\d{4})\s*[\-–]\s*(\d{4})", dates_str)
         if year_match:
-            start_year = int(year_match.group(1))
-            end_year = int(year_match.group(2))
-            return max(1, end_year - start_year)
-
-        # Pattern: "YYYY - Present" or "2020 - Present"
-        present_match = re.search(r'(\d{4})\s*[\-–]\s*(present|now|current)', dates_str, re.IGNORECASE)
+            return max(1, int(year_match.group(2)) - int(year_match.group(1)))
+        present_match = re.search(
+            r"(\d{4})\s*[\-–]\s*(present|now|current)", dates_str, re.IGNORECASE
+        )
         if present_match:
-            start_year = int(present_match.group(1))
-            current_year = datetime.now().year
-            return max(1, current_year - start_year)
-
+            return max(1, datetime.now().year - int(present_match.group(1)))
         return None
 
     def _parse_education_requirement(self, education_text: str) -> str:
-        """
-        Parse education requirement and return degree type category.
-
-        Returns:
-        - "bachelor" for Bachelor's/BS/BA
-        - "master" for Master's/MS/MA
-        - "phd" for PhD/Doctorate
-        - "associate" for Associate's
-        - "high_school" for High School
-        - "no_requirement" if none found
-        """
         if not education_text:
             return "no_requirement"
-
         text_lower = education_text.lower()
-
         if any(x in text_lower for x in ["phd", "doctorate", "doctoral"]):
             return "phd"
-
-        if any(x in text_lower for x in ["master's", "master", "ms ", "m.s.", "ma ", "m.a."]):
+        if any(x in text_lower for x in ["master's", "master", "ms ", "m.s.", "ma ", "m.a.", "mba"]):
             return "master"
-
         if any(x in text_lower for x in ["bachelor's", "bachelor", "bs ", "b.s.", "ba ", "b.a."]):
             return "bachelor"
-
-        if any(x in text_lower for x in ["associate's", "associate", "aa ", "a.a.", "as ", "a.s."]):
+        if any(x in text_lower for x in ["associate's", "associate"]):
             return "associate"
-
         if any(x in text_lower for x in ["high school", "hs ", "secondary"]):
             return "high_school"
-
         return "no_requirement"
 
     def _categorize_degree(self, degree: str) -> str:
-        """
-        Categorize a degree into type.
-
-        Returns one of: "bachelor", "master", "phd", "associate", "high_school", "other"
-        """
         if not degree:
             return "other"
-
         degree_lower = degree.lower()
-
-        if any(x in degree_lower for x in ["phd", "doctorate", "dr.", "d."]):
+        if any(x in degree_lower for x in ["phd", "doctorate"]):
             return "phd"
-
-        if any(x in degree_lower for x in ["master", "ms", "m.s.", "ma", "m.a."]):
+        if any(x in degree_lower for x in ["master", "ms", "m.s.", "ma", "m.a.", "mba"]):
             return "master"
-
         if any(x in degree_lower for x in ["bachelor", "bs", "b.s.", "ba", "b.a."]):
             return "bachelor"
-
-        if any(x in degree_lower for x in ["associate", "aa", "a.a.", "as", "a.s."]):
+        if any(x in degree_lower for x in ["associate"]):
             return "associate"
-
-        if any(x in degree_lower for x in ["high school", "hs"]):
-            return "high_school"
-
         return "other"
 
     def _is_field_related(self, field: str, degree_type: str) -> bool:
-        """
-        Check if a field is related to the required degree type.
-
-        For now, check if field contains common keywords for technical fields
-        when required_type is "bachelor" or "master".
-        """
         if not field:
             return False
-
         field_lower = field.lower()
-
-        technical_keywords = {
-            "computer science", "software", "engineering", "computer engineering",
-            "information technology", "it ", "data science", "mathematics",
-            "physics", "electrical", "mechanical", "civil", "chemical",
-            "systems engineering", "database", "networking", "security"
+        keywords = {
+            "computer science", "software", "engineering", "information technology",
+            "data science", "mathematics", "physics",
         }
-
-        for keyword in technical_keywords:
-            if keyword in field_lower:
-                return True
-
-        return False
+        return any(k in field_lower for k in keywords)
 
     def _are_degree_types_related(self, candidate_type: str, required_type: str) -> bool:
-        """
-        Check if candidate's degree type can satisfy required degree type.
-
-        E.g., Master's satisfies Bachelor's requirement.
-        """
-        # Master's or PhD satisfies Bachelor's
         if required_type == "bachelor" and candidate_type in ["master", "phd"]:
             return True
-
-        # PhD satisfies Master's requirement
         if required_type == "master" and candidate_type == "phd":
             return True
-
-        # Associate's partially satisfies Bachelor's (return False, let caller decide)
-        # (Handled separately in _score_education)
-
         return False
 
     def _degree_level(self, degree_type: str) -> int:
-        """
-        Return numeric level for degree type for comparison.
-
-        Higher number = higher degree.
-        """
-        levels = {
+        return {
             "high_school": 0,
             "associate": 1,
             "bachelor": 2,
             "master": 3,
             "phd": 4,
-            "other": 1,  # Treat unknown as associate level
-        }
-        return levels.get(degree_type, 1)
+            "other": 1,
+        }.get(degree_type, 1)

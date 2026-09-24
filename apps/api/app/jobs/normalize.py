@@ -1,4 +1,9 @@
-import re
+"""API job payload normalization — shared product helpers + API storage shape."""
+
+from resume_tailorer.job_search.normalize import (
+    normalize_sponsorship as product_normalize_sponsorship,
+    sponsorship_to_api,
+)
 
 UNKNOWN = "unknown"
 
@@ -13,14 +18,7 @@ _OPTIONAL_UNKNOWN_FIELDS = (
 
 
 def normalize_sponsorship(text: str | None) -> str:
-    if not text or not str(text).strip():
-        return UNKNOWN
-    t = str(text).lower()
-    if re.search(r"no sponsorship|not sponsor|cannot sponsor|will not sponsor", t):
-        return "no"
-    if re.search(r"sponsorship available|offers? sponsorship|h-?1b sponsorship|will sponsor", t):
-        return "yes"
-    return UNKNOWN
+    return sponsorship_to_api(product_normalize_sponsorship(text))
 
 
 def _missing(value: object) -> bool:
@@ -42,7 +40,7 @@ def normalize_job_payload(raw: dict) -> dict:
 
     if _missing(job.get("sponsorship")):
         job["sponsorship"] = normalize_sponsorship(job.get("description"))
-    elif job["sponsorship"] not in ("yes", "no", UNKNOWN):
-        job["sponsorship"] = normalize_sponsorship(str(job["sponsorship"]))
+    else:
+        job["sponsorship"] = sponsorship_to_api(job["sponsorship"])
 
     return job

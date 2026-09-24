@@ -8,6 +8,10 @@ from app.db import get_db
 from app.jobs.ranking import is_excluded_by_goals
 from app.models import Goals, Job, User, UserJob
 from app.schemas.job import JobListItem, JobStateIn, JobStateOut
+from resume_tailorer.job_search.models import (
+    canonicalize_triage_action,
+    triage_storage_value,
+)
 
 
 def _goals_for_user(db: Session, user_id: str) -> dict:
@@ -17,12 +21,24 @@ def _goals_for_user(db: Session, user_id: str) -> dict:
     return json.loads(row.data_json)
 
 
+def _canonical_state(raw: str | None) -> str:
+    return triage_storage_value(canonicalize_triage_action(raw))
+
+
 def _to_list_item(user_job: UserJob, job: Job) -> JobListItem:
     data = json.loads(job.data_json)
+    breakdown = None
+    if user_job.fit_breakdown_json:
+        try:
+            parsed = json.loads(user_job.fit_breakdown_json)
+            if isinstance(parsed, dict) and parsed:
+                breakdown = parsed
+        except json.JSONDecodeError:
+            breakdown = None
     return JobListItem(
         job_id=job.id,
         user_job_id=user_job.id,
-        state=user_job.state,
+        state=_canonical_state(user_job.state),
         fit_score=user_job.fit_score,
         company=data.get("company") or "",
         title=data.get("title") or "",
@@ -39,6 +55,7 @@ def _to_list_item(user_job: UserJob, job: Job) -> JobListItem:
         ats_platform=data.get("ats_platform"),
         discovered_at=data.get("discovered_at") or "",
         external_ids=data.get("external_ids") or {},
+        fit_breakdown=breakdown,
     )
 
 
@@ -57,13 +74,17 @@ def list_jobs(
         .all()
     )
 
+    wanted = canonicalize_triage_action(state) if state is not None else None
+
     items: list[JobListItem] = []
     for user_job, job in rows:
         data = json.loads(job.data_json)
         if is_excluded_by_goals(data, goals):
             continue
-        if state is not None and user_job.state != state:
-            continue
+        if wanted is not None:
+            current = canonicalize_triage_action(user_job.state)
+            if current != wanted:
+                continue
         if min_fit is not None:
             score = user_job.fit_score
             if score is None or score < min_fit:
@@ -85,7 +106,8 @@ def transition_job_state(
     )
     if user_job is None:
         raise HTTPException(status_code=404, detail="Job not found")
-    user_job.state = body.state
+    canonical = triage_storage_value(canonicalize_triage_action(body.state))
+    user_job.state = canonical
     db.commit()
     db.refresh(user_job)
-    return JobStateOut(job_id=job_id, state=body.state)
+    return JobStateOut(job_id=job_id, state=canonical)

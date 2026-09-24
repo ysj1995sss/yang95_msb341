@@ -57,7 +57,7 @@ def test_job_posting_initialization():
     assert posting.company == "Tech Corp"
     assert posting.title == "Software Engineer"
     assert posting.location == "San Francisco, CA"
-    assert posting.sponsorship_available is False
+    assert posting.sponsorship_available is None
     assert posting.ats_platform == "Unknown"
 
 

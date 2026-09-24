@@ -19,6 +19,9 @@ class GreenhouseScraper(BaseScraper):
     `data_source` always reflects which path was actually used.
     """
 
+    availability = "AVAILABLE"
+    capabilities = ("SEARCH", "DETAIL_FETCH", "POSTED_DATE")
+
     # A small curated list of company board tokens known to expose public
     # Greenhouse job boards. Board token is the string in a company's
     # public URL: https://boards.greenhouse.io/{board_token}
@@ -176,10 +179,11 @@ class GreenhouseScraper(BaseScraper):
             salary_max=None,
             experience_required="Unknown",
             education_required="Unknown",
-            sponsorship_available=False,
+            sponsorship_available=None,
             work_mode="Unknown",
             url=url,
             ats_platform="Greenhouse",
+            raw_json=dict(raw_job) if isinstance(raw_job, dict) else {},
         )
 
     @staticmethod

@@ -1,35 +1,24 @@
 """
-Streamlit Job Search page (Sprint 2, Task 7).
+Streamlit Job Search page (Steps 4–9).
 
-Lets the user set job search goals, pick which job sources to scrape,
-trigger a search, and browse/triage the resulting jobs in a dashboard.
-
-All business logic (validating form input, building SearchGoals, formatting
-job data for display, filtering jobs by triage status) lives in
-`resume_tailorer.job_search.ui_helpers`, which contains no Streamlit calls
-and is covered by tests in tests/test_job_search_ui_helpers.py. This file
-is responsible only for rendering and wiring up Streamlit widgets — it is
-not unit tested directly, by design (Streamlit UI requires a browser to
-exercise meaningfully).
-
-No auto-apply: the "Apply" button only records a UserSelection; actually
-tailoring/submitting a resume for a job happens separately via the
-Sprint 1 Resume Tailorer flow.
+Sets search goals, picks sources, scouts jobs, and triages with SAVE/APPLY/PASS.
+APPLY hands the job description + fit snapshot to Resume Tailorer (Step 10).
 """
 
 import streamlit as st
 
-from resume_tailorer.job_search.job_service import JobService
-from resume_tailorer.job_search.models import JobSource, UserSelection
+from resume_tailorer.job_search.job_service import (
+    PENDING_TAILOR_JOB_KEY,
+    JobService,
+    build_tailor_snapshot,
+)
+from resume_tailorer.job_search.models import JobSource, TriageAction, UserSelection
 from resume_tailorer.job_search.ui_helpers import (
     build_search_goals_from_form,
     filter_jobs_by_action,
     format_job_for_display,
 )
 
-# Session-state key used to look up the user's CareerTruthProfile, if one has
-# been built elsewhere in the app (e.g. via the resume tailorer flow). Fit
-# scoring is skipped gracefully when no profile is present.
 CAREER_PROFILE_SESSION_KEY = "career_profile"
 
 st.set_page_config(page_title="Job Search", page_icon="\U0001F50D", layout="wide")
@@ -53,19 +42,24 @@ INDUSTRY_OPTIONS = [
     "Consulting",
 ]
 SOURCE_OPTIONS = [JobSource.LINKEDIN, JobSource.INDEED, JobSource.HANDSHAKE, JobSource.GREENHOUSE]
+SOURCE_LABELS = {
+    JobSource.GREENHOUSE: "greenhouse — available (live ATS boards)",
+    JobSource.LINKEDIN: "linkedin — limited (demo data)",
+    JobSource.INDEED: "indeed — limited (demo data)",
+    JobSource.HANDSHAKE: "handshake — limited (demo data)",
+}
+_LABEL_TO_SOURCE = {v: k for k, v in SOURCE_LABELS.items()}
 
-ACTION_FILTER_OPTIONS = ["all", "unreviewed", "interested", "saved", "skipped", "applied"]
+ACTION_FILTER_OPTIONS = ["all", "unreviewed", "save", "apply", "pass"]
 
 
 def _get_job_service() -> JobService:
-    """Get (or lazily create) the JobService instance stored in session state."""
     if "job_service" not in st.session_state:
         st.session_state.job_service = JobService(db_path=DB_PATH)
     return st.session_state.job_service
 
 
 def _render_search_goals_form() -> dict:
-    """Render the search goals form and return the raw form input dict."""
     st.header("1. Search Goals")
 
     col1, col2 = st.columns(2)
@@ -120,19 +114,22 @@ def _render_search_goals_form() -> dict:
 
 
 def _render_source_selection() -> list:
-    """Render job source selection and return the list of selected JobSource enums."""
     st.header("2. Job Sources")
+    st.caption(
+        "Greenhouse can return live public board listings. LinkedIn, Indeed, and "
+        "Handshake are demo/limited until a permitted connector is available."
+    )
+    default_label = SOURCE_LABELS[JobSource.GREENHOUSE]
     selected_labels = st.multiselect(
         "Select job sources to search",
-        options=[source.value for source in SOURCE_OPTIONS],
-        default=[JobSource.LINKEDIN.value],
+        options=[SOURCE_LABELS[s] for s in SOURCE_OPTIONS],
+        default=[default_label],
         key="selected_sources",
     )
-    return [JobSource(label) for label in selected_labels]
+    return [_LABEL_TO_SOURCE[label] for label in selected_labels]
 
 
 def _render_search_button(form_data: dict, sources: list) -> None:
-    """Render the search button and handle the search-and-store action."""
     st.header("3. Run Search")
 
     if st.button("Search for jobs", type="primary"):
@@ -162,22 +159,19 @@ def _render_search_button(form_data: dict, sources: list) -> None:
 
             if used_real_data:
                 st.success(
-                    "✅ Live Data: Greenhouse results include real, "
-                    "currently-posted jobs pulled from public company job boards."
+                    "Live Data: Greenhouse results include real, currently-posted "
+                    "jobs from public company boards."
                 )
             else:
                 st.warning(
-                    "⚠️ Demo Mode: Job listings shown are simulated placeholder data "
-                    "for testing the search/filter/triage flow. LinkedIn, Indeed, and Handshake "
-                    "integrations, and the Greenhouse live fallback path, are follow-up items — "
-                    "see decisions/ for tracking."
+                    "Demo Mode: listings may be simulated placeholder data. "
+                    "LinkedIn/Indeed/Handshake remain limited."
                 )
         except Exception as exc:
             st.error(f"Search failed: {exc}")
 
 
 def _render_job_dashboard() -> None:
-    """Render the job dashboard: list stored jobs matching the last search goals."""
     st.header("4. Job Dashboard")
 
     goals = st.session_state.get("last_search_goals")
@@ -196,7 +190,6 @@ def _render_job_dashboard() -> None:
         st.info("No jobs found for the current search goals.")
         return
 
-    # Look up each job's latest selection (if any) so we can filter by status.
     jobs_with_selections = []
     for job in jobs:
         job_id = f"{job.source.value}_{job.source_id}"
@@ -215,41 +208,81 @@ def _render_job_dashboard() -> None:
         job_id = f"{job.source.value}_{job.source_id}"
 
         fit_score = None
+        fit_result = None
         if career_profile is not None:
             try:
-                result = service.get_job_with_fit_score(job_id, career_profile)
-                if result is not None:
-                    _, fit_score = result
+                fit_result = service.fit_scorer.score_fit_detailed(career_profile, job)
+                fit_score = fit_result.overall_fit
             except Exception:
-                # Fit scoring is best-effort; never block the dashboard on it.
                 fit_score = None
+                fit_result = None
 
-        display = format_job_for_display(job, fit_score)
+        display = format_job_for_display(job, fit_score, fit_result)
 
         with st.expander(f"{display['Title']} — {display['Company']} ({display['Location']})"):
             st.write(f"**Salary:** {display['Salary']}")
             st.write(f"**Work mode:** {display['Work Mode']}")
-            st.write(f"**Sponsorship available:** {display['Sponsorship']}")
+            st.write(f"**Sponsorship:** {display['Sponsorship']}")
             st.write(f"**Posted:** {display['Posted Date']}")
+            st.write(f"**Deadline:** {display['Deadline']}")
             st.write(f"**Source:** {display['Source']}")
             st.write(f"**Fit Score:** {display['Fit Score']}")
+            if fit_result is not None:
+                st.write(
+                    f"**Fit breakdown:** eligibility {display.get('Fit Eligibility', 'N/A')}, "
+                    f"core {display.get('Fit Core', 'N/A')}, "
+                    f"preferred {display.get('Fit Preferred', 'N/A')}, "
+                    f"evidence {display.get('Fit Evidence Confidence', 'N/A')}"
+                )
+                if display.get("Fit Strong") and display["Fit Strong"] != "—":
+                    st.caption(f"Strong: {display['Fit Strong']}")
+                if display.get("Fit Partial") and display["Fit Partial"] != "—":
+                    st.caption(f"Partial: {display['Fit Partial']}")
+                if display.get("Fit Gaps") and display["Fit Gaps"] != "—":
+                    st.caption(f"Gaps: {display['Fit Gaps']}")
             if display["URL"]:
                 st.write(f"[View posting]({display['URL']})")
             if job.alternative_sources:
-                st.caption(
-                    "Also posted on: " + ", ".join(job.alternative_sources)
-                )
+                st.caption("Also posted on: " + ", ".join(job.alternative_sources))
 
-            action_cols = st.columns(4)
-            actions = ["interested", "saved", "skipped", "applied"]
-            labels = ["Interested", "Save", "Skip", "Apply"]
-            for col, action, label in zip(action_cols, actions, labels):
+            action_cols = st.columns(3)
+            actions = [
+                (TriageAction.SAVE.value, "Save"),
+                (TriageAction.PASS.value, "Pass"),
+                (TriageAction.APPLY.value, "Apply"),
+            ]
+            for col, (action, label) in zip(action_cols, actions):
                 if col.button(label, key=f"{job_id}_{action}"):
                     selection = UserSelection(job_posting_id=job_id, action=action)
-                    if service.db.record_user_selection(selection):
-                        st.success(f"Recorded '{action}' for {display['Title']}.")
-                    else:
+                    if not service.db.record_user_selection(selection):
                         st.error("Failed to record selection.")
+                        continue
+
+                    if action == TriageAction.APPLY.value:
+                        apply_fit = fit_result
+                        if apply_fit is None and career_profile is not None:
+                            try:
+                                apply_fit = service.fit_scorer.score_fit_detailed(
+                                    career_profile, job
+                                )
+                            except Exception:
+                                apply_fit = None
+                        st.session_state[PENDING_TAILOR_JOB_KEY] = build_tailor_snapshot(
+                            job, apply_fit
+                        )
+                        st.success(
+                            f"Apply recorded for {display['Title']}. "
+                            "Opening Resume Tailorer with this job description…"
+                        )
+                        try:
+                            st.switch_page("app.py")
+                        except Exception:
+                            st.info(
+                                "Open **Resume Tailorer** in the sidebar — "
+                                "the job description is prefilled."
+                            )
+                    else:
+                        st.success(f"Recorded '{label}' for {display['Title']}.")
 
 
 def main():

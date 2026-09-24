@@ -139,9 +139,10 @@ class TestFilterJobsByAction:
         job3 = _job(source_id="3", company="Initech")
         jobs_with_selections = [(job1, "interested"), (job2, "saved"), (job3, "interested")]
 
-        result = filter_jobs_by_action(jobs_with_selections, "interested")
+        # Legacy interested/saved both canonicalize to SAVE
+        result = filter_jobs_by_action(jobs_with_selections, "save")
 
-        assert result == [job1, job3]
+        assert result == [job1, job2, job3]
 
     def test_filter_jobs_by_action_unreviewed(self):
         job1 = _job(source_id="1", company="Acme")
@@ -152,3 +153,12 @@ class TestFilterJobsByAction:
         result = filter_jobs_by_action(jobs_with_selections, "unreviewed")
 
         assert result == [job2, job3]
+
+    def test_filter_pass_matches_legacy_skipped(self):
+        job1 = _job(source_id="1", company="Acme")
+        job2 = _job(source_id="2", company="Globex")
+        jobs_with_selections = [(job1, "skipped"), (job2, "pass")]
+
+        result = filter_jobs_by_action(jobs_with_selections, "pass")
+
+        assert result == [job1, job2]

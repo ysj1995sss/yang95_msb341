@@ -10,6 +10,9 @@ from resume_tailorer.job_search.scrapers.base_scraper import BaseScraper
 class HandshakeScraper(BaseScraper):
     """Scraper for Handshake job postings (college job portal)."""
 
+    availability = "LIMITED"
+    capabilities = ("SEARCH",)
+
     def __init__(self, api_key: str = None):
         """Initialize Handshake scraper.
 

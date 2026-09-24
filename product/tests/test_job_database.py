@@ -175,7 +175,7 @@ def test_record_user_selection(temp_db):
     # Retrieve the selection
     selections = temp_db.get_user_selections(job_id)
     assert len(selections) > 0
-    assert selections[0].action == "interested"
+    assert selections[0].action == "save"
     assert selections[0].user_notes == "Great opportunity!"
 
 
