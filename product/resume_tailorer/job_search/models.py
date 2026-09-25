@@ -179,3 +179,84 @@ class FitResult:
             ],
             "scoring_version": self.scoring_version,
         }
+
+
+class JobQualityStatus(Enum):
+    """Posting freshness / URL validity for Step 6 + dashboard filters."""
+    ACTIVE = "active"
+    STALE = "stale"
+    EXPIRED = "expired"
+    BROKEN = "broken"
+    UNKNOWN = "unknown"
+
+
+class ProviderRunStatus(Enum):
+    """Per-source outcome within a search run."""
+    OK = "ok"
+    FAILED = "failed"
+    SKIPPED = "skipped"
+
+
+class SearchRunStatus(Enum):
+    """Aggregate search-run outcome across providers."""
+    OK = "ok"
+    PARTIAL = "partial"
+    FAILED = "failed"
+
+
+@dataclass
+class ProviderRunResult:
+    """One job source's contribution to a search run."""
+    source: JobSource
+    status: ProviderRunStatus
+    scraped: int = 0
+    error: Optional[str] = None
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "source": self.source.value,
+            "status": self.status.value,
+            "scraped": self.scraped,
+            "error": self.error,
+        }
+
+
+@dataclass
+class SearchRunSummary:
+    """Observability for a scout run (Step 5) with provider isolation."""
+    started_at: datetime
+    finished_at: datetime
+    providers: List[ProviderRunResult] = field(default_factory=list)
+    total_scraped: int = 0
+    total_after_dedupe: int = 0
+    closed_filtered: int = 0
+    total_stored: int = 0
+    status: SearchRunStatus = SearchRunStatus.OK
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "started_at": self.started_at.isoformat(),
+            "finished_at": self.finished_at.isoformat(),
+            "providers": [p.to_dict() for p in self.providers],
+            "total_scraped": self.total_scraped,
+            "total_after_dedupe": self.total_after_dedupe,
+            "closed_filtered": self.closed_filtered,
+            "total_stored": self.total_stored,
+            "status": self.status.value,
+        }
+
+
+@dataclass
+class DashboardFilters:
+    """Filter + sort criteria for the Job Discovery Dashboard (Step 7)."""
+    action: str = "all"
+    min_fit: Optional[float] = None
+    max_fit: Optional[float] = None
+    min_salary: Optional[int] = None
+    sponsorship: Optional[str] = None
+    work_mode: Optional[str] = None
+    source: Optional[str] = None
+    quality: Optional[str] = None
+    keyword: Optional[str] = None
+    sort_by: str = "posted_date"
+    sort_dir: str = "desc"

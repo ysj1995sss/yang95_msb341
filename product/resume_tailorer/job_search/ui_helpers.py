@@ -7,9 +7,11 @@ Job Search UI can be unit tested without a browser or a running Streamlit app.
 
 from typing import Any, Dict, List, Optional, Tuple
 
+from resume_tailorer.job_search.job_quality import evaluate_job_quality, quality_label
 from resume_tailorer.job_search.models import (
     FitResult,
     JobPosting,
+    JobQualityStatus,
     SearchGoals,
     TriageAction,
     canonicalize_triage_action,
@@ -123,11 +125,14 @@ def format_job_for_display(
     job: JobPosting,
     fit_score: Optional[float] = None,
     fit_result: Optional[FitResult] = None,
+    quality: Optional[JobQualityStatus] = None,
 ) -> Dict[str, str]:
     """Format a JobPosting (and optional fit) into display-ready strings."""
     overall = fit_score
     if fit_result is not None and fit_result.overall_fit is not None:
         overall = fit_result.overall_fit
+
+    quality_status = quality if quality is not None else evaluate_job_quality(job)
 
     display = {
         "Company": job.company or "Unknown",
@@ -139,6 +144,7 @@ def format_job_for_display(
         "Posted Date": _format_date(job.posted_date),
         "Deadline": _format_date(job.application_deadline),
         "Source": job.source.value if job.source else "Unknown",
+        "Quality": quality_label(quality_status),
         "Fit Score": "N/A" if overall is None else f"{round(overall)}%",
         "URL": job.url or "",
     }

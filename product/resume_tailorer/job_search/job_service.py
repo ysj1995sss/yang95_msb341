@@ -5,7 +5,16 @@ Coordinates: user goals → scraper selection → scraping → deduplication →
 
 from datetime import datetime
 from typing import Any, Dict, List, Optional, Tuple
-from resume_tailorer.job_search.models import SearchGoals, JobPosting, JobSource, FitResult
+from resume_tailorer.job_search.models import (
+    SearchGoals,
+    JobPosting,
+    JobSource,
+    FitResult,
+    ProviderRunResult,
+    ProviderRunStatus,
+    SearchRunStatus,
+    SearchRunSummary,
+)
 from resume_tailorer.job_search.database import JobDatabase
 from resume_tailorer.job_search.deduplicator import JobDeduplicator
 from resume_tailorer.job_search.candidate_fit import CandidateFitScorer
@@ -79,65 +88,82 @@ class JobService:
         # the instance's data_source after a scrape), instead of a fresh,
         # never-scraped instance whose data_source is always None.
         self._scraper_cache = {}
+        self.last_search_run: Optional[SearchRunSummary] = None
 
     def search_and_store(
         self,
         goals: SearchGoals,
         sources: List[JobSource]
-    ) -> int:
+    ) -> SearchRunSummary:
         """Search for jobs and store in database.
 
         Orchestration logic:
         1. Validate goals (min_salary ≤ max_salary, required fields present)
-        2. For each requested source:
+        2. For each requested source (isolated — one failure does not abort others):
            - Instantiate the appropriate scraper
            - Call scraper.scrape(goals) to get postings
-           - Collect all results
+           - Record ProviderRunResult (ok / failed / skipped)
         3. Deduplicate all collected postings via JobDeduplicator
         3b. Filter out confirmed-closed postings via URLValidator
         4. For each remaining posting:
            - Call database.save_job_posting()
            - Increment stored count
-        5. Return total count stored
+        5. Return SearchRunSummary (observability + total_stored)
 
         Args:
             goals: SearchGoals object with search criteria
             sources: List of JobSource enum values to scrape
 
         Returns:
-            Count of jobs stored in database
+            SearchRunSummary with per-provider outcomes and totals
         """
-        # Step 1: Validate goals
+        started = datetime.now()
         self._validate_goals(goals)
 
-        # Step 2: Scrape from all sources
-        all_postings = []
+        all_postings: List[JobPosting] = []
+        provider_results: List[ProviderRunResult] = []
         greenhouse_data_source = None
+
         for source in sources:
+            scraper = self._get_scraper(source)
+            if scraper is None:
+                provider_results.append(
+                    ProviderRunResult(
+                        source=source,
+                        status=ProviderRunStatus.SKIPPED,
+                        scraped=0,
+                        error="No scraper configured for this source",
+                    )
+                )
+                continue
             try:
-                scraper = self._get_scraper(source)
-                if scraper:
-                    postings = scraper.scrape(goals)
-                    all_postings.extend(postings)
-                    if source == JobSource.GREENHOUSE:
-                        greenhouse_data_source = getattr(scraper, "data_source", None)
-            except Exception:
-                # Graceful error handling - skip this source and continue
-                pass
+                postings = scraper.scrape(goals)
+                batch = list(postings or [])
+                all_postings.extend(batch)
+                provider_results.append(
+                    ProviderRunResult(
+                        source=source,
+                        status=ProviderRunStatus.OK,
+                        scraped=len(batch),
+                    )
+                )
+                if source == JobSource.GREENHOUSE:
+                    greenhouse_data_source = getattr(scraper, "data_source", None)
+            except Exception as exc:
+                provider_results.append(
+                    ProviderRunResult(
+                        source=source,
+                        status=ProviderRunStatus.FAILED,
+                        scraped=0,
+                        error=str(exc) or exc.__class__.__name__,
+                    )
+                )
 
-        # Step 3: Deduplicate
         deduplicated_postings = self.deduplicator.deduplicate(all_postings)
+        total_after_dedupe = len(deduplicated_postings)
+        closed_filtered = 0
 
-        # Step 3b: Filter out confirmed-closed job URLs before storing.
-        #
-        # URL validation makes live HTTP requests, so it's only meaningful
-        # (and safe) for postings backed by real, currently-posted URLs.
-        # Right now only GreenhouseScraper can produce real data (LinkedIn,
-        # Indeed, and Handshake are mock-only and have no data_source
-        # concept). Mock postings use fabricated URLs that would otherwise
-        # be spuriously checked (and potentially misflagged) against live
-        # servers, so we skip validation entirely for anything that isn't a
-        # real Greenhouse result.
+        # URL validation only for live Greenhouse results (mock URLs are fabricated).
         if greenhouse_data_source == "real":
             greenhouse_postings = [
                 p for p in deduplicated_postings if p.source == JobSource.GREENHOUSE
@@ -145,20 +171,43 @@ class JobService:
             other_postings = [
                 p for p in deduplicated_postings if p.source != JobSource.GREENHOUSE
             ]
+            before = len(greenhouse_postings)
             filtered_greenhouse = self.url_validator.filter_active_jobs(greenhouse_postings)
+            closed_filtered = before - len(filtered_greenhouse)
             deduplicated_postings = other_postings + filtered_greenhouse
 
-        # Step 4 & 5: Store and count
         stored_count = 0
         for posting in deduplicated_postings:
             try:
                 self.db.save_job_posting(posting)
                 stored_count += 1
             except Exception:
-                # Skip jobs that fail to save
                 pass
 
-        return stored_count
+        ok_count = sum(1 for p in provider_results if p.status == ProviderRunStatus.OK)
+        fail_count = sum(1 for p in provider_results if p.status == ProviderRunStatus.FAILED)
+        if fail_count == 0 and ok_count > 0:
+            run_status = SearchRunStatus.OK
+        elif ok_count > 0 and fail_count > 0:
+            run_status = SearchRunStatus.PARTIAL
+        elif ok_count == 0 and fail_count > 0:
+            run_status = SearchRunStatus.FAILED
+        else:
+            # All skipped or empty source list after validation
+            run_status = SearchRunStatus.FAILED if sources else SearchRunStatus.OK
+
+        summary = SearchRunSummary(
+            started_at=started,
+            finished_at=datetime.now(),
+            providers=provider_results,
+            total_scraped=len(all_postings),
+            total_after_dedupe=total_after_dedupe,
+            closed_filtered=closed_filtered,
+            total_stored=stored_count,
+            status=run_status,
+        )
+        self.last_search_run = summary
+        return summary
 
     def get_available_jobs(self, goals: SearchGoals) -> List[JobPosting]:
         """Retrieve jobs from database matching search goals.

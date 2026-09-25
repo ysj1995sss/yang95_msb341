@@ -13,9 +13,11 @@ a brand new session act like a colleague who already knows what you are working 
 
 ## Current state
 
-- **This sprint's goal (Sprint 1):** Build MVP with resume tailoring: take resume + job description, identify missing keywords, tailor resume to 90% ATS score in <5 min, export PDF.
-- **Where to see it:** `product/resume_tailorer/app.py` — Streamlit app with pages for job search, applications tracking, and settings.
-- **Biggest open risk:** Integration end-to-end (job search + applications + resume tailoring together). So far components are built but not all tested together with real users.
+- **Where we are:** Sprint 1 tailor MVP is built. Steps 4–9 job discovery is built (first slice on `main`; dashboard/search-run/quality on PR #2 — see `HANDOFF-TO-CLAUDE-CODE.md`).
+- **Next build:** Land PR #2 if still open → smoke Apply → Step 10 → then Sprint 3+ Steps 21–24 (application modes, submission, status dashboard).
+- **Where to see it:** `product/resume_tailorer/app.py` (tailor); `pages/2_Job_Search.py` (discovery); `pages/3_Applications.py` (apps scaffolding).
+- **Biggest open risk:** End-to-end integration (search + triage + tailor + apply) with real users; application submission not fully wired.
+- **Handoff doc:** `HANDOFF-TO-CLAUDE-CODE.md` — read this when starting a new Claude Code session.
 
 ## How this repo works
 
