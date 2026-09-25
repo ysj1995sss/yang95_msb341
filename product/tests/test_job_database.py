@@ -1,5 +1,6 @@
 import pytest
 import tempfile
+import threading
 from pathlib import Path
 from datetime import datetime
 from resume_tailorer.job_search.models import JobSource, SearchGoals, JobPosting, UserSelection
@@ -347,3 +348,42 @@ def test_search_jobs_unknown_work_mode_passes_remote_preference(temp_db):
 
     assert "unknown-wm" in source_ids
     assert "onsite-wm" not in source_ids
+
+
+def test_connection_usable_from_a_different_thread_than_it_was_created_on(tmp_path):
+    """Found live (2026-09-24): Streamlit's Job Search page caches a
+    JobService (and its JobDatabase connection) in st.session_state, but
+    Streamlit can run a session's script rerun on a different worker thread
+    than the one that created that connection. sqlite3's default
+    check_same_thread=True raised 'SQLite objects created in a thread can
+    only be used in that same thread.' the moment a rerun landed on a new
+    thread. This reproduces that shape directly: create the connection on
+    this thread, use it from another."""
+    db_path = str(tmp_path / "thread_test.db")
+    db = JobDatabase(db_path)
+    db.create_tables()
+
+    job = JobPosting(
+        source=JobSource.GREENHOUSE,
+        source_id="thread-1",
+        company="Acme",
+        title="Engineer",
+        location="Remote",
+        description="desc",
+    )
+    db.save_job_posting(job)
+
+    errors: list[Exception] = []
+
+    def query_from_other_thread():
+        try:
+            db.get_job_posting(f"{job.source.value}_{job.source_id}")
+        except Exception as exc:  # noqa: BLE001 - capturing for the assertion below
+            errors.append(exc)
+
+    thread = threading.Thread(target=query_from_other_thread)
+    thread.start()
+    thread.join()
+
+    assert errors == []
+    db.close()

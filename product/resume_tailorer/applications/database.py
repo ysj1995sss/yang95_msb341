@@ -19,7 +19,12 @@ class ApplicationDatabase:
 
     def __init__(self, db_path: str = "applications.db"):
         self.db_path = db_path
-        self.conn = sqlite3.connect(db_path)
+        # check_same_thread=False: same live thread-affinity bug found in
+        # JobDatabase (job_search/database.py) -- Streamlit can rerun a
+        # session's script on a different worker thread than the one that
+        # created a connection cached in st.session_state. Safe here since
+        # Streamlit runs one rerun at a time per session.
+        self.conn = sqlite3.connect(db_path, check_same_thread=False)
         self.conn.row_factory = sqlite3.Row
 
     def create_tables(self) -> None:

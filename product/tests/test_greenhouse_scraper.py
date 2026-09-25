@@ -84,6 +84,33 @@ def test_map_greenhouse_job_title_cases_board_token():
     assert job.company == "Some Co"
 
 
+def test_map_greenhouse_job_unescapes_double_encoded_html_content():
+    """Found live (2026-09-24): a real Greenhouse board returned `content`
+    double-encoded -- literal '&lt;div class=&quot;...&quot;&gt;' text, not
+    real '<div ...>' tags. The tag-stripping regex only matches literal
+    angle brackets, so this markup previously leaked straight into the JD
+    text a candidate pastes into the tailorer."""
+    scraper = GreenhouseScraper()
+    raw = {
+        "id": 56,
+        "title": "Software Engineer",
+        "absolute_url": "https://boards.greenhouse.io/some-co/jobs/56",
+        "location": {"name": "Remote"},
+        "content": (
+            "&lt;div class=&quot;content-intro&quot;&gt;&lt;p&gt;"
+            "&lt;span style=&quot;font-family: helvetica&quot;&gt;"
+            "Airbnb was born in 2007.&lt;/span&gt;&lt;/p&gt;&lt;/div&gt;"
+        ),
+    }
+
+    job = scraper._map_greenhouse_job(raw, "some-co")
+
+    assert "<" not in job.description
+    assert "&lt;" not in job.description
+    assert "&quot;" not in job.description
+    assert job.description == "Airbnb was born in 2007."
+
+
 def test_scrape_real_filters_postings_by_goal_job_title():
     """Real postings whose titles don't match the goal title are dropped BEFORE
     URL validation, so we don't liveness-check every open req on every board."""

@@ -17,7 +17,14 @@ class JobDatabase:
             db_path: Path to SQLite database file
         """
         self.db_path = db_path
-        self.connection = sqlite3.connect(db_path)
+        # check_same_thread=False: found live (2026-09-24) that Streamlit can
+        # run script reruns for the same session on a different worker
+        # thread than the one that created this connection (cached in
+        # st.session_state across reruns) -- the sqlite3 default raised
+        # "SQLite objects created in a thread can only be used in that same
+        # thread." Safe here because Streamlit executes one rerun at a time
+        # per session; there's no genuine concurrent access to guard against.
+        self.connection = sqlite3.connect(db_path, check_same_thread=False)
         self.connection.row_factory = sqlite3.Row
 
     def create_tables(self) -> None:

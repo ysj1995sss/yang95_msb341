@@ -1,5 +1,6 @@
 """Greenhouse job scraper."""
 
+import html
 import re
 import uuid
 from typing import List, Optional
@@ -187,9 +188,21 @@ class GreenhouseScraper(BaseScraper):
         )
 
     @staticmethod
-    def _strip_html(html: str) -> str:
-        """Strip HTML tags from Greenhouse job description content."""
-        text = re.sub(r"<[^>]+>", " ", html)
+    def _strip_html(raw_html: str) -> str:
+        """Strip HTML tags from Greenhouse job description content.
+
+        Found live (2026-09-24): some Greenhouse boards return `content`
+        double-encoded -- literal "&lt;div class=&quot;...&quot;&gt;" text
+        rather than real "<div ...>" tags. The tag-stripping regex only
+        matches literal angle brackets, so it silently did nothing and the
+        raw markup leaked straight into the JD text a candidate pastes into
+        the tailorer. Unescaping first turns any such entities into real
+        tags, which the same regex then removes as usual; unescaping a
+        board whose content was never entity-encoded in the first place is
+        a no-op, so this is safe for both cases.
+        """
+        text = html.unescape(raw_html)
+        text = re.sub(r"<[^>]+>", " ", text)
         text = re.sub(r"\s+", " ", text).strip()
         return text
 
