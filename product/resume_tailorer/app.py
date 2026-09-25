@@ -41,9 +41,12 @@ from resume_tailorer.diff_generator import DiffGenerator
 from resume_tailorer.llm.settings import resolve_settings
 from resume_tailorer.llm.client import LLMClient
 from resume_tailorer.llm.ui import COMMON_MODELS, collect_sidebar_llm_fields
+from resume_tailorer.job_search.job_service import PENDING_TAILOR_JOB_KEY
 
 
 st.set_page_config(page_title="Resume Tailorer", page_icon="\U0001F4C4", layout="wide")
+
+_JD_SESSION_KEY = "job_description_text"
 
 
 def _save_uploaded_file(uploaded_file) -> str:
@@ -63,6 +66,18 @@ def main():
         "fabricates experience, skills, or credentials."
     )
 
+    pending = st.session_state.get(PENDING_TAILOR_JOB_KEY)
+    if pending:
+        fit = pending.get("candidate_fit") or {}
+        overall = fit.get("overall_fit")
+        fit_label = f"{round(overall)}%" if isinstance(overall, (int, float)) else "N/A"
+        st.info(
+            f"Continuing from Job Search: **{pending.get('title', 'Job')}** @ "
+            f"**{pending.get('company', '')}** — Candidate Fit {fit_label}."
+        )
+        if _JD_SESSION_KEY not in st.session_state and pending.get("description"):
+            st.session_state[_JD_SESSION_KEY] = pending["description"]
+
     with st.sidebar:
         st.header("1. Upload your resume")
         resume_file = st.file_uploader(
@@ -70,7 +85,9 @@ def main():
         )
 
         st.header("2. Paste the job description")
-        job_description = st.text_area("Job description text", height=250)
+        job_description = st.text_area(
+            "Job description text", height=250, key=_JD_SESSION_KEY
+        )
 
         st.header("3. Choose the target resume length")
         # Defaults to "Preserve original length" (index=2): the base rule

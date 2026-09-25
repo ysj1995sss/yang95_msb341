@@ -29,7 +29,16 @@ class JobUpsertOut(BaseModel):
     created: bool
 
 
-JobStateValue = Literal["interested", "saved", "skipped"]
+JobStateValue = Literal[
+    "save",
+    "apply",
+    "pass",
+    "interested",
+    "saved",
+    "skipped",
+    "applied",
+    "discovered",
+]
 
 
 class JobStateIn(BaseModel):
@@ -38,7 +47,7 @@ class JobStateIn(BaseModel):
 
 class JobStateOut(BaseModel):
     job_id: str
-    state: JobStateValue
+    state: str
 
 
 class JobListItem(BaseModel):
@@ -46,6 +55,7 @@ class JobListItem(BaseModel):
     user_job_id: str
     state: str
     fit_score: float | None = None
+    fit_breakdown: dict | None = None
     company: str
     title: str
     location: str
@@ -61,3 +71,4 @@ class JobListItem(BaseModel):
     ats_platform: str | None = None
     discovered_at: str
     external_ids: dict[str, str] = Field(default_factory=dict)
+    quality_status: str | None = None

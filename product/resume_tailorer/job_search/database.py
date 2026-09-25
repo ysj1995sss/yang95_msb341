@@ -248,7 +248,13 @@ class JobDatabase:
         Returns:
             True on success, False on error
         """
+        from resume_tailorer.job_search.models import (
+            canonicalize_triage_action,
+            triage_storage_value,
+        )
+
         try:
+            action = triage_storage_value(canonicalize_triage_action(selection.action))
             cursor = self.connection.cursor()
             cursor.execute("""
                 INSERT INTO user_selections
@@ -256,7 +262,7 @@ class JobDatabase:
                 VALUES (?, ?, ?, ?)
             """, (
                 selection.job_posting_id,
-                selection.action,
+                action,
                 selection.user_notes,
                 selection.timestamp.isoformat() if isinstance(selection.timestamp, datetime) else selection.timestamp
             ))
@@ -352,7 +358,11 @@ class JobDatabase:
             salary_max=row["salary_max"],
             experience_required=row["experience_required"],
             education_required=row["education_required"],
-            sponsorship_available=bool(row["sponsorship_available"]),
+            sponsorship_available=(
+                None
+                if row["sponsorship_available"] is None
+                else bool(row["sponsorship_available"])
+            ),
             work_mode=row["work_mode"],
             url=row["url"],
             ats_platform=row["ats_platform"],

@@ -264,6 +264,45 @@ def test_fit_returns_0_to_100(sample_profile, sample_job, junior_profile, junior
         assert 0 <= score <= 100, f"Score should be between 0 and 100, got {score}"
 
 
+def test_fit_detailed_uses_transferable_project_management():
+    profile = CareerTruthProfile(
+        contact_info={"name": "A", "email": "a@example.com"},
+        education=[],
+        work_experience=[
+            WorkExperience(
+                employer="Corp",
+                title="Analyst",
+                dates="2020-2023",
+                responsibilities=["Led a 10-person team across workstreams"],
+                accomplishments=["100% on-time delivery with risk mitigation"],
+            )
+        ],
+        skills=[],
+        tools=[],
+        certifications=[],
+        accomplishments=[],
+    )
+    job = JobPosting(
+        source=JobSource.GREENHOUSE,
+        source_id="pm-1",
+        company="Acme",
+        title="Associate",
+        location="Remote",
+        description="""
+        Requirements:
+        - Strong project management skills
+        """,
+        experience_required="2+ years",
+    )
+    result = CandidateFitScorer().score_fit_detailed(profile, job)
+    assert result.overall_fit is not None
+    assert result.scoring_version == "cf-v2"
+    assert any(
+        "project management" in m.lower()
+        for m in result.strong_matches + result.partial_matches
+    )
+
+
 def test_fit_score_is_float():
     """Score should be returned as an actual float (e.g. 85.0, not 85)."""
     scorer = CandidateFitScorer()

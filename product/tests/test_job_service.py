@@ -157,9 +157,10 @@ def test_search_and_store_single_source(temp_db, sample_goals):
     mock_scraper.scrape.return_value = mock_jobs
 
     with mock.patch.object(service, '_get_scraper', return_value=mock_scraper):
-        count = service.search_and_store(sample_goals, [JobSource.LINKEDIN])
+        summary = service.search_and_store(sample_goals, [JobSource.LINKEDIN])
 
-        assert count == 1
+        assert summary.total_stored == 1
+        assert summary.status.value == "ok"
 
     service.close()
 
@@ -224,10 +225,12 @@ def test_search_and_store_multiple_sources(temp_db, sample_goals):
         return None
 
     with mock.patch.object(service, '_get_scraper', side_effect=mock_get_scraper):
-        count = service.search_and_store(sample_goals, [JobSource.LINKEDIN, JobSource.INDEED])
+        summary = service.search_and_store(sample_goals, [JobSource.LINKEDIN, JobSource.INDEED])
 
         # Should be 2: one deduplicated (Tech Corp) + one new (Another Corp)
-        assert count == 2
+        assert summary.total_stored == 2
+        assert summary.status.value == "ok"
+        assert len(summary.providers) == 2
 
     service.close()
 
@@ -255,9 +258,10 @@ def test_search_and_store_returns_count(temp_db, sample_goals):
     mock_scraper.scrape.return_value = mock_jobs
 
     with mock.patch.object(service, '_get_scraper', return_value=mock_scraper):
-        count = service.search_and_store(sample_goals, [JobSource.LINKEDIN])
+        summary = service.search_and_store(sample_goals, [JobSource.LINKEDIN])
 
-        assert count == 5
+        assert summary.total_stored == 5
+        assert summary.total_scraped == 5
 
     service.close()
 
@@ -347,9 +351,10 @@ def test_empty_results(temp_db, sample_goals):
     mock_scraper.scrape.return_value = []
 
     with mock.patch.object(service, '_get_scraper', return_value=mock_scraper):
-        count = service.search_and_store(sample_goals, [JobSource.LINKEDIN])
+        summary = service.search_and_store(sample_goals, [JobSource.LINKEDIN])
 
-        assert count == 0
+        assert summary.total_stored == 0
+        assert summary.status.value == "ok"
 
     service.close()
 
@@ -410,7 +415,7 @@ def test_close_database(temp_db):
 
 
 def test_scraper_error_returns_zero(temp_db, sample_goals):
-    """Scraper error returns 0 stored without failing."""
+    """Scraper error returns 0 stored without failing the whole call."""
     service = JobService(db_path=temp_db)
 
     # Mock the _get_scraper method
@@ -418,9 +423,51 @@ def test_scraper_error_returns_zero(temp_db, sample_goals):
     mock_scraper.scrape.side_effect = Exception("API Error")
 
     with mock.patch.object(service, '_get_scraper', return_value=mock_scraper):
-        count = service.search_and_store(sample_goals, [JobSource.LINKEDIN])
+        summary = service.search_and_store(sample_goals, [JobSource.LINKEDIN])
 
-        assert count == 0
+        assert summary.total_stored == 0
+        assert summary.status.value == "failed"
+        assert summary.providers[0].status.value == "failed"
+        assert "API Error" in (summary.providers[0].error or "")
+
+    service.close()
+
+
+def test_provider_failure_isolation_partial_success(temp_db, sample_goals):
+    """One failing source does not block another source from storing jobs."""
+    good_jobs = [
+        JobPosting(
+            source=JobSource.INDEED,
+            source_id="indeed_ok",
+            company="Good Co",
+            title="Software Engineer",
+            location="Remote",
+            description="ok",
+            posted_date=datetime.now(),
+            url="https://indeed.com/job/ok",
+        )
+    ]
+
+    service = JobService(db_path=temp_db)
+
+    def mock_get_scraper(source):
+        scraper = mock.Mock()
+        if source == JobSource.LINKEDIN:
+            scraper.scrape.side_effect = RuntimeError("linkedin down")
+        else:
+            scraper.scrape.return_value = good_jobs
+        return scraper
+
+    with mock.patch.object(service, "_get_scraper", side_effect=mock_get_scraper):
+        summary = service.search_and_store(
+            sample_goals, [JobSource.LINKEDIN, JobSource.INDEED]
+        )
+
+    assert summary.total_stored == 1
+    assert summary.status.value == "partial"
+    statuses = {p.source: p.status.value for p in summary.providers}
+    assert statuses[JobSource.LINKEDIN] == "failed"
+    assert statuses[JobSource.INDEED] == "ok"
 
     service.close()
 
@@ -479,13 +526,14 @@ def test_search_and_store_filters_out_closed_job_urls(temp_db):
 
     with mock.patch.object(service, "_get_scraper", return_value=mock_scraper), \
          mock.patch("resume_tailorer.job_search.job_service.URLValidator.check_url", side_effect=fake_check_url):
-        count = service.search_and_store(goals, [JobSource.GREENHOUSE])
+        summary = service.search_and_store(goals, [JobSource.GREENHOUSE])
 
     stored_jobs = service.get_available_jobs(goals)
     stored_urls = {job.url for job in stored_jobs}
 
     assert "https://example.com/active" in stored_urls
     assert "https://example.com/closed" not in stored_urls
-    assert count == 1
+    assert summary.total_stored == 1
+    assert summary.closed_filtered == 1
 
     service.close()

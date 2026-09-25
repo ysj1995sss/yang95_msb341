@@ -8,6 +8,12 @@ from app.db import get_db
 from app.jobs.ranking import is_excluded_by_goals
 from app.models import Goals, Job, User, UserJob
 from app.schemas.job import JobListItem, JobStateIn, JobStateOut
+from resume_tailorer.job_search.api_quality import evaluate_api_job_quality
+from resume_tailorer.job_search.dashboard import filter_api_job_dicts
+from resume_tailorer.job_search.models import (
+    canonicalize_triage_action,
+    triage_storage_value,
+)
 
 
 def _goals_for_user(db: Session, user_id: str) -> dict:
@@ -17,12 +23,25 @@ def _goals_for_user(db: Session, user_id: str) -> dict:
     return json.loads(row.data_json)
 
 
+def _canonical_state(raw: str | None) -> str:
+    return triage_storage_value(canonicalize_triage_action(raw))
+
+
 def _to_list_item(user_job: UserJob, job: Job) -> JobListItem:
     data = json.loads(job.data_json)
+    breakdown = None
+    if user_job.fit_breakdown_json:
+        try:
+            parsed = json.loads(user_job.fit_breakdown_json)
+            if isinstance(parsed, dict) and parsed:
+                breakdown = parsed
+        except json.JSONDecodeError:
+            breakdown = None
+    quality = evaluate_api_job_quality(data)
     return JobListItem(
         job_id=job.id,
         user_job_id=user_job.id,
-        state=user_job.state,
+        state=_canonical_state(user_job.state),
         fit_score=user_job.fit_score,
         company=data.get("company") or "",
         title=data.get("title") or "",
@@ -39,12 +58,23 @@ def _to_list_item(user_job: UserJob, job: Job) -> JobListItem:
         ats_platform=data.get("ats_platform"),
         discovered_at=data.get("discovered_at") or "",
         external_ids=data.get("external_ids") or {},
+        fit_breakdown=breakdown,
+        quality_status=quality.value,
     )
 
 
 def list_jobs(
     state: str | None = Query(None),
     min_fit: float | None = Query(None),
+    max_fit: float | None = Query(None),
+    min_salary: int | None = Query(None),
+    sponsorship: str | None = Query(None),
+    work_mode: str | None = Query(None),
+    source: str | None = Query(None),
+    quality: str | None = Query(None),
+    keyword: str | None = Query(None),
+    sort_by: str = Query("fit_score"),
+    sort_dir: str = Query("desc"),
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
@@ -57,19 +87,36 @@ def list_jobs(
         .all()
     )
 
+    wanted = canonicalize_triage_action(state) if state is not None else None
+
     items: list[JobListItem] = []
     for user_job, job in rows:
         data = json.loads(job.data_json)
         if is_excluded_by_goals(data, goals):
             continue
-        if state is not None and user_job.state != state:
-            continue
-        if min_fit is not None:
-            score = user_job.fit_score
-            if score is None or score < min_fit:
+        if wanted is not None:
+            current = canonicalize_triage_action(user_job.state)
+            if current != wanted:
                 continue
         items.append(_to_list_item(user_job, job))
-    return items
+
+    as_dicts = [item.model_dump() for item in items]
+    filtered = filter_api_job_dicts(
+        as_dicts,
+        min_fit=min_fit,
+        max_fit=max_fit,
+        min_salary=min_salary,
+        sponsorship=sponsorship,
+        work_mode=work_mode,
+        source=source,
+        quality=quality,
+        keyword=keyword,
+        sort_by=sort_by,
+        sort_dir=sort_dir,
+    )
+    # Rehydrate preserving order from filter_api_job_dicts
+    by_id = {item.job_id: item for item in items}
+    return [by_id[d["job_id"]] for d in filtered if d["job_id"] in by_id]
 
 
 def transition_job_state(
@@ -85,7 +132,8 @@ def transition_job_state(
     )
     if user_job is None:
         raise HTTPException(status_code=404, detail="Job not found")
-    user_job.state = body.state
+    canonical = triage_storage_value(canonicalize_triage_action(body.state))
+    user_job.state = canonical
     db.commit()
     db.refresh(user_job)
-    return JobStateOut(job_id=job_id, state=body.state)
+    return JobStateOut(job_id=job_id, state=canonical)

@@ -25,10 +25,15 @@ confidence signals -- a name, a metric-shaped result, a named tool) and
 "partial" (weaker, more generic signals) so callers can distinguish
 LEVEL 3 "strongly supported" from LEVEL 2 "transferable/partial" evidence,
 per the fix request's evidence-level model.
+
+Also used by Candidate Fit (cf-v2, apps/api) so transferable evidence is
+recognized there without loosening anti-fabrication standards.
 """
 
+from __future__ import annotations
+
 import re
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 from resume_tailorer.models import CareerTruthProfile
 
@@ -39,34 +44,55 @@ from resume_tailorer.models import CareerTruthProfile
 COMPETENCY_EVIDENCE_PATTERNS: dict[str, dict[str, list[str]]] = {
     "project management": {
         "strong": [
-            r"on-?time delivery", r"risk mitigation", r"workflow mapping",
-            r"end-to-end", r"process bottleneck", r"project lifecycle",
+            r"on-?time delivery",
+            r"risk mitigation",
+            r"workflow mapping",
+            r"end-to-end",
+            r"process bottleneck",
+            r"project lifecycle",
             r"product lifecycle",
         ],
         "partial": [
-            r"\bled\b.{0,15}\bteam\b", r"\bmanaged\b.{0,20}\b(deadline|timeline|workstream)",
-            r"\bcoordinat\w*", r"\bmulti(ple)?\s*(project|initiative|workstream)",
+            r"\bled\b.{0,15}\bteam\b",
+            r"\bmanaged\b.{0,20}\b(deadline|timeline|workstream)",
+            r"\bcoordinat\w*",
+            r"\bmulti(ple)?\s*(project|initiative|workstream)",
         ],
     },
     "cross-functional leadership": {
         "strong": [r"cross-functional", r"cross-cultural"],
-        "partial": [r"\baligned?\b.{0,20}\bstakeholders?\b", r"\bstakeholders?\b.{0,20}\bacross\b"],
+        "partial": [
+            r"\baligned?\b.{0,20}\bstakeholders?\b",
+            r"\bstakeholders?\b.{0,20}\bacross\b",
+        ],
     },
     "stakeholder management": {
         "strong": [r"stakeholders?"],
-        "partial": [r"\bsenior\b.{0,20}\bleaders?\b", r"\bexecutive\b.{0,20}\brecommendation"],
+        "partial": [
+            r"\bsenior\b.{0,20}\bleaders?\b",
+            r"\bexecutive\b.{0,20}\brecommendation",
+        ],
     },
     "business analysis": {
         "strong": [
-            r"\banaly(sis|zed|zing|tics)\b", r"data-driven", r"market (trend|research|entry)",
-            r"diagnos\w*", r"\bnielsen\b", r"\bcircana\b",
+            r"\banaly(sis|zed|zing|tics)\b",
+            r"data-driven",
+            r"market (trend|research|entry)",
+            r"diagnos\w*",
+            r"\bnielsen\b",
+            r"\bcircana\b",
         ],
         "partial": [r"\bidentif\w*\b.{0,25}\b(opportunit|challenge|insight|trend)"],
     },
     "data analytics": {
         "strong": [
-            r"\btableau\b", r"power\s*bi", r"\bsql\b", r"\bexcel\b", r"data analytics",
-            r"\bnielsen\b", r"\bcircana\b",
+            r"\btableau\b",
+            r"power\s*bi",
+            r"\bsql\b",
+            r"\bexcel\b",
+            r"data analytics",
+            r"\bnielsen\b",
+            r"\bcircana\b",
         ],
         "partial": [r"\bdata\b.{0,20}\b(insight|analysis|driven)"],
     },
@@ -76,14 +102,19 @@ COMPETENCY_EVIDENCE_PATTERNS: dict[str, dict[str, list[str]]] = {
     },
     "executive communication": {
         "strong": [
-            r"c-suite", r"\bvp\b.{0,15}leader", r"executive-ready",
+            r"c-suite",
+            r"\bvp\b.{0,15}leader",
+            r"executive-ready",
             r"presented?\b.{0,25}\b(leadership|executive|senior)",
         ],
         "partial": [r"\bpresent\w*\b"],
     },
     "cpg experience": {
         "strong": [
-            r"consumer packaged goods", r"\bcpg\b", r"\bnielsen\b", r"\bcircana\b",
+            r"consumer packaged goods",
+            r"\bcpg\b",
+            r"\bnielsen\b",
+            r"\bcircana\b",
             r"mondel[eē]z",
         ],
         "partial": [r"\bconsumer\b.{0,20}\b(good|product|brand)", r"\bretail\b"],
@@ -114,19 +145,19 @@ COMPETENCY_EVIDENCE_PATTERNS: dict[str, dict[str, list[str]]] = {
 def extract_profile_sentences(profile: CareerTruthProfile) -> list[str]:
     """Individual bullets/sentences (not one flattened blob) for
     competency-map matching, so a match can quote a real, specific
-    sentence as evidence. Shared by gap_analyzer, resume_benchmarker, and
-    docx_bullet_tailorer so "what counts as searchable profile evidence"
-    is defined once."""
+    sentence as evidence. Shared by gap_analyzer, resume_benchmarker,
+    docx_bullet_tailorer, and candidate_fit (cf-v2) so "what counts as
+    searchable profile evidence" is defined once."""
     sentences: list[str] = []
     for job in profile.work_experience:
         sentences.extend(job.responsibilities)
         sentences.extend(job.accomplishments)
     for edu in profile.education:
-        sentences.extend(edu.notes)
-    if profile.summary:
+        sentences.extend(getattr(edu, "notes", None) or [])
+    if getattr(profile, "summary", None):
         sentences.append(profile.summary)
-    sentences.extend(profile.accomplishments)
-    return sentences
+    sentences.extend(profile.accomplishments or [])
+    return [s for s in sentences if s]
 
 
 @dataclass
@@ -193,7 +224,9 @@ _DEGREE_TYPE_RE = re.compile(
 )
 
 
-def find_education_status_evidence(requirement_text: str, profile: CareerTruthProfile) -> str | None:
+def find_education_status_evidence(
+    requirement_text: str, profile: CareerTruthProfile
+) -> str | None:
     """
     Recognize enrollment/degree-status requirements (e.g. "Currently enrolled
     in an accredited MBA program with an intended graduation of Spring 2027")
@@ -227,7 +260,13 @@ def find_education_status_evidence(requirement_text: str, profile: CareerTruthPr
             elif named.startswith("master"):
                 level_match = "master" in degree_lower
             elif named.startswith("bachelor"):
-                level_match = "bachelor" in degree_lower or degree_lower.startswith("b.s") or degree_lower.startswith("b.a")
+                level_match = (
+                    "bachelor" in degree_lower
+                    or degree_lower.startswith("b.s")
+                    or degree_lower.startswith("b.a")
+                    or degree_lower == "bs"
+                    or degree_lower == "ba"
+                )
             elif named in ("phd", "doctorate"):
                 level_match = "phd" in degree_lower or "doctor" in degree_lower
             else:  # juris doctor / jd
