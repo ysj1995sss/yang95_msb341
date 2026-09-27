@@ -36,6 +36,8 @@ import re
 from dataclasses import dataclass
 
 from resume_tailorer.models import CareerTruthProfile
+from resume_tailorer.utils.scoring import _QUALIFICATION_STOPWORDS
+from resume_tailorer.utils.stemming import stem
 
 # key: lowercase, human-readable competency name.
 # "strong": patterns whose match alone is confident evidence.
@@ -168,18 +170,78 @@ class TransferableEvidence:
     evidence_text: str  # the profile sentence/bullet the pattern matched in
 
 
+# A competency-map word-matching token can come from a short acronym too,
+# not just a 4+-letter word -- otherwise "cpg experience" has no usable
+# identifying word at all once "experience" is excluded as a stopword ("cpg"
+# itself is only 3 letters, below the regex used for ordinary words), making
+# it permanently unmatchable. Mirrors scoring.py's _SHORT_TECH_ACRONYMS.
+_SHORT_COMPETENCY_ACRONYMS = frozenset({"cpg"})
+
+
+def _match_words(text: str) -> set[str]:
+    """Stemmed content words (4+ letters, or a known short acronym) used
+    for competency-map word-overlap matching, with generic connector words
+    excluded so they can't trigger a match on their own."""
+    lower = text.lower()
+    long_words = re.findall(r"[a-z]{4,}", lower)
+    short_acronyms = [w for w in re.findall(r"\b[a-z]{2,3}\b", lower) if w in _SHORT_COMPETENCY_ACRONYMS]
+    return {stem(w) for w in long_words + short_acronyms if w not in _QUALIFICATION_STOPWORDS}
+
+
 def _competency_keys_for(requirement_text: str) -> list[str]:
     """Which competency-map entries are even relevant to this requirement,
-    by simple word overlap between the requirement and the competency's own
-    name (e.g. requirement "cross-functional project management" overlaps
-    both "project management" and "cross-functional leadership")."""
-    req_words = set(re.findall(r"[a-z]{4,}", requirement_text.lower()))
-    relevant = []
+    by stemmed word overlap between the requirement and the competency's
+    own name (e.g. requirement "cross-functional project management"
+    overlaps both "project management" and "cross-functional leadership").
+    Stemmed (not exact) so a plural/tense difference doesn't miss an
+    otherwise-real match. Excludes generic connector words
+    (_QUALIFICATION_STOPWORDS -- "experience", "years", "strong", etc.)
+    from counting as a match on their own -- found live while adding
+    normalize_concept() (2026-09-27): a pure years-of-experience gate like
+    "4+ years of prior professional experience" was matching "cpg
+    experience" purely because both happen to contain the word
+    "experience", which would have let ANY candidate profile mentioning
+    "retail" or "consumer" anywhere get credited as transferable evidence
+    for a completely unrelated hard-eligibility requirement. Still won't
+    bridge a derivational difference like "communicate" vs "communication"
+    -- that needs a real lemmatizer, not this stemmer (see
+    utils/stemming.py's own docstring)."""
+    req_words = _match_words(requirement_text)
+    scored: list[tuple[int, str]] = []
     for key in COMPETENCY_EVIDENCE_PATTERNS:
-        key_words = set(re.findall(r"[a-z]{4,}", key))
-        if req_words & key_words:
-            relevant.append(key)
-    return relevant
+        key_words = _match_words(key)
+        overlap = len(req_words & key_words)
+        if overlap:
+            scored.append((overlap, key))
+    # Sort by overlap count descending (most specific match first) --
+    # found live testing normalize_concept() (2026-09-27): "Strong
+    # stakeholder management skills" shares the word "management" with
+    # BOTH "project management" and "stakeholder management", and a caller
+    # like normalize_concept() that just takes the first match picked
+    # "project management" purely because it happens to be declared
+    # earlier in COMPETENCY_EVIDENCE_PATTERNS, not because it's the better
+    # fit -- "stakeholder management" shares 2 words (stakeholder,
+    # management), "project management" only 1 (management). Stable sort
+    # keeps dict declaration order as the tie-break for equal overlap
+    # counts, same behavior as before for genuinely ambiguous cases.
+    scored.sort(key=lambda pair: pair[0], reverse=True)
+    return [key for _, key in scored]
+
+
+def normalize_concept(requirement_text: str) -> str:
+    """
+    Map a JD requirement's phrasing onto a shared concept name using the
+    SAME curated competency vocabulary the evidence-matching side already
+    uses (ONE EVIDENCE MODEL, not a second synonym table) -- e.g.
+    "communicate to senior leadership" and "present to executives" both
+    normalize to "executive communication". Falls back to the requirement's
+    own lowercased text when no competency-map entry is relevant, so every
+    requirement still gets a normalized_concept, just not a shared one.
+    """
+    keys = _competency_keys_for(requirement_text)
+    if keys:
+        return keys[0]
+    return requirement_text.strip().lower()
 
 
 def find_transferable_evidence(

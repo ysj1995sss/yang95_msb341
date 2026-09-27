@@ -1,9 +1,26 @@
 from resume_tailorer.analyzers.competency_map import (
     find_education_status_evidence,
     find_transferable_evidence,
+    normalize_concept,
     supported_competencies,
 )
 from resume_tailorer.models import CareerTruthProfile, EducationEntry
+
+
+class TestNormalizeConcept:
+    def test_semantic_equivalents_with_a_plural_difference_map_to_the_same_concept(self):
+        a = normalize_concept("align 30+ stakeholders across teams")
+        b = normalize_concept("managed key stakeholder relationships")
+        assert a == b == "stakeholder management"
+
+    def test_no_competency_match_falls_back_to_lowercased_text(self):
+        assert normalize_concept("4+ years of prior professional experience") == \
+            "4+ years of prior professional experience".lower()
+
+    def test_falls_back_uses_the_original_requirement_text_not_a_blank(self):
+        result = normalize_concept("Must hold an active real estate broker license")
+        assert result  # never empty
+        assert "broker license" in result
 
 
 def _profile_with_education(*entries: EducationEntry) -> CareerTruthProfile:

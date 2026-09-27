@@ -7,6 +7,7 @@ import re
 
 from .models import CareerTruthProfile
 from .analyzers.competency_map import COMPETENCY_EVIDENCE_PATTERNS
+from .utils.stemming import stem as _stem
 
 
 @dataclass
@@ -278,20 +279,13 @@ class DiffGenerator:
         "refined", "diagnosed", "resulting", "leading", "driving", "recognized",
     }
 
-    # Common suffixes stripped before comparing words, so a plain verb-tense
-    # or plural change ("identifying" vs "identify", "strategies" vs
-    # "strategy") isn't mistaken for dropping the word entirely -- only
-    # applied to words long enough that stripping still leaves a real stem
-    # (avoids "was"->"w" nonsense).
-    _SUFFIXES = ("ing", "edly", "ed", "ies", "es", "s")
-
     @classmethod
     def _stem(cls, word: str) -> str:
-        for suffix in cls._SUFFIXES:
-            if word.endswith(suffix) and len(word) - len(suffix) >= 3:
-                stem = word[: -len(suffix)]
-                return stem + "y" if suffix == "ies" else stem
-        return word
+        """Strip a plain verb-tense/plural suffix before comparing words, so
+        e.g. "identifying" vs "identify" isn't mistaken for dropping the
+        word entirely. Shared with competency_map.py's concept
+        normalization via utils/stemming.py -- one stemmer, not two."""
+        return _stem(word)
 
     @classmethod
     def _content_words(cls, text: str) -> set:

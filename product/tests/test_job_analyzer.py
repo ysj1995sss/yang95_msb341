@@ -75,6 +75,135 @@ def test_job_analyzer_skills_and_tools_do_not_overlap(sample_job_description):
     assert "docker" in tools_lower
 
 
+class TestStructuredRequirements:
+    """JobAnalysis.structured_requirements: added alongside the existing
+    flat string lists (never replacing them), so every existing caller
+    keeps working unchanged -- see job_analyzer.py's JobRequirement
+    docstring."""
+
+    @pytest.fixture
+    def marketing_job_description(self):
+        return """
+        Senior Marketing Analyst
+
+        Required Qualifications:
+        - 5+ years of marketing analytics experience
+        - Must hold an active Google Analytics certification
+        - Strong stakeholder management skills
+        - Passion for our mission
+
+        Preferred:
+        - Experience with SQL
+        - Prior CPG experience
+
+        Responsibilities:
+        - Present executive-ready recommendations to senior leadership
+        - Manage stakeholder relationships across teams
+        - Analyze campaign performance data
+        """
+
+    def test_existing_flat_lists_still_populated_unchanged(self, sample_job_description):
+        """Adding structured_requirements must not change any existing
+        field's behavior -- backward compatibility for every downstream
+        caller that only reads the flat lists."""
+        analysis = JobAnalyzer().analyze(sample_job_description)
+        assert len(analysis.required_qualifications) > 0
+        assert len(analysis.preferred_qualifications) > 0
+        assert len(analysis.responsibilities) > 0
+
+    def test_every_requirement_and_responsibility_gets_a_structured_entry(self, marketing_job_description):
+        analysis = JobAnalyzer().analyze(marketing_job_description)
+        expected_count = (
+            len(analysis.required_qualifications)
+            + len(analysis.preferred_qualifications)
+            + len(analysis.responsibilities)
+        )
+        assert len(analysis.structured_requirements) == expected_count
+
+    def test_years_of_experience_in_required_section_is_a_hard_gate(self, marketing_job_description):
+        analysis = JobAnalyzer().analyze(marketing_job_description)
+        years_item = next(
+            r for r in analysis.structured_requirements if "5+ years" in r.text
+        )
+        assert years_item.hard_gate is True
+        assert years_item.required_or_preferred == "required"
+
+    def test_active_certification_requirement_is_a_hard_gate(self, marketing_job_description):
+        analysis = JobAnalyzer().analyze(marketing_job_description)
+        cert_item = next(
+            r for r in analysis.structured_requirements if "certification" in r.text.lower()
+        )
+        assert cert_item.hard_gate is True
+
+    def test_preferred_qualification_is_never_a_hard_gate_even_with_gate_language(self):
+        """A hard-gate PATTERN in the Preferred section must not become a
+        hard gate -- by definition preferred items are waivable."""
+        jd = """
+        Required:
+        - Bachelor's degree in Marketing
+
+        Preferred:
+        - 10+ years of experience in the industry
+        """
+        analysis = JobAnalyzer().analyze(jd)
+        preferred_years = next(
+            r for r in analysis.structured_requirements
+            if r.required_or_preferred == "preferred" and "10+ years" in r.text
+        )
+        assert preferred_years.hard_gate is False
+
+    def test_generic_filler_gets_low_importance(self, marketing_job_description):
+        analysis = JobAnalyzer().analyze(marketing_job_description)
+        filler_item = next(
+            r for r in analysis.structured_requirements if "Passion for our mission" in r.text
+        )
+        assert filler_item.importance == "low"
+
+    def test_semantically_similar_requirements_share_a_normalized_concept(self, marketing_job_description):
+        """'Strong stakeholder management skills' (Required) and 'Manage
+        stakeholder relationships across teams' (Responsibilities) describe
+        the same underlying concept and should normalize to the same
+        value, even though they're phrased differently and sit in
+        different sections."""
+        analysis = JobAnalyzer().analyze(marketing_job_description)
+        concepts = {
+            r.text: r.normalized_concept for r in analysis.structured_requirements
+        }
+        stakeholder_items = [
+            concept for text, concept in concepts.items() if "stakeholder" in text.lower()
+        ]
+        assert len(stakeholder_items) == 2
+        assert stakeholder_items[0] == stakeholder_items[1] == "stakeholder management"
+
+    def test_repeated_concept_gets_importance_bumped_up(self, marketing_job_description):
+        """'stakeholder management' appears twice (Required + a
+        Responsibility) -- the responsibility instance starts at 'medium'
+        by default but should bump to 'high' for being a repeated theme."""
+        analysis = JobAnalyzer().analyze(marketing_job_description)
+        resp_item = next(
+            r for r in analysis.structured_requirements
+            if r.category == "responsibility" and "Manage stakeholder" in r.text
+        )
+        assert resp_item.importance == "high"
+
+    def test_required_or_preferred_matches_source_section(self, marketing_job_description):
+        analysis = JobAnalyzer().analyze(marketing_job_description)
+        for r in analysis.structured_requirements:
+            if r.source_section == "required_qualifications":
+                assert r.required_or_preferred == "required"
+                assert r.category == "qualification"
+            elif r.source_section == "preferred_qualifications":
+                assert r.required_or_preferred == "preferred"
+                assert r.category == "qualification"
+            elif r.source_section == "responsibilities":
+                assert r.category == "responsibility"
+
+    def test_requirement_ids_are_unique(self, marketing_job_description):
+        analysis = JobAnalyzer().analyze(marketing_job_description)
+        ids = [r.id for r in analysis.structured_requirements]
+        assert len(ids) == len(set(ids))
+
+
 class TestConversationalNonTechnicalPosting:
     """
     Regression tests for a real, non-technical job posting (2026-09-22)

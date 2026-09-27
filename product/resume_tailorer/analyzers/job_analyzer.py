@@ -2,12 +2,36 @@ from dataclasses import dataclass, field
 from typing import Optional
 import re
 
+from resume_tailorer.analyzers.competency_map import normalize_concept
+from resume_tailorer.utils.stemming import stem
+
 @dataclass
 class WeightedKeyword:
     """A keyword with its importance level."""
     keyword: str
     weight: str  # "high", "medium", "low"
     frequency: int = 1  # How many times mentioned
+
+@dataclass
+class JobRequirement:
+    """
+    A single structured requirement extracted from a job description.
+
+    Added alongside the original flat string lists (required_qualifications,
+    preferred_qualifications, responsibilities) rather than replacing them --
+    every existing caller (GapAnalyzer, ResumeBenchmarker, the tailoring
+    prompts) keeps working unchanged against those, while new/updated
+    callers can consult the richer structured_requirements list instead.
+    """
+    id: str
+    text: str  # the requirement item's own text, as extracted
+    normalized_concept: str  # shared concept name (competency_map.normalize_concept)
+    category: str  # "qualification" | "responsibility"
+    required_or_preferred: str  # "required" | "preferred"
+    importance: str  # "high" | "medium" | "low"
+    hard_gate: bool  # true if failing this alone should be an honest, un-rewritable gap
+    source_section: str  # "required_qualifications" | "preferred_qualifications" | "responsibilities"
+    source_text: str  # the raw source-section text this item came from
 
 @dataclass
 class JobAnalysis:
@@ -20,6 +44,7 @@ class JobAnalysis:
     education_required: Optional[str]
     experience_required: Optional[str]
     weighted_keywords: list[WeightedKeyword]
+    structured_requirements: list[JobRequirement] = field(default_factory=list)
 
 class JobAnalyzer:
     """
@@ -54,6 +79,37 @@ class JobAnalyzer:
         "specialization", "relevant", "full-time", "part-time", "demonstrated",
         "translating", "guide", "recommendations", "one", "two", "three",
         "four", "five", "six", "seven", "eight", "nine", "ten",
+    }
+
+    # A requirement matching one of these, in the REQUIRED section, is a
+    # hard eligibility gate: failing it is an honest gap the tailoring
+    # pipeline must never rewrite around (Step 12/13's "truly missing
+    # requirements remain missing" principle). Deliberately narrow --
+    # false positives here would wrongly mark a soft preference as
+    # unwaivable; false negatives just fall back to ordinary importance
+    # ranking, which is the safer failure direction.
+    _HARD_GATE_PATTERNS = [
+        # Non-greedy .*? between "years" and "experience" so a real posting's
+        # "5+ years of marketing analytics experience" (arbitrary domain
+        # words in between) still matches, not just "5+ years of experience"
+        # verbatim -- found live testing this against a realistic JD.
+        re.compile(r"\d+\+?\s*years?\s+(?:of\s+)?.{0,40}?\b(?:experience|exp)\b", re.IGNORECASE),
+        re.compile(r"\bmust\s+(?:have|hold|possess|be\s+able)\b", re.IGNORECASE),
+        re.compile(r"\b(?:active|valid|current)\s+(?:license|licensure|certification)\b", re.IGNORECASE),
+        re.compile(r"\bauthoriz(?:ed|ation)\s+to\s+work\b", re.IGNORECASE),
+        re.compile(r"\brequires?\s+a\s+(?:bachelor|master|phd|doctorate|degree)", re.IGNORECASE),
+        re.compile(r"\b(?:bachelor|master|phd|doctorate)'?s?\s+degree\s+(?:is\s+)?required\b", re.IGNORECASE),
+    ]
+
+    # Generic filler with no real signal about candidate qualification --
+    # downweighted to "low" importance unless it recurs (see
+    # _rank_importance), so a job posting's boilerplate ("passion for our
+    # mission") doesn't crowd out substantive requirements at the same
+    # "high" tier just because it happened to land in the Required section.
+    _GENERIC_FILLER_TERMS = {
+        "passion", "dynamic", "fast-paced", "self-starter", "self starter",
+        "detail-oriented", "detail oriented", "team player", "positive attitude",
+        "work ethic", "hardworking", "go-getter", "multitasker", "flexible",
     }
 
     def analyze(self, job_description: str) -> JobAnalysis:
@@ -124,6 +180,10 @@ class JobAnalyzer:
         # Generate weighted keywords
         keywords = self._extract_weighted_keywords(job_description, required_qual, preferred_qual)
 
+        structured_requirements = self._build_structured_requirements(
+            required_qual, preferred_qual, responsibilities
+        )
+
         return JobAnalysis(
             required_qualifications=required_qual,
             preferred_qualifications=preferred_qual,
@@ -133,6 +193,7 @@ class JobAnalyzer:
             education_required=education,
             experience_required=experience,
             weighted_keywords=keywords,
+            structured_requirements=structured_requirements,
         )
 
     def _extract_section(self, text: str, pattern: str, flags: int = 0) -> list[str]:
@@ -303,3 +364,81 @@ class JobAnalyzer:
                 keywords[keyword].frequency = count
 
         return list(keywords.values())[:30]  # Return top 30 keywords
+
+    def _build_structured_requirements(
+        self,
+        required_qual: list[str],
+        preferred_qual: list[str],
+        responsibilities: list[str],
+    ) -> list[JobRequirement]:
+        """
+        Build the structured JobRequirement model alongside the flat lists.
+
+        Importance starts from the source section (required=high,
+        preferred=medium, responsibilities=medium), is downgraded if the
+        item is generic filler with no repeated emphasis, and is bumped
+        back up one tier if its normalized_concept recurs elsewhere in the
+        posting -- a requirement repeated across sections is a real signal
+        of what the job actually cares about, not noise.
+        """
+        raw_items: list[tuple[str, str, str]] = (
+            [(text, "required", "qualification") for text in required_qual]
+            + [(text, "preferred", "qualification") for text in preferred_qual]
+            + [(text, "required", "responsibility") for text in responsibilities]
+        )
+
+        # Count normalized-concept recurrence across the WHOLE posting
+        # first, so an item's own importance can be bumped for being a
+        # repeated theme regardless of which section it's in.
+        concept_counts: dict[str, int] = {}
+        concepts = [normalize_concept(text) for text, _, _ in raw_items]
+        for concept in concepts:
+            concept_counts[concept] = concept_counts.get(concept, 0) + 1
+
+        requirements: list[JobRequirement] = []
+        for idx, ((text, req_or_pref, category), concept) in enumerate(zip(raw_items, concepts)):
+            source_section = (
+                "required_qualifications" if (req_or_pref == "required" and category == "qualification")
+                else "preferred_qualifications" if req_or_pref == "preferred"
+                else "responsibilities"
+            )
+            requirements.append(JobRequirement(
+                id=f"req-{idx}",
+                text=text,
+                normalized_concept=concept,
+                category=category,
+                required_or_preferred=req_or_pref,
+                importance=self._rank_importance(text, req_or_pref, category, concept_counts[concept]),
+                hard_gate=self._is_hard_gate(text, req_or_pref),
+                source_section=source_section,
+                source_text=text,
+            ))
+        return requirements
+
+    def _is_hard_gate(self, text: str, required_or_preferred: str) -> bool:
+        """A hard eligibility gate only ever applies to the required
+        section -- a preferred item is, by definition, waivable."""
+        if required_or_preferred != "required":
+            return False
+        return any(pattern.search(text) for pattern in self._HARD_GATE_PATTERNS)
+
+    def _rank_importance(
+        self, text: str, required_or_preferred: str, category: str, concept_frequency: int
+    ) -> str:
+        """Rank a single requirement's importance. See
+        _build_structured_requirements for the recurrence-bump rule."""
+        text_lower = text.lower()
+        is_filler = any(term in text_lower for term in self._GENERIC_FILLER_TERMS)
+
+        if is_filler and concept_frequency < 2:
+            base = "low"
+        elif required_or_preferred == "required":
+            base = "high"
+        else:
+            base = "medium"
+
+        if concept_frequency >= 2:
+            order = ["low", "medium", "high"]
+            bumped = min(order.index(base) + 1, len(order) - 1)
+            return order[bumped]
+        return base
