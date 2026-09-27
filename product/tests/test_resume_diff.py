@@ -378,3 +378,46 @@ def test_diff_generator_importable_from_package_root():
     assert PkgDiffGenerator is DiffGenerator
     assert PkgResumeDiffReport is ResumeDiffReport
     assert PkgBulletChange is BulletChange
+
+
+class TestFreeformPathSemanticDriftParity:
+    """The freeform/PDF tailoring path (generate_diff) had NO semantic-drift
+    protection at all before this consolidation -- only the DOCX splice
+    path (DocxBulletTailorer) had it. These reproduce the exact real-world
+    bug (decision 008: 'front-store growth strategy' silently narrowed to
+    'front-store acquisition strategy') against generate_diff directly, to
+    confirm the freeform path now catches what it previously would have
+    missed entirely."""
+
+    def test_semantic_narrowing_is_caught_on_the_freeform_path(self):
+        profile = _profile(["Developed a front-store growth strategy identifying incremental sales"])
+        tailored_text = "- Developed a front-store acquisition strategy identifying incremental sales\n"
+
+        report = DiffGenerator().generate_diff(profile, tailored_text)
+
+        assert any("semantic drift" in issue.lower() for issue in report.issues)
+
+    def test_evidence_backed_competency_label_is_not_flagged(self):
+        """The same evidence-backed-abstraction exemption DocxBulletTailorer
+        gets (decision 009) must also apply here -- otherwise this
+        consolidation would make the freeform path MORE conservative than
+        before in a way that blocks legitimate, truthful abstraction."""
+        profile = _profile(
+            ["Achieved 100% on-time delivery across 200+ performances through risk mitigation"]
+        )
+        tailored_text = (
+            "- Achieved 100% on-time project management delivery across 200+ "
+            "performances through risk mitigation\n"
+        )
+
+        report = DiffGenerator().generate_diff(profile, tailored_text)
+
+        assert not any("project" in issue.lower() or "management" in issue.lower() for issue in report.issues)
+
+    def test_dropping_a_metric_is_caught_on_the_freeform_path(self):
+        profile = _profile(["Achieved 100% on-time delivery across 200+ performances"])
+        tailored_text = "- Achieved on-time delivery across 200+ performances\n"
+
+        report = DiffGenerator().generate_diff(profile, tailored_text)
+
+        assert any("semantic drift" in issue.lower() for issue in report.issues)

@@ -1,7 +1,7 @@
 """Resume diff generator: compare original vs. tailored resumes with reasoning."""
 
 from dataclasses import dataclass, field
-from typing import List
+from typing import List, Optional
 import difflib
 import re
 
@@ -58,10 +58,51 @@ class DiffGenerator:
         # Compare and generate changes
         changes = self._compute_changes(original_bullets, tailored_bullets, career_profile)
 
-        # Check for fabrication risks
-        issues = self._check_fabrication_risks(
-            tailored_bullets, career_profile
-        )
+        # Check for fabrication risks and semantic drift.
+        #
+        # Previously this called a separate, older _check_fabrication_risks
+        # method (metric + fixed tech-keyword list only, no semantic-drift
+        # check at all) -- the exact pre-decision-008 limitation that let
+        # "loyalty" slip through undetected on the DOCX path before it was
+        # fixed there. That fix (check_bullet_pair_fabrication_risk,
+        # check_semantic_drift: generalized beyond tech keywords, core/
+        # elaboration clause split, evidence-backed competency-label
+        # exemption) never made it to this freeform/PDF path, since it
+        # validates per-bullet with a known original/new pairing that this
+        # path didn't have. _compute_changes above already produces that
+        # same pairing (via its own similarity-based matching), so this
+        # reuses the SAME checks instead of a second, weaker
+        # implementation -- one fabrication/drift system, not two.
+        #
+        # A pure add/remove has no original to pair against;
+        # check_bullet_pair_fabrication_risk still runs for pure adds with
+        # original="" (everything in the bullet is then checked only
+        # against the profile, which is exactly correct for a bullet that
+        # has no prior version to compare wording to). check_semantic_drift
+        # needs a real original, so it's skipped for pure adds/removes.
+        #
+        # already_reported is shared across every call in this loop (not
+        # the default fresh-set-per-call) so the same fabricated term
+        # flagged in two different bullets is reported once, not once per
+        # bullet -- the cross-bullet dedup _check_fabrication_risks used to
+        # provide.
+        issues: List[str] = []
+        seen_issues: set = set()
+        already_reported: set = set()
+        for change in changes:
+            if not change.tailored:
+                continue  # pure removal -- nothing new to check
+            if change.original:
+                for issue in self.check_semantic_drift(change.original, change.tailored):
+                    if issue not in seen_issues:
+                        issues.append(issue)
+                        seen_issues.add(issue)
+            for issue in self.check_bullet_pair_fabrication_risk(
+                change.original, change.tailored, career_profile, already_reported
+            ):
+                if issue not in seen_issues:
+                    issues.append(issue)
+                    seen_issues.add(issue)
 
         return ResumeDiffReport(
             original_bullets=original_bullets,
@@ -427,34 +468,58 @@ class DiffGenerator:
         return words
 
     def check_bullet_pair_fabrication_risk(
-        self, original: str, new: str, profile: CareerTruthProfile
+        self, original: str, new: str, profile: CareerTruthProfile,
+        already_reported: Optional[set] = None,
     ) -> List[str]:
         """
-        Per-pair fabrication check for the DOCX splice pipeline, where the
-        old-bullet-to-new-bullet mapping is already known by paragraph
-        index -- unlike `_check_fabrication_risks`, which has to pair
-        tailored bullets to profile evidence with no known correspondence
-        to a specific original bullet. A metric/keyword already present in
-        THIS bullet's own original text is never flagged, on top of the
-        profile-wide blob -- carrying over an existing fact isn't a risk.
+        Per-pair fabrication check, callable per bullet pair without any
+        cross-bullet correspondence tracking (each call is independent by
+        default). A metric/keyword already present in THIS bullet's own
+        original text is never flagged, on top of the profile-wide blob --
+        carrying over an existing fact isn't a risk.
+
+        `already_reported` is an optional MUTABLE set the caller can share
+        across multiple calls (e.g. one per bullet in a whole-resume diff)
+        so the same fabricated term isn't reported once per bullet it
+        appears in -- found live (2026-09-27) consolidating this into
+        DiffGenerator.generate_diff, which previously used a separate,
+        weaker check with its own cross-bullet dedup; calling this method
+        once per bullet pair without sharing dedup state reintroduced the
+        exact per-bullet-repetition problem that separate check's dedup
+        existed to prevent. Defaults to a fresh set (today's per-call
+        behavior, unchanged for every other existing caller).
         """
+        if already_reported is None:
+            already_reported = set()
         issues = []
         trusted_blob = self._profile_blob(profile) + " " + original.lower()
         new_lower = new.lower()
 
         for metric in self._METRIC_PATTERN.findall(new):
+            key = f"metric:{metric.lower()}"
+            if key in already_reported:
+                continue
             if metric.lower() not in trusted_blob and metric not in trusted_blob:
                 issues.append(
                     f"⚠️ FABRICATION RISK: metric '{metric}' mentioned in '{new}' "
                     "but not in the original bullet or profile"
                 )
+                already_reported.add(key)
 
         for tech in self._TECH_KEYWORDS:
+            # Same "word:" key namespace as the generalized new-word check
+            # below -- found live (2026-09-27): a separate "tech:" namespace
+            # let the same term (e.g. "kubernetes") get flagged twice, once
+            # by each check, since neither recognized the other's dedup key.
+            key = f"word:{self._stem(tech)}"
+            if key in already_reported:
+                continue
             pattern = self._tech_pattern(tech)
             if re.search(pattern, new_lower) and not re.search(pattern, trusted_blob):
                 issues.append(
                     f"⚠️ FABRICATION RISK: '{tech}' mentioned in '{new}' but not in the original bullet or profile"
                 )
+                already_reported.add(key)
 
         # Generalizes the tech-keyword check above to any domain -- found
         # live, 2026-09-23, TWICE: "loyalty" was added to describe a
@@ -482,51 +547,15 @@ class DiffGenerator:
             if self._stem(w) not in trusted_stems
             and self._stem(w) not in original_stems
             and self._stem(w) not in safe_stems
+            and f"word:{self._stem(w)}" not in already_reported
         }
         if genuinely_new:
             issues.append(
                 f"⚠️ POSSIBLY UNVERIFIED: new term(s) {sorted(genuinely_new)} in '{new}' "
                 "not grounded in the original bullet or profile -- review before using"
             )
-
-        return issues
-
-    def _check_fabrication_risks(
-        self, tailored_bullets: List[str], profile: CareerTruthProfile
-    ) -> List[str]:
-        """Check tailored resume for skills/tools not present anywhere in the profile."""
-        issues = []
-
-        profile_blob = self._profile_blob(profile)
-
-        profile_metrics = set(self._METRIC_PATTERN.findall(profile_blob))
-        reported_metrics = set()
-        for bullet in tailored_bullets:
-            for metric in self._METRIC_PATTERN.findall(bullet):
-                if metric in reported_metrics:
-                    continue
-                if metric.lower() not in profile_metrics and metric not in profile_metrics:
-                    issues.append(
-                        f"⚠️ FABRICATION RISK: metric '{metric}' mentioned in '{bullet}' "
-                        "but not in original resume"
-                    )
-                    reported_metrics.add(metric)
-
-        # Dedup: don't repeat the same tech keyword across multiple bullets.
-        reported = set()
-        for bullet in tailored_bullets:
-            bullet_lower = bullet.lower()
-            for tech in self._TECH_KEYWORDS:
-                if tech in reported:
-                    continue
-                pattern = self._tech_pattern(tech)
-                if re.search(pattern, bullet_lower) and not re.search(
-                    pattern, profile_blob
-                ):
-                    issues.append(
-                        f"⚠️ FABRICATION RISK: '{tech}' mentioned in '{bullet}' but not in original resume"
-                    )
-                    reported.add(tech)
+            for w in genuinely_new:
+                already_reported.add(f"word:{self._stem(w)}")
 
         return issues
 
