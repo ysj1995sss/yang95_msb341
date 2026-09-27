@@ -1,6 +1,6 @@
-# CLAUDE.md
+# AGENTS.md
 
-Loaded at the start of every Claude Code session in this repo. Keep it current. It should let
+Loaded at the start of every Codex session in this repo. Keep it current. It should let
 a brand new session act like a colleague who already knows what you are working on and why.
 
 ## What I am working on
@@ -14,11 +14,12 @@ a brand new session act like a colleague who already knows what you are working 
 ## Current state
 
 - **Where we are:** Sprint 1 (tailor) and Sprint 2 (Steps 4–9 job discovery) are both merged on
-  `main`. Steps 10–15 (job analysis → tailoring → length control) were audited and rebuilt this
-  session — see `decisions/013-steps-10-15-rebuild-summary.md` for the full picture. Steps 21–24
-  (application modes/submission/status) are substantially built but Assist/Auto mode doesn't
-  work against real ATS forms yet — see `decisions/012-assist-auto-mode-does-not-work-against-real-ats-forms.md`.
-  Manual mode is the one reliable application-submission path today.
+  `main`. Steps 10–15 (job analysis → tailoring → length control) were audited and rebuilt in the
+  most recent session — see `decisions/013-steps-10-15-rebuild-summary.md` for the full picture.
+  Steps 21–24 (application modes/submission/status) are substantially built but Assist/Auto mode
+  doesn't work against real ATS forms yet — see
+  `decisions/012-assist-auto-mode-does-not-work-against-real-ats-forms.md`. Manual mode is the
+  one reliable application-submission path today.
 - **Next build:** either (a) close the freeform/PDF tailoring path's remaining gaps (no repair
   loop, no hard length gate — see decision 013's "known limitations"), or (b) revisit Assist/Auto
   mode via real browser automation (decision 012 scoped this out deliberately — needs its own
@@ -29,8 +30,8 @@ a brand new session act like a colleague who already knows what you are working 
 - **Biggest open risk:** real end-to-end usage by people other than the builder — the tailoring
   and discovery pipelines are verified live against real postings, but the full search → triage →
   tailor → apply loop hasn't been used by anyone else yet.
-- **Handoff docs:** `HANDOFF-TO-CLAUDE-CODE.md` and `HANDOFF-TO-CODEX.md` — read whichever
-  matches the session you're starting; both point at the same `decisions/` history.
+- **Handoff doc:** `HANDOFF-TO-CODEX.md` — read this when starting a new Codex session, along
+  with `decisions/001`, `009`, `012`, and `013` for the architecture and the most recent work.
 
 ## How this repo works
 
@@ -42,9 +43,10 @@ a brand new session act like a colleague who already knows what you are working 
 
 ## Tools and conventions
 
-- **Stack:** Python (resume_tailorer package), Streamlit for UI, Claude API for LLM, pytest for testing, reportlab for PDF generation, multiple job board scrapers (Greenhouse, LinkedIn, Indeed, Handshake).
-- **How work ships:** Streamlit app runs locally; eventual deployment TBD.
-- **Testing and style:** pytest for unit and integration tests; extensive fixture-based testing with real job descriptions.
+- **Stack:** Python (resume_tailorer package), Streamlit for UI, an LLM API for tailoring (see `product/resume_tailorer/llm/`), pytest for testing, reportlab for PDF generation, python-docx + docx2pdf for the DOCX splice pipeline, multiple job board scrapers (Greenhouse live; LinkedIn/Indeed/Handshake limited/demo).
+- **Two separate venvs:** `product/.venv` (core engine + Streamlit) and `apps/api/.venv` (FastAPI backend). Set `PYTHONPATH` to include `product/` when running Streamlit or product tests directly.
+- **How work ships:** Streamlit app + FastAPI backend run locally; eventual deployment TBD.
+- **Testing and style:** pytest for unit and integration tests; extensive fixture-based testing with real job descriptions. Run the full suite (`product/`: currently 548 tests; `apps/api/`: currently 39) before claiming anything is done.
 
 ## Working with me
 
