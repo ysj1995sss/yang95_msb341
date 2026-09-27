@@ -151,6 +151,20 @@ def test_resume_tailorer_system_prompt_forbids_fabrication():
     assert "Career Truth Profile" in system_prompt or "truth" in system_prompt.lower()
 
 
+def test_resume_tailorer_system_prompt_has_semantic_preservation_guidance():
+    """Steps 10-15 audit Phase D: the freeform/PDF path's prompt previously
+    said only 'rephrase to match job language' with no guardrail against a
+    rephrase that narrows or changes the original claim -- the exact live
+    bug (decision 008) already fixed in the DOCX path's prompt but never
+    ported here. Pins the ported guidance so it can't silently regress."""
+    tailorer = ResumeTailorer(llm=MagicMock())
+    system_prompt = tailorer._build_system_prompt()
+
+    assert "SEMANTIC PRESERVATION" in system_prompt
+    assert "front-store growth strategy" in system_prompt
+    assert "STRONGEST VERIFIED EVIDENCE" in system_prompt
+
+
 def test_resume_tailorer_tailor_method_calls_llm(sample_profile, sample_job_analysis, sample_gap_report):
     """Test that tailor method calls LLMClient.complete (mocked)."""
     llm = MagicMock(spec=LLMClient)
