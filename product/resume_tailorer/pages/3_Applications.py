@@ -84,30 +84,34 @@ def _render_submit_tab(service: JobService) -> None:
 
     resume_pdf_path = st.text_input(
         "Tailored resume PDF path",
+        value=st.session_state.get("last_pdf_path", ""),
         help="Path to the tailored resume PDF you generated for this job on the main page.",
         key="apply_resume_pdf_path",
     )
+    stored_match = st.session_state.get("last_resume_match_score")
+    default_match = float(stored_match) * 100 if isinstance(stored_match, float) and stored_match <= 1 else float(stored_match or 0.0)
     resume_match_score = st.number_input(
         "Resume Match score for this job (from the main page's report)",
         min_value=0.0,
         max_value=100.0,
-        value=0.0,
+        value=min(default_match, 100.0),
         key="apply_resume_match_score",
     )
     st.caption(
-        "Not auto-populated yet — copy this from the Resume Match score shown on the "
-        "main page's report for this job. Leaving it at 0 will record a literal 0% "
-        "in the permanent audit trail, not 'unknown'."
+        "Pre-filled from the last tailoring run when available. 0 means unknown, not a real 0% match."
     )
 
     preview_clicked = st.button("Preview (dry run — never submits)")
     confirm_understanding = st.checkbox(
         "I understand this may attempt a real submission to the employer's ATS."
     )
+    preview_done = bool(st.session_state.get("apply_preview_done"))
     submit_clicked = st.button(
         "Confirm & Submit (real submission for Assist/Auto)",
-        disabled=not confirm_understanding,
+        disabled=not (confirm_understanding and preview_done),
     )
+    if not preview_done:
+        st.caption("Run Preview first. Confirm & Submit stays disabled until a preview succeeds.")
 
     profile = st.session_state.get(CAREER_PROFILE_SESSION_KEY)
 
@@ -127,6 +131,7 @@ def _render_submit_tab(service: JobService) -> None:
                 dry_run=dry_run,
             )
             if dry_run:
+                st.session_state["apply_preview_done"] = True
                 st.success(f"Preview generated. Application ID: {result.application_id}")
             else:
                 st.success(

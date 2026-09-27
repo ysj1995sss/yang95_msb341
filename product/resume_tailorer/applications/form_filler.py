@@ -8,6 +8,7 @@ explicitly out of scope for this MVP (see plan Task 3 design notes).
 """
 
 import copy
+import re
 from dataclasses import replace
 from typing import List
 
@@ -76,11 +77,24 @@ class FormFiller:
         "name") from falling through to a generic name-fallback pattern
         when its own specific resolver has nothing to offer.
         """
-        name_lower = field_name.lower()
+        name_lower = field_name.lower().replace("-", "_")
+        if "phone" in name_lower.split("_") and "screen" in name_lower.split("_"):
+            return ""
+        if "reloc" in name_lower:
+            return ""
         for patterns, resolver in _FIELD_ALIASES:
-            if any(pattern in name_lower for pattern in patterns):
+            if any(FormFiller._alias_matches(name_lower, pattern) for pattern in patterns):
                 try:
                     return resolver(profile)
                 except (IndexError, AttributeError):
                     return ""
         return ""
+
+    @staticmethod
+    def _alias_matches(name_lower: str, pattern: str) -> bool:
+        """Match an alias as a field token, not a random substring."""
+        collapsed_name = name_lower.replace("_", "")
+        collapsed_pat = pattern.replace("_", "")
+        if name_lower == pattern or collapsed_name == collapsed_pat:
+            return True
+        return bool(re.search(r"(?:^|_)" + re.escape(pattern) + r"(?:_|$)", name_lower))

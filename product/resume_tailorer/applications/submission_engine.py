@@ -108,12 +108,19 @@ class SubmissionEngine:
         fields = parser.parse_form(form_html)
         filled_fields = self.form_filler.fill_form(fields, profile)
 
-        unfilled_required = [f for f in filled_fields if f.required and not f.prefilled]
+        if mode != ApplicationMode.MANUAL and not filled_fields:
+            raise ValueError(
+                "could not parse any application fields from the ATS page; "
+                "refusing to submit an empty form."
+            )
 
-        if mode == ApplicationMode.AUTO and not dry_run and unfilled_required:
+        unfilled_required = [f for f in filled_fields if f.required and not f.prefilled]
+        real_submit = (not dry_run) and (mode != ApplicationMode.MANUAL)
+
+        if real_submit and unfilled_required:
             names = ", ".join(f.field_name for f in unfilled_required)
             raise ValueError(
-                f"Auto mode cannot submit: required field(s) [{names}] could not be "
+                f"Cannot submit: required field(s) [{names}] could not be "
                 f"confidently filled from the candidate profile."
             )
 
@@ -165,6 +172,7 @@ class SubmissionEngine:
     def _fetch_form_html(self, form_url: str) -> str:
         """Fetch the raw HTML of the application form page."""
         response = requests.get(form_url, timeout=10)
+        response.raise_for_status()
         return response.text
 
     def _submit_to_platform(self, form_url: str, form_fields: dict) -> str:

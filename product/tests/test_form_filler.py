@@ -181,3 +181,19 @@ def test_fill_form_fullname_no_underscore_variant_resolves_to_full_name():
     filled = filler.fill_form(fields, _make_profile())
     assert filled[0].value == "Jane Doe"
     assert filled[0].prefilled is True
+
+
+def test_phone_alias_does_not_fill_phone_screen():
+    filler = FormFiller()
+    fields = [FormField(field_name="phone_screen", field_type="text")]
+    filled = filler.fill_form(fields, _make_profile())
+    assert filled[0].prefilled is False
+    assert filled[0].value == ""
+
+
+def test_location_alias_does_not_fill_relocation():
+    filler = FormFiller()
+    fields = [FormField(field_name="relocation", field_type="text")]
+    filled = filler.fill_form(fields, _make_profile())
+    assert filled[0].prefilled is False
+    assert filled[0].value == ""

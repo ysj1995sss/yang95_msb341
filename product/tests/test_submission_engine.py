@@ -191,6 +191,61 @@ def test_submission_recorded_before_real_submit_attempted(temp_db):
     assert temp_db.get_current_status(submissions[0].application_id) is None
 
 
+def test_auto_mode_refuses_empty_parsed_form(temp_db):
+    """Zero parsed fields means the ATS page was not actually parsed — never POST {}."""
+    engine = SubmissionEngine(temp_db)
+    with patch.object(engine, "_fetch_form_html", return_value="<html><body>Sign in to apply</body></html>"):
+        with patch.object(engine, "_submit_to_platform") as mock_submit:
+            with pytest.raises(ValueError, match="could not parse"):
+                engine.apply_for_job(
+                    job_posting_id="greenhouse_1",
+                    form_url="https://boards.greenhouse.io/company/jobs/1",
+                    ats_platform="greenhouse",
+                    profile=_make_profile(),
+                    resume_pdf_path="/tmp/resume.pdf",
+                    candidate_fit_score=85.0,
+                    resume_match_score=90.0,
+                    mode=ApplicationMode.AUTO,
+                    dry_run=False,
+                )
+    mock_submit.assert_not_called()
+
+
+def test_assist_mode_refuses_unfilled_required_on_real_submit(temp_db):
+    """Assist real-submit must stop when a required field could not be filled."""
+    engine = SubmissionEngine(temp_db)
+    form_with_unfillable_required = """
+    <form>
+        <input type="text" name="first_name" required>
+        <input type="text" name="obscure_custom_question" required>
+    </form>
+    """
+    with patch.object(engine, "_fetch_form_html", return_value=form_with_unfillable_required):
+        with patch.object(engine, "_submit_to_platform") as mock_submit:
+            with pytest.raises(ValueError, match="required"):
+                engine.apply_for_job(
+                    job_posting_id="greenhouse_1",
+                    form_url="https://boards.greenhouse.io/company/jobs/1",
+                    ats_platform="greenhouse",
+                    profile=_make_profile(),
+                    resume_pdf_path="/tmp/resume.pdf",
+                    candidate_fit_score=85.0,
+                    resume_match_score=90.0,
+                    mode=ApplicationMode.ASSIST,
+                    dry_run=False,
+                )
+    mock_submit.assert_not_called()
+
+
+def test_fetch_form_html_raises_on_http_error(temp_db):
+    engine = SubmissionEngine(temp_db)
+    mock_response = MagicMock()
+    mock_response.raise_for_status.side_effect = Exception("404")
+    with patch("resume_tailorer.applications.submission_engine.requests.get", return_value=mock_response):
+        with pytest.raises(Exception, match="404"):
+            engine._fetch_form_html("https://boards.greenhouse.io/company/jobs/1")
+
+
 def test_submission_captures_filled_fields(temp_db):
     engine = SubmissionEngine(temp_db)
     with patch.object(engine, "_fetch_form_html", return_value=SAMPLE_FORM_HTML):
