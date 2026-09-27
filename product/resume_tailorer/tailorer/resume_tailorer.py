@@ -553,6 +553,12 @@ FORBIDDEN TRANSFORMATIONS:
 - Adding skills or tools not in the profile
 - Exaggerating or misrepresenting experience
 
+BULLET LENGTH -- keep each rewritten bullet close to its original length (roughly within 30%
+character count), not just the section/page count overall. A bullet that grows substantially
+risks wrapping onto an extra line and pushing content off the page even when the total word
+count still fits the target length. If a rephrase needs more room than that, cut a
+less job-relevant word or phrase from the SAME bullet rather than letting it run long.
+
 You will be shown:
 1. The Career Truth Profile (source of all truth)
 2. Job requirements and skills needed
@@ -719,6 +725,10 @@ FORBIDDEN TRANSFORMATIONS:
 - Changing dates, employers, or titles
 - Adding technologies or tools not in the Career Truth Profile
 - Exaggerating or misrepresenting experience
+
+BULLET LENGTH -- keep each rewritten bullet close to its current length (roughly within 30%
+character count). A bullet that grows substantially risks wrapping onto an extra line and
+pushing content off the page even when the resume's overall word count still fits.
 
 OUTPUT FORMAT - CRITICAL:
 Output ONLY the resume content itself. Do NOT include any notes, explanations,

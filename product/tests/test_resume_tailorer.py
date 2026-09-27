@@ -165,6 +165,15 @@ def test_resume_tailorer_system_prompt_has_semantic_preservation_guidance():
     assert "STRONGEST VERIFIED EVIDENCE" in system_prompt
 
 
+def test_resume_tailorer_system_prompt_has_length_guidance():
+    """Steps 10-15 audit Phase F: the freeform path had zero bullet-length
+    guidance at generation time -- length was purely a post-hoc rendering
+    concern (font/margin adjustment). Pins the added guidance."""
+    tailorer = ResumeTailorer(llm=MagicMock())
+    assert "BULLET LENGTH" in tailorer._build_system_prompt()
+    assert "BULLET LENGTH" in tailorer._build_refinement_system_prompt()
+
+
 def test_resume_tailorer_tailor_method_calls_llm(sample_profile, sample_job_analysis, sample_gap_report):
     """Test that tailor method calls LLMClient.complete (mocked)."""
     llm = MagicMock(spec=LLMClient)

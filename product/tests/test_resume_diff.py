@@ -293,8 +293,11 @@ def test_reorder_plus_reword_plus_new_bullet_not_scrambled():
 
 def test_skill_with_version_suffix_not_flagged_as_fabrication():
     """Profile skill 'Python 3.11' covers a bullet mentioning 'Python'."""
-    profile = _profile(["Built a data pipeline"], skills=["Python 3.11"])
-    tailored_text = "- Built a data pipeline in Python\n"
+    # Long enough original that adding " in Python" stays under the length-
+    # growth warning threshold -- this test is specifically about
+    # fabrication-flagging, kept separate from the length check.
+    profile = _profile(["Built and maintained a scalable data pipeline for the team"], skills=["Python 3.11"])
+    tailored_text = "- Built and maintained a scalable data pipeline for the team in Python\n"
 
     report = DiffGenerator().generate_diff(profile, tailored_text)
 
@@ -348,9 +351,16 @@ def test_real_go_usage_is_still_flagged():
 
 def test_fabrication_warning_deduplicated_across_bullets():
     """The same fabricated tech is reported once, not once per bullet."""
-    profile = _profile(["Built a system", "Ran deployments"], skills=["Python"])
+    # Long enough originals that adding " on Kubernetes" stays under the
+    # length-growth warning threshold -- this test is specifically about
+    # fabrication-dedup, kept separate from the length check.
+    profile = _profile(
+        ["Built a distributed system for internal tooling", "Ran deployments across every environment safely"],
+        skills=["Python"],
+    )
     tailored_text = (
-        "- Built a system on Kubernetes\n- Ran deployments on Kubernetes\n"
+        "- Built a distributed system for internal tooling on Kubernetes\n"
+        "- Ran deployments across every environment safely on Kubernetes\n"
     )
 
     report = DiffGenerator().generate_diff(profile, tailored_text)
@@ -421,3 +431,29 @@ class TestFreeformPathSemanticDriftParity:
         report = DiffGenerator().generate_diff(profile, tailored_text)
 
         assert any("semantic drift" in issue.lower() for issue in report.issues)
+
+
+class TestFreeformPathLengthControl:
+    """Steps 10-15 audit Phase F: bullet_length_delta existed but had no
+    caller anywhere in the codebase before this -- length was purely a
+    post-hoc PDFGenerator rendering concern for the freeform path, with no
+    bullet-level signal at tailoring/validation time at all."""
+
+    def test_bullet_that_grows_past_the_threshold_is_flagged(self):
+        profile = _profile(["Managed a small team"])
+        tailored_text = (
+            "- Managed a cross-functional team of engineers, designers, and product "
+            "managers across three continents\n"
+        )
+
+        report = DiffGenerator().generate_diff(profile, tailored_text)
+
+        assert any("longer" in issue.lower() and "wrap" in issue.lower() for issue in report.issues)
+
+    def test_bullet_within_the_threshold_is_not_flagged(self):
+        profile = _profile(["Managed a cross-functional team of engineers and designers"])
+        tailored_text = "- Led a cross-functional team of engineers and designers\n"
+
+        report = DiffGenerator().generate_diff(profile, tailored_text)
+
+        assert not any("wrap onto an extra line" in issue for issue in report.issues)

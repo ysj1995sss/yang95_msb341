@@ -7,6 +7,7 @@ import re
 
 from .models import CareerTruthProfile
 from .analyzers.competency_map import COMPETENCY_EVIDENCE_PATTERNS
+from .utils.length_check import bullet_length_delta
 from .utils.stemming import stem as _stem
 
 
@@ -86,6 +87,12 @@ class DiffGenerator:
         # flagged in two different bullets is reported once, not once per
         # bullet -- the cross-bullet dedup _check_fabrication_risks used to
         # provide.
+        # Step 15 (length control): the freeform/PDF path previously had no
+        # bullet-level length signal at all -- length was a purely post-hoc
+        # rendering concern (PDFGenerator adjusting font/margins to fit).
+        # bullet_length_delta already existed for exactly this purpose but
+        # had no caller anywhere in the codebase; wired in here using the
+        # same per-pair loop as the checks above.
         issues: List[str] = []
         seen_issues: set = set()
         already_reported: set = set()
@@ -94,6 +101,10 @@ class DiffGenerator:
                 continue  # pure removal -- nothing new to check
             if change.original:
                 for issue in self.check_semantic_drift(change.original, change.tailored):
+                    if issue not in seen_issues:
+                        issues.append(issue)
+                        seen_issues.add(issue)
+                for issue in bullet_length_delta(change.original, change.tailored):
                     if issue not in seen_issues:
                         issues.append(issue)
                         seen_issues.add(issue)
