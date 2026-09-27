@@ -4,6 +4,7 @@ from resume_tailorer.analyzers import JobAnalyzer
 from resume_tailorer.analyzers.job_analyzer import JobAnalysis
 from resume_tailorer.analyzers.resume_benchmarker import ResumeBenchmarker, ResumeBenchmark
 from resume_tailorer.analyzers.gap_analyzer import (
+    EvidenceLevel,
     GapAnalyzer,
     GapCategory,
     GapItem,
@@ -286,3 +287,84 @@ class TestFindUnsupportedClaims:
         )
         tailored_text = "Used Kubernetes and Docker extensively."
         assert find_unsupported_claims(gap_report, tailored_text) == []
+
+
+class TestEvidenceLevelAndHardGate:
+    """Steps 10-15 audit Phase C: GapItem.evidence_level and .hard_gate,
+    and GapReport.unmet_hard_gates -- run through the real JobAnalyzer so
+    the Step 10 -> Step 12 wiring itself is covered, not just the fields
+    in isolation."""
+
+    def _profile_missing_everything(self) -> CareerTruthProfile:
+        return CareerTruthProfile(
+            contact_info={}, education=[],
+            work_experience=[
+                WorkExperience(
+                    employer="Acme", title="Analyst", dates="2023-2024",
+                    responsibilities=["Wrote internal memos"], accomplishments=[],
+                )
+            ],
+            skills=[], tools=[], certifications=[], accomplishments=[],
+        )
+
+    def _jd(self) -> str:
+        return """
+        Required Qualifications:
+        - 8+ years of enterprise sales experience
+        - Strong stakeholder management skills
+
+        Preferred:
+        - Prior agency experience
+        """
+
+    def test_unmet_hard_gate_surfaces_in_the_rollup(self):
+        job_analysis = JobAnalyzer().analyze(self._jd())
+        profile = self._profile_missing_everything()
+        report = GapAnalyzer().analyze(profile, job_analysis, _empty_benchmark())
+
+        unmet_texts = [item.requirement for item in report.unmet_hard_gates]
+        assert "8+ years of enterprise sales experience" in unmet_texts
+
+    def test_non_hard_gate_requirement_never_appears_in_the_rollup(self):
+        job_analysis = JobAnalyzer().analyze(self._jd())
+        profile = self._profile_missing_everything()
+        report = GapAnalyzer().analyze(profile, job_analysis, _empty_benchmark())
+
+        unmet_texts = [item.requirement for item in report.unmet_hard_gates]
+        assert "Strong stakeholder management skills" not in unmet_texts
+
+    def test_preferred_qualification_is_never_in_the_hard_gate_rollup(self):
+        """A Preferred item that's truly missing is Category D, not E --
+        unmet_hard_gates only ever contains Category E items."""
+        job_analysis = JobAnalyzer().analyze(self._jd())
+        profile = self._profile_missing_everything()
+        report = GapAnalyzer().analyze(profile, job_analysis, _empty_benchmark())
+
+        agency_item = next(i for i in report.items if "agency" in i.requirement.lower())
+        assert agency_item.category == GapCategory.D
+        assert agency_item not in report.unmet_hard_gates
+
+    def test_direct_verified_evidence_gets_the_direct_verified_level(self):
+        job_analysis = _job_requiring("Python programming experience")
+        profile = CareerTruthProfile(
+            contact_info={}, education=[],
+            work_experience=[
+                WorkExperience(
+                    employer="Acme", title="Engineer", dates="2023-2024",
+                    responsibilities=["Python programming experience with Django"],
+                    accomplishments=[],
+                )
+            ],
+            skills=[], tools=[], certifications=[], accomplishments=[],
+        )
+        report = GapAnalyzer().analyze(profile, job_analysis, _empty_benchmark())
+        item = next(i for i in report.items if i.requirement == "Python programming experience")
+        assert item.evidence_level == EvidenceLevel.DIRECT_VERIFIED
+
+    def test_unsupported_requirement_gets_the_unsupported_level(self):
+        job_analysis = _job_requiring("Fluency in Mandarin")
+        profile = self._profile_missing_everything()
+        report = GapAnalyzer().analyze(profile, job_analysis, _empty_benchmark())
+        item = next(i for i in report.items if i.requirement == "Fluency in Mandarin")
+        assert item.evidence_level == EvidenceLevel.UNSUPPORTED
+        assert item.category == GapCategory.E

@@ -22,6 +22,22 @@ class GapCategory(Enum):
     D = "Needs confirmation"  # System isn't sure; needs human review
     E = "Truly missing"  # Candidate doesn't have this experience; never add
 
+class EvidenceLevel(Enum):
+    """
+    How strong the underlying evidence is, independent of GapCategory --
+    the audit-prompt's 5-tier model. Related to, but not the same axis as,
+    category: Category D and E both mean "not on the resume," but D means
+    "preferred, no evidence found" and E means "required, no evidence
+    found" -- both are UNSUPPORTED here, and the required/preferred
+    distinction lives on the category and on JobRequirement.hard_gate,
+    not on evidence_level.
+    """
+    DIRECT_VERIFIED = "Direct verified"
+    STRONGLY_SUPPORTED = "Strongly supported"
+    TRANSFERABLE_PARTIAL = "Transferable/partial"
+    WEAK_INFERRED = "Weak/inferred"
+    UNSUPPORTED = "Unsupported"
+
 @dataclass
 class GapItem:
     """A single gap between resume and job requirement."""
@@ -29,12 +45,23 @@ class GapItem:
     category: GapCategory
     reason: str  # Why it was classified this way
     candidate_evidence: str = ""  # What in the resume supports this classification
+    evidence_level: EvidenceLevel = EvidenceLevel.UNSUPPORTED
+    hard_gate: bool = False  # True if failing this alone is an honest, un-rewritable gap
 
 @dataclass
 class GapReport:
     """Full gap analysis."""
     items: list[GapItem]
     summary: str  # High-level summary of gaps
+
+    @property
+    def unmet_hard_gates(self) -> list[GapItem]:
+        """Truly-missing items that are also hard eligibility gates (e.g. a
+        required years-of-experience threshold) -- the honest, un-rewritable
+        gaps a caller should surface distinctly from the general gap list,
+        per the audit prompt's 'a missing hard requirement remains an
+        honest gap; do not let one hard gap erase every other match'."""
+        return [item for item in self.items if item.hard_gate and item.category == GapCategory.E]
 
 class GapAnalyzer:
     """
@@ -48,6 +75,20 @@ class GapAnalyzer:
 
         # Analyze required qualifications
         for qual in job_analysis.required_qualifications:
+            item = self._classify_requirement(qual, profile, job_analysis)
+            if item:
+                items.append(item)
+
+        # Analyze preferred qualifications. Found live (2026-09-27): this
+        # loop didn't exist before -- _classify_requirement has always had
+        # a branch for "requirement in job_analysis.preferred_qualifications
+        # -> Category D", but nothing ever called it with a preferred-only
+        # string (only required_qualifications/skills_required/
+        # tools_required were iterated), so Category D was structurally
+        # unreachable in normal operation. A preferred item with real
+        # evidence still correctly resolves to A/B/C here, same as a
+        # required one -- D only fires when truly no evidence is found.
+        for qual in job_analysis.preferred_qualifications:
             item = self._classify_requirement(qual, profile, job_analysis)
             if item:
                 items.append(item)
@@ -86,6 +127,7 @@ class GapAnalyzer:
         """
         profile_text = self._profile_to_text(profile)
         match_ratio = qualification_match_ratio(profile_text, requirement)
+        hard_gate = self._is_hard_gate(requirement, job_analysis)
 
         education_evidence = find_education_status_evidence(requirement, profile)
         if education_evidence:
@@ -94,6 +136,8 @@ class GapAnalyzer:
                 category=GapCategory.A,
                 reason="Matches an in-progress or completed degree in the candidate's education history",
                 candidate_evidence=education_evidence,
+                evidence_level=EvidenceLevel.DIRECT_VERIFIED,
+                hard_gate=hard_gate,
             )
 
         if match_ratio >= 0.7:
@@ -102,6 +146,8 @@ class GapAnalyzer:
                 category=GapCategory.A,
                 reason="Found in work experience, skills, or title",
                 candidate_evidence=self._evidence_snippet(profile, requirement),
+                evidence_level=EvidenceLevel.DIRECT_VERIFIED,
+                hard_gate=hard_gate,
             )
 
         transferable = find_transferable_evidence(requirement, extract_profile_sentences(profile))
@@ -114,6 +160,8 @@ class GapAnalyzer:
                     f"'{transferable.competency}', even though the resume doesn't use that exact phrase"
                 ),
                 candidate_evidence=transferable.evidence_text,
+                evidence_level=EvidenceLevel.STRONGLY_SUPPORTED,
+                hard_gate=hard_gate,
             )
 
         if 0.4 <= match_ratio < 0.7:
@@ -122,6 +170,8 @@ class GapAnalyzer:
                 category=GapCategory.C,
                 reason="Current resume content could be rephrased to match JD language",
                 candidate_evidence=self._evidence_snippet(profile, requirement),
+                evidence_level=EvidenceLevel.TRANSFERABLE_PARTIAL,
+                hard_gate=hard_gate,
             )
 
         if transferable:  # partial-level match
@@ -133,6 +183,8 @@ class GapAnalyzer:
                     "existing wording can be adjusted to surface this, not invented"
                 ),
                 candidate_evidence=transferable.evidence_text,
+                evidence_level=EvidenceLevel.TRANSFERABLE_PARTIAL,
+                hard_gate=hard_gate,
             )
 
         if self._has_implicit_experience(requirement, profile):
@@ -141,6 +193,8 @@ class GapAnalyzer:
                 category=GapCategory.B,
                 reason="Candidate likely has this from background but not explicitly stated",
                 candidate_evidence="Based on related experience",
+                evidence_level=EvidenceLevel.WEAK_INFERRED,
+                hard_gate=hard_gate,
             )
 
         if requirement in job_analysis.preferred_qualifications:
@@ -149,6 +203,8 @@ class GapAnalyzer:
                 category=GapCategory.D,
                 reason="Preferred qualification; system needs confirmation if candidate has this",
                 candidate_evidence="Unknown",
+                evidence_level=EvidenceLevel.UNSUPPORTED,
+                hard_gate=False,  # a preferred item is never a hard gate by definition
             )
 
         return GapItem(
@@ -156,6 +212,20 @@ class GapAnalyzer:
             category=GapCategory.E,
             reason="Not found in profile; do not add",
             candidate_evidence="None",
+            evidence_level=EvidenceLevel.UNSUPPORTED,
+            hard_gate=hard_gate,
+        )
+
+    @staticmethod
+    def _is_hard_gate(requirement: str, job_analysis: JobAnalysis) -> bool:
+        """Look up whether this requirement was flagged as a hard
+        eligibility gate during Step 10 extraction (JobAnalyzer). Matched
+        by exact text since structured_requirements is built directly from
+        the same required_qualifications/preferred_qualifications strings
+        this method receives."""
+        return any(
+            r.text == requirement and r.hard_gate
+            for r in job_analysis.structured_requirements
         )
 
     def _classify_skill(self, skill: str, profile: CareerTruthProfile, benchmark: ResumeBenchmark) -> GapItem:
