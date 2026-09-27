@@ -24,7 +24,7 @@ import streamlit as st
 from resume_tailorer.applications.models import ApplicationMode, ApplicationStatus
 from resume_tailorer.applications.status_tracker import StatusTracker
 from resume_tailorer.applications.ui_helpers import format_application_for_display
-from resume_tailorer.job_search.job_service import JobService
+from resume_tailorer.job_search.job_service import JobService, PENDING_TAILOR_JOB_KEY
 
 # Session-state key used to look up the user's CareerTruthProfile, if one has
 # been built elsewhere in the app (e.g. via the resume tailorer flow).
@@ -57,13 +57,15 @@ def _get_job_service() -> JobService:
 def _render_disclosure_banner() -> None:
     st.warning(
         "⚠️ Assist and Auto modes attempt a real submission to the employer's ATS only when you "
-        "click Confirm & Submit below — nothing is ever submitted automatically. However, the "
-        "current real-submission implementation is a minimal MVP: it does not yet attach your "
-        "resume PDF to the submission and has not been tested against real Greenhouse/Lever/Ashby "
-        "forms, so it is likely to fail or produce an incomplete application on a real platform "
-        "today. Manual mode (which gives you the application link to complete yourself) is the "
-        "only mode currently recommended for actually applying. Preview (dry run) is always safe "
-        "and never contacts the real form."
+        "click Confirm & Submit below — nothing is ever submitted automatically. That said: "
+        "verified live against a real Greenhouse posting, Assist/Auto mode does not currently "
+        "work — real application forms are rendered by JavaScript, and almost none of their "
+        "fields exist in the plain HTML this tool reads (see decisions/012 for the full finding). "
+        "It also does not yet attach your resume PDF to a real submission. **Manual mode is the "
+        "only mode that reliably works today** — it gives you the application link to complete "
+        "yourself and tracks it on the dashboard below. Preview (dry run) is always safe and "
+        "never contacts the real form, and will honestly report when a posting's form can't be "
+        "read automatically."
     )
 
 
@@ -71,9 +73,15 @@ def _render_submit_tab(service: JobService) -> None:
     """Render the application submission form and handle Preview/Confirm & Submit."""
     st.subheader("Submit an Application")
 
+    # Pre-filled from the Job Search page's "Apply" handoff when available
+    # (same pending_tailor_job snapshot used to prefill the Resume Tailorer),
+    # so the job ID doesn't have to be copy-pasted by hand.
+    pending_job = st.session_state.get(PENDING_TAILOR_JOB_KEY) or {}
     job_id_input = st.text_input(
         "Job ID",
-        help="The job ID from the Job Search dashboard (format: source_sourceid).",
+        value=pending_job.get("job_id", ""),
+        help="The job ID from the Job Search dashboard (format: source_sourceid). "
+        "Pre-filled automatically after clicking Apply on the Job Search page.",
         key="apply_job_id",
     )
 
@@ -147,6 +155,19 @@ def _render_submit_tab(service: JobService) -> None:
                     "This job wasn't sourced from a supported ATS (Greenhouse, Lever, or Ashby), "
                     "so it can't be auto-filled or auto-submitted here. Apply directly on the "
                     "job's own site instead."
+                )
+            elif "could not parse any application fields" in str(exc):
+                # Found live (2026-09-27): real Greenhouse application forms are
+                # rendered by client-side JavaScript with almost no named HTML
+                # form elements in the raw page -- this isn't a rare edge case,
+                # it's the normal shape of a real posting today. Tell the user
+                # what's actually true instead of surfacing a generic parse error.
+                st.error(
+                    "This posting's application form could not be read automatically -- it's "
+                    "likely rendered by JavaScript, which Assist/Auto mode can't see through "
+                    "today. This is a known limitation (see decisions/012), not specific to this "
+                    "job. Use **Manual mode** to get the application link and apply directly on "
+                    "the employer's site."
                 )
             else:
                 st.error(f"Could not submit: {exc}")
