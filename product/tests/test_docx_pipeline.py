@@ -7,7 +7,7 @@ from docx.oxml.ns import qn
 
 from resume_tailorer.models import CareerTruthProfile, WorkExperience
 from resume_tailorer.analyzers import JobAnalyzer
-from resume_tailorer.analyzers.gap_analyzer import GapCategory, GapItem, GapReport
+from resume_tailorer.analyzers.gap_analyzer import EvidenceLevel, GapCategory, GapItem, GapReport
 from resume_tailorer.tailorer.docx_bullet_tailorer import BulletEdit, BulletTailoringResult
 from resume_tailorer.docx_export.converter import DocxConversionUnavailable
 from resume_tailorer.docx_export import pipeline as pipeline_module
@@ -75,7 +75,7 @@ def sample_gap_report():
 class _StubBulletTailorer:
     """Returns every bullet unchanged except paragraph 5 ('Did a thing')."""
 
-    def tailor_bullets(self, bullets, profile, job_analysis, gap_report):
+    def tailor_bullets(self, bullets, profile, job_analysis, gap_report, max_repair_attempts=1, priority_focus=None):
         edits = []
         for b in bullets:
             if b.text == "Did a thing":
@@ -244,3 +244,81 @@ def test_job_count_mismatch_falls_back_without_crashing(
         bullet_tailorer=_StubBulletTailorer(),
     )
     assert "WORK EXPERIENCE" in result.tailored_scoring_text
+
+
+class _SecondPassBulletTailorer:
+    """First call: shallow, changes nothing. Second call (only reached if
+    priority_focus is passed): makes a genuine additional change to 'Did
+    a thing', proving the resume-wide optimization pass actually improves
+    the result rather than just re-running the same prompt."""
+
+    def __init__(self):
+        self.calls = []
+
+    def tailor_bullets(self, bullets, profile, job_analysis, gap_report, max_repair_attempts=1, priority_focus=None):
+        self.calls.append(priority_focus)
+        if priority_focus is None:
+            edits = [BulletEdit(b.paragraph_index, b.text, b.text, changed=False) for b in bullets]
+            return BulletTailoringResult(edits=edits, warnings=[])
+        edits = []
+        for b in bullets:
+            if b.text == "Did a thing":
+                edits.append(BulletEdit(b.paragraph_index, b.text, "Did a thing, using SQL for analysis", changed=True))
+            else:
+                edits.append(BulletEdit(b.paragraph_index, b.text, b.text, changed=False))
+        return BulletTailoringResult(edits=edits, warnings=[])
+
+
+def test_resume_wide_optimization_pass_runs_when_shallow_and_strong_evidence_remains(
+    tmp_path, monkeypatch, sample_profile, sample_job_analysis
+):
+    """Steps 10-15 audit Phase E: a shallow first pass with strong,
+    unrepresented evidence should trigger a bounded second pass that
+    surfaces it -- Step 14's resume-wide optimization question answered
+    concretely, not left as a warning nobody acts on."""
+    monkeypatch.setattr(
+        pipeline_module, "convert_docx_to_pdf",
+        lambda src, dst: (_ for _ in ()).throw(DocxConversionUnavailable("skip")),
+    )
+    gap_report = GapReport(
+        items=[
+            GapItem(
+                requirement=f"Requirement {i}", category=GapCategory.B,
+                reason="strong evidence", candidate_evidence="x",
+                evidence_level=EvidenceLevel.STRONGLY_SUPPORTED,
+            )
+            for i in range(5)
+        ],
+        summary="5 gaps found",
+    )
+    original_bytes = _sample_docx_bytes(tmp_path)
+    tailorer = _SecondPassBulletTailorer()
+    result = run_docx_tailoring_pipeline(
+        original_bytes, sample_profile, sample_job_analysis, gap_report,
+        bullet_tailorer=tailorer,
+    )
+
+    assert len(tailorer.calls) == 2, "expected exactly one first pass and one optimization pass"
+    assert tailorer.calls[0] is None
+    assert tailorer.calls[1] is not None and len(tailorer.calls[1]) > 0
+    assert result.bullets_changed == 1
+    assert "Did a thing, using SQL for analysis" in result.tailored_scoring_text
+    assert any("optimization pass" in w.lower() for w in result.bullet_warnings)
+
+
+def test_resume_wide_optimization_pass_does_not_run_when_nothing_to_focus_on(
+    tmp_path, monkeypatch, sample_profile, sample_job_analysis, sample_gap_report
+):
+    """sample_gap_report has zero items -- shallow can't even be true, so
+    the optimization pass must not fire a second LLM call at all."""
+    monkeypatch.setattr(
+        pipeline_module, "convert_docx_to_pdf",
+        lambda src, dst: (_ for _ in ()).throw(DocxConversionUnavailable("skip")),
+    )
+    original_bytes = _sample_docx_bytes(tmp_path)
+    tailorer = _SecondPassBulletTailorer()
+    run_docx_tailoring_pipeline(
+        original_bytes, sample_profile, sample_job_analysis, sample_gap_report,
+        bullet_tailorer=tailorer,
+    )
+    assert len(tailorer.calls) == 1

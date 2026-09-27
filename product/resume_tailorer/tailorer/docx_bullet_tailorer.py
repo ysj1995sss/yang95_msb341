@@ -89,6 +89,7 @@ class DocxBulletTailorer:
         job_analysis: JobAnalysis,
         gap_report: GapReport,
         max_repair_attempts: int = 1,
+        priority_focus: list[str] | None = None,
     ) -> BulletTailoringResult:
         """
         max_repair_attempts: when a proposed rewrite is rejected by a
@@ -101,13 +102,22 @@ class DocxBulletTailorer:
         cost/latency against a backend already known to be flaky; a
         second repair attempt rarely does much better than the first once
         the model has already been told exactly why it failed.
+
+        priority_focus: optional list of specific requirement/evidence
+        text to call out explicitly (Step 14's resume-wide optimization
+        pass -- see run_docx_tailoring_pipeline). Used for a SECOND call
+        on bullets a first pass already looked at once and judged not
+        worth touching, so the model needs a stronger, specific nudge
+        toward requirements that still have strong unused evidence,
+        rather than the same general instructions producing the same
+        result again.
         """
         if not bullets:
             return BulletTailoringResult(edits=[], warnings=[])
 
         by_index = {b.paragraph_index: b for b in bullets}
         system_prompt = self._build_system_prompt()
-        user_prompt = self._build_user_prompt(bullets, profile, job_analysis, gap_report)
+        user_prompt = self._build_user_prompt(bullets, profile, job_analysis, gap_report, priority_focus)
         raw = self.llm.complete(system_prompt, user_prompt, max_tokens=2000)
         result = self._parse_and_validate(raw, bullets, profile)
 
@@ -284,10 +294,25 @@ When "change" is "keep", "new_text" is ignored -- the original text is always us
         profile: CareerTruthProfile,
         job_analysis: JobAnalysis,
         gap_report: GapReport,
+        priority_focus: list[str] | None = None,
     ) -> str:
         profile_str = profile_to_string(profile)
         gaps_str = format_gaps(gap_report)
         job_requirements = format_job_requirements(job_analysis)
+
+        priority_block = ""
+        if priority_focus:
+            focus_lines = "\n".join(f"- {item}" for item in priority_focus)
+            priority_block = f"""
+
+RESUME-WIDE OPTIMIZATION PASS -- READ THIS FIRST:
+A previous tailoring pass already ran on this resume. The requirements below have STRONG
+verified evidence somewhere in this resume but are STILL not well represented after that pass.
+Look specifically for a bullet that could surface each one (rephrase, reprioritize wording, or
+a competency-section swap) before falling back to your general judgment on the rest:
+{focus_lines}
+Do not force an edit where none is safe -- if no bullet can honestly surface one of these
+without violating SEMANTIC PRESERVATION or inventing something, leave it unaddressed."""
 
         bullet_items = []
         for bullet in bullets:
@@ -320,6 +345,7 @@ JOB REQUIREMENTS:
 
 GAP ANALYSIS (What to fill and what to ignore):
 {gaps_str}
+{priority_block}
 
 EXISTING BULLETS (edit ONLY these, in place -- one JSON object per "paragraph_index"):
 {bullets_json}

@@ -455,3 +455,33 @@ class TestParseAndValidate:
         result = tailorer.tailor_bullets([], sample_profile, sample_job_analysis, sample_gap_report)
         assert result.edits == []
         llm.complete.assert_not_called()
+
+
+class TestPriorityFocus:
+    """Steps 10-15 audit Phase E: the resume-wide optimization pass calls
+    tailor_bullets a second time with priority_focus set, on bullets a
+    first pass already judged not worth touching -- the prompt needs a
+    specific, visible nudge toward what's still missing, not just the
+    same general instructions again."""
+
+    def test_priority_focus_appears_in_the_prompt_sent_to_the_llm(
+        self, sample_bullets, sample_profile, sample_job_analysis, sample_gap_report
+    ):
+        response = json.dumps([{"paragraph_index": pi, "change": "keep", "new_text": ""} for pi in (3, 10, 11)])
+        tailorer = _tailorer_with_response(response)
+        tailorer.tailor_bullets(
+            sample_bullets, sample_profile, sample_job_analysis, sample_gap_report,
+            priority_focus=["cross-functional stakeholder management"],
+        )
+        user_prompt = tailorer.llm.complete.call_args_list[0].args[1]
+        assert "RESUME-WIDE OPTIMIZATION PASS" in user_prompt
+        assert "cross-functional stakeholder management" in user_prompt
+
+    def test_no_priority_focus_omits_the_block_entirely(
+        self, sample_bullets, sample_profile, sample_job_analysis, sample_gap_report
+    ):
+        response = json.dumps([{"paragraph_index": pi, "change": "keep", "new_text": ""} for pi in (3, 10, 11)])
+        tailorer = _tailorer_with_response(response)
+        tailorer.tailor_bullets(sample_bullets, sample_profile, sample_job_analysis, sample_gap_report)
+        user_prompt = tailorer.llm.complete.call_args_list[0].args[1]
+        assert "RESUME-WIDE OPTIMIZATION PASS" not in user_prompt

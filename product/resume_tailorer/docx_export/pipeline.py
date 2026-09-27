@@ -9,19 +9,20 @@ checker keep working unchanged on DOCX output too.
 import io
 import os
 import tempfile
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 
 from docx import Document
 
 from resume_tailorer.models import CareerTruthProfile
 from resume_tailorer.analyzers.job_analyzer import JobAnalysis
-from resume_tailorer.analyzers.gap_analyzer import GapCategory, GapReport
-from resume_tailorer.parsers.docx_structure import extract_docx_structure, DocxStructure
-from resume_tailorer.tailorer.docx_bullet_tailorer import DocxBulletTailorer, BulletEdit
+from resume_tailorer.analyzers.gap_analyzer import EvidenceLevel, GapCategory, GapReport
+from resume_tailorer.parsers.docx_structure import Bullet, extract_docx_structure, DocxStructure
+from resume_tailorer.tailorer.docx_bullet_tailorer import DocxBulletTailorer, BulletEdit, BulletTailoringResult
 from resume_tailorer.tailorer.resume_tailorer import _job_header_lines
 from resume_tailorer.docx_export.splicer import splice_bullets_into_docx, save_docx
 from resume_tailorer.docx_export.converter import convert_docx_to_pdf, DocxConversionUnavailable
 from resume_tailorer.pdf.validator import PDFValidator
+from resume_tailorer.utils.scoring import qualification_match_ratio
 
 
 @dataclass
@@ -80,6 +81,42 @@ def run_docx_tailoring_pipeline(
     # post-hoc would always return empty and was dead weight.
     warnings = list(tailoring_result.warnings)
 
+    bullets_changed = sum(1 for e in tailoring_result.edits if e.changed)
+    addressable_requirements = sum(
+        1 for item in gap_report.items if item.category in (GapCategory.A, GapCategory.B, GapCategory.C)
+    )
+    # Threshold is deliberately loose (a real signal, not a precise
+    # measurement): flag when there's clearly more addressable evidence
+    # than the model actually used. Found live (2026-09-23): a real
+    # tailoring pass changed exactly 2 bullets while 11 requirements had
+    # real evidence elsewhere in the resume -- this would have caught it.
+    tailoring_seems_shallow = bullets_changed <= 2 and addressable_requirements > 4
+
+    # Step 14's resume-wide optimization pass: when the first pass looks
+    # shallow, identify specific high-priority requirements that have
+    # STRONG evidence but are still missing from the tailored bullets, and
+    # run ONE bounded second pass focused specifically on those -- rather
+    # than either giving up after one shallow attempt, or looping
+    # unboundedly against an LLM backend already known to be flaky (same
+    # cost/latency reasoning as the bounded repair loop). Only runs when
+    # there's something concrete to focus on; a shallow pass with no
+    # remaining strong-evidence gaps just means the resume genuinely
+    # doesn't have much more truthful room to improve.
+    if tailoring_seems_shallow:
+        priority_focus = _underrepresented_strong_evidence(gap_report, tailoring_result, structure, bullets)
+        if priority_focus:
+            updated_bullets = _apply_edits_to_bullets(bullets, tailoring_result.edits)
+            second_pass = tailorer.tailor_bullets(
+                updated_bullets, profile, job_analysis, gap_report, priority_focus=priority_focus
+            )
+            tailoring_result = _merge_optimization_pass(tailoring_result, second_pass)
+            warnings = list(tailoring_result.warnings)
+            bullets_changed = sum(1 for e in tailoring_result.edits if e.changed)
+            warnings.append(
+                f"Resume-wide optimization pass ran: focused on {len(priority_focus)} "
+                "still-underrepresented requirement(s) with strong evidence."
+            )
+
     spliced_doc = splice_bullets_into_docx(doc, tailoring_result.edits)
 
     with tempfile.TemporaryDirectory() as tmp_dir:
@@ -130,14 +167,11 @@ def run_docx_tailoring_pipeline(
 
     bullets_changed = sum(1 for e in tailoring_result.edits if e.changed)
     bullets_rejected = sum(1 for e in tailoring_result.edits if e.rejected_reason)
-    addressable_requirements = sum(
-        1 for item in gap_report.items if item.category in (GapCategory.A, GapCategory.B, GapCategory.C)
-    )
-    # Threshold is deliberately loose (a real signal, not a precise
-    # measurement): flag when there's clearly more addressable evidence
-    # than the model actually used. Found live (2026-09-23): a real
-    # tailoring pass changed exactly 2 bullets while 11 requirements had
-    # real evidence elsewhere in the resume -- this would have caught it.
+    # Re-check after the possible optimization pass above -- if it
+    # genuinely helped, bullets_changed is now higher and this may no
+    # longer be shallow; if it found nothing safe to add (or never ran
+    # because there was nothing concrete to focus on), the warning still
+    # belongs in front of the user.
     tailoring_seems_shallow = bullets_changed <= 2 and addressable_requirements > 4
     if tailoring_seems_shallow:
         warnings.append(
@@ -163,6 +197,86 @@ def run_docx_tailoring_pipeline(
         addressable_requirements=addressable_requirements,
         tailoring_seems_shallow=tailoring_seems_shallow,
     )
+
+
+def _apply_edits_to_bullets(bullets: list[Bullet], edits: list[BulletEdit]) -> list[Bullet]:
+    """Build a bullets list reflecting a completed pass's outcome, so a
+    following pass builds ON TOP of those changes instead of re-evaluating
+    the untouched originals from scratch."""
+    edit_by_index = {e.paragraph_index: e for e in edits}
+    updated = []
+    for bullet in bullets:
+        edit = edit_by_index.get(bullet.paragraph_index)
+        if edit and edit.changed:
+            updated.append(replace(bullet, text=edit.new_text))
+        else:
+            updated.append(bullet)
+    return updated
+
+
+def _merge_optimization_pass(
+    first: BulletTailoringResult, second: BulletTailoringResult
+) -> BulletTailoringResult:
+    """Second-pass edits replace their bullet's outcome ONLY when the
+    second pass made a genuine additional change; original_text always
+    stays the true document original (from the first pass), never the
+    first pass's own already-tailored text second.original_text would
+    otherwise carry. A bullet the second pass tried and rejected still
+    surfaces that rejection reason even if the net outcome (unchanged) is
+    the same as after the first pass -- useful diagnostic signal."""
+    second_by_index = {e.paragraph_index: e for e in second.edits}
+    merged: list[BulletEdit] = []
+    for first_edit in first.edits:
+        second_edit = second_by_index.get(first_edit.paragraph_index)
+        if second_edit and second_edit.changed:
+            merged.append(BulletEdit(
+                paragraph_index=first_edit.paragraph_index,
+                original_text=first_edit.original_text,
+                new_text=second_edit.new_text,
+                changed=True,
+                rejected_reason=second_edit.rejected_reason,
+            ))
+        elif second_edit and second_edit.rejected_reason and not first_edit.changed:
+            merged.append(replace(first_edit, rejected_reason=second_edit.rejected_reason))
+        else:
+            merged.append(first_edit)
+    return BulletTailoringResult(edits=merged, warnings=first.warnings + second.warnings)
+
+
+def _underrepresented_strong_evidence(
+    gap_report: GapReport,
+    tailoring_result: BulletTailoringResult,
+    structure: DocxStructure,
+    bullets: list[Bullet],
+) -> list[str]:
+    """
+    Step 14's resume-wide optimization question, answered concretely:
+    "which top JD requirements are strongly supported but still poorly
+    represented in the final resume?" Requirements with STRONG evidence
+    (Category B/C, evidence_level DIRECT_VERIFIED or STRONGLY_SUPPORTED)
+    that the first pass's tailored bullets still don't reasonably cover.
+    Bounded to 5 so the resulting prompt addition stays small and focused
+    rather than dumping the entire gap report back at the model.
+    """
+    edit_by_index = {e.paragraph_index: e for e in tailoring_result.edits}
+    current_text = " ".join(
+        edit_by_index[b.paragraph_index].new_text
+        if b.paragraph_index in edit_by_index and edit_by_index[b.paragraph_index].changed
+        else b.text
+        for b in bullets
+    )
+
+    candidates = [
+        item for item in gap_report.items
+        if item.category in (GapCategory.B, GapCategory.C)
+        and item.evidence_level in (EvidenceLevel.DIRECT_VERIFIED, EvidenceLevel.STRONGLY_SUPPORTED)
+    ]
+
+    focus = [
+        item.requirement for item in candidates
+        if qualification_match_ratio(current_text, item.requirement) < 0.4
+    ]
+    return focus[:5]
 
 
 def _synthesize_scoring_text(
