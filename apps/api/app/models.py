@@ -164,12 +164,17 @@ class TailoringRun(Base):
     user_id: Mapped[str] = mapped_column(String(36), ForeignKey("users.id"), index=True)
     original_resume_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
     original_resume_version: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    # Hash (not the full profile) so a run stays a compact pointer while
-    # still detecting "the profile has since changed" -- the immutable
-    # snapshot the run needs for deterministic regeneration is the request
-    # options/job snapshot/proposed changes captured below, all of which
-    # are independent of what the LIVE profile currently looks like.
+    # profile_snapshot_hash alone is NOT enough to keep this run's
+    # regeneration pinned to the profile it was proposed against -- it can
+    # detect drift but can't undo it. profile_snapshot_json is the actual
+    # immutable snapshot: regenerate() must load the profile from HERE,
+    # never from a fresh `db.get(Profile, user.id)` lookup, or a PUT
+    # /profile edit made between preview and regenerate silently
+    # re-validates/re-splices this run's already-reviewed changes against
+    # a different profile than the one that produced them (found in the
+    # Task 9/10 whole-branch review).
     profile_snapshot_hash: Mapped[str] = mapped_column(String(64))
+    profile_snapshot_json: Mapped[str] = mapped_column(Text, default="{}")
     job_snapshot_json: Mapped[str] = mapped_column(Text, default="{}")
     request_options_json: Mapped[str] = mapped_column(Text, default="{}")
     candidate_fit_json: Mapped[str] = mapped_column(Text, default="{}")

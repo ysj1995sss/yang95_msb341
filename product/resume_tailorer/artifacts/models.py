@@ -106,6 +106,14 @@ class ResumeChange:
     evidence_text: str
     validation_status: ValidationStatus
     disposition: ChangeDisposition = ChangeDisposition.PENDING
+    # Set only when disposition is MANUALLY_EDITED. Kept separate from
+    # proposed_text (which always stays the untouched AI proposal) so the
+    # freeform regeneration path can still find-and-replace the AI's
+    # original wording in the baseline text -- overwriting proposed_text
+    # in place, as an earlier version of this code did, destroyed that
+    # anchor and silently dropped every manual edit on regeneration (found
+    # live during Task 9 acceptance testing, spec 002 section 10).
+    manual_text: str | None = None
 
 
 @dataclass(frozen=True)

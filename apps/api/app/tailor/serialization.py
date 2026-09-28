@@ -50,6 +50,7 @@ def changes_from_json(data: list[dict]) -> list[ResumeChange]:
             evidence_text=item["evidence_text"],
             validation_status=ValidationStatus(item["validation_status"]),
             disposition=ChangeDisposition(item["disposition"]),
+            manual_text=item.get("manual_text"),
         )
         for item in data
     ]

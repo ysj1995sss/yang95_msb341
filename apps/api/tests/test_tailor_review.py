@@ -128,6 +128,80 @@ def test_reject_then_regenerate_restores_original(client):
     assert aws_change["original_text"] in result["tailored_resume"]
 
 
+def test_manually_edited_then_regenerate_applies_the_manual_text(client):
+    """Regression test for the bug found in the Task 9/10 whole-branch
+    review: an earlier version of review_changes stored the validated
+    manual text back onto proposed_text in place, which destroyed the AI's
+    original wording apply_dispositions_to_text needs to find-and-replace
+    in the run's baseline text -- silently dropping every manual edit on
+    regeneration instead of applying it."""
+    headers = auth_headers(client)
+    client.put("/profile", json=_PROFILE, headers=headers)
+    data = _preview(client, headers).json()
+    run_id = data["run_id"]
+
+    aws_change = next(
+        c for c in data["resume_changes"] if "AWS infrastructure" in c["proposed_text"]
+    )
+    # Must pass validate_manual_text's semantic-drift/fabrication/length
+    # checks against original_text ("Deployed services on AWS") -- no new
+    # ungrounded terms, no large length growth.
+    manual_text = "Deployed AWS services"
+
+    patch = client.patch(
+        f"/tailor/runs/{run_id}/changes",
+        headers=headers,
+        json={"changes": [{
+            "change_id": aws_change["change_id"], "disposition": "MANUALLY_EDITED", "manual_text": manual_text,
+        }]},
+    )
+    assert patch.status_code == 200
+    assert patch.json()["changes"][0]["manual_text"] == manual_text
+    # proposed_text must stay the AI's original proposal, not be overwritten.
+    assert patch.json()["changes"][0]["proposed_text"] == aws_change["proposed_text"]
+
+    regenerated = client.post(f"/tailor/runs/{run_id}/regenerate", headers=headers)
+    assert regenerated.status_code == 200
+    result = regenerated.json()
+
+    assert manual_text in result["tailored_resume"]
+    assert aws_change["proposed_text"] not in result["tailored_resume"]
+
+
+def test_review_validates_manual_edits_against_the_runs_profile_snapshot_not_the_live_profile(client):
+    """Regression test for a second bug found in the same review: review_changes
+    and regenerate used to re-fetch the user's CURRENT profile from the
+    database instead of the immutable snapshot captured when the run was
+    created. A PUT /profile edit made between preview and review must not
+    change what counts as a 'grounded' (non-fabricated) term for THIS run's
+    manual edits."""
+    headers = auth_headers(client)
+    client.put("/profile", json=_PROFILE, headers=headers)  # has tools=["Docker", "AWS"]
+    data = _preview(client, headers).json()
+    run_id = data["run_id"]
+
+    # Edit the LIVE profile to drop "Docker" entirely.
+    profile_without_docker = {**_PROFILE, "tools": ["AWS"]}
+    client.put("/profile", json=profile_without_docker, headers=headers)
+
+    aws_change = next(
+        c for c in data["resume_changes"] if "AWS infrastructure" in c["proposed_text"]
+    )
+    # "Docker" is only grounded in the ORIGINAL snapshot's tools list -- if
+    # review_changes incorrectly checked the live (now Docker-less) profile,
+    # this would fail with a fabrication-risk 400.
+    manual_text = "Deployed Docker services on AWS"
+
+    patch = client.patch(
+        f"/tailor/runs/{run_id}/changes",
+        headers=headers,
+        json={"changes": [{
+            "change_id": aws_change["change_id"], "disposition": "MANUALLY_EDITED", "manual_text": manual_text,
+        }]},
+    )
+    assert patch.status_code == 200
+
+
 def test_regenerate_rejects_unknown_change_id(client):
     headers = auth_headers(client)
     client.put("/profile", json=_PROFILE, headers=headers)

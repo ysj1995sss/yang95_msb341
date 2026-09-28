@@ -193,6 +193,7 @@ def _change_out(change: ResumeChange) -> ResumeChangeOut:
         category=str(change.category), reason=change.reason, job_requirement=change.job_requirement,
         evidence_source=change.evidence_source, evidence_text=change.evidence_text,
         validation_status=str(change.validation_status), disposition=str(change.disposition),
+        manual_text=change.manual_text,
     )
 
 
@@ -348,6 +349,7 @@ def tailor_preview(
         original_resume_id=resume_file.id if resume_file else None,
         original_resume_version=resume_file.version if resume_file else None,
         profile_snapshot_hash=profile_snapshot_hash(profile_dict),
+        profile_snapshot=profile_dict,
         job_snapshot=job_dict,
         request_options=body.model_dump(),
         candidate_fit=fit,
@@ -512,8 +514,11 @@ def review_changes(
     if duplicates:
         raise HTTPException(status_code=400, detail=f"Duplicate change_id(s): {sorted(duplicates)}")
 
-    profile_row = db.get(Profile, user.id)
-    profile = CareerTruthProfile.from_dict(json.loads(profile_row.data_json))
+    # Validate manual edits against the profile THIS RUN was proposed
+    # against, not whatever the live profile looks like now -- a PUT
+    # /profile edit between preview and review must not change what
+    # validate_manual_text considers grounded.
+    profile = CareerTruthProfile.from_dict(json.loads(run.profile_snapshot_json))
 
     updated: dict[str, ResumeChange] = {}
     for item in body.changes:
@@ -522,7 +527,7 @@ def review_changes(
         except ValueError:
             raise HTTPException(status_code=400, detail=f"Unknown disposition: {item.disposition}")
         change = by_id[item.change_id]
-        proposed_text = change.proposed_text
+        manual_text = None
         if disposition is ChangeDisposition.MANUALLY_EDITED:
             if not item.manual_text:
                 raise HTTPException(status_code=400, detail="manual_text is required for MANUALLY_EDITED")
@@ -532,13 +537,16 @@ def review_changes(
                     status_code=400,
                     detail={"message": "Manual edit failed safety checks", "issues": issues},
                 )
-            proposed_text = item.manual_text
+            manual_text = item.manual_text
         updated[item.change_id] = ResumeChange(
             change_id=change.change_id, section=change.section, source_index=change.source_index,
-            original_text=change.original_text, proposed_text=proposed_text, category=change.category,
+            # proposed_text is left as the AI's original proposal -- never
+            # overwritten -- so regenerate_freeform_artifact can still find
+            # it verbatim in the run's baseline text. See ResumeChange.manual_text.
+            original_text=change.original_text, proposed_text=change.proposed_text, category=change.category,
             reason=change.reason, job_requirement=change.job_requirement,
             evidence_source=change.evidence_source, evidence_text=change.evidence_text,
-            validation_status=change.validation_status, disposition=disposition,
+            validation_status=change.validation_status, disposition=disposition, manual_text=manual_text,
         )
 
     final_changes = [updated.get(c.change_id, c) for c in changes]
@@ -553,8 +561,12 @@ def regenerate(run_id: str, user: User = Depends(get_current_user), db: Session 
     if run is None:
         raise HTTPException(status_code=404, detail="Tailoring run not found")
 
-    profile_row = db.get(Profile, user.id)
-    profile_dict = json.loads(profile_row.data_json)
+    # Regenerate against the EXACT profile this run was proposed against
+    # (the immutable snapshot), never a fresh `db.get(Profile, ...)` --
+    # otherwise a PUT /profile edit made between preview and regenerate
+    # would silently re-splice/re-validate already-reviewed changes
+    # against a different profile than the one that produced them.
+    profile_dict = json.loads(run.profile_snapshot_json)
     profile = CareerTruthProfile.from_dict(profile_dict)
     job_dict = json.loads(run.job_snapshot_json)
     job_analysis, benchmark, gap_report, fit = _rebuild_job_context(db, profile, profile_dict, job_dict)

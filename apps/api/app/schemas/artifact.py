@@ -40,6 +40,7 @@ class ResumeChangeOut(BaseModel):
     evidence_text: str
     validation_status: str
     disposition: str
+    manual_text: str | None = None
 
 
 class ArtifactMetadataOut(BaseModel):

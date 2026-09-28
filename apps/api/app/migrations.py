@@ -24,6 +24,7 @@ _ADDITIVE_COLUMNS: list[tuple[str, str, str]] = [
     ("profiles", "verification_json", "TEXT DEFAULT '{}'"),
     ("tailoring_runs", "baseline_tailored_text", "TEXT DEFAULT ''"),
     ("tailoring_runs", "source_kind", "VARCHAR(8) DEFAULT 'PDF'"),
+    ("tailoring_runs", "profile_snapshot_json", "TEXT DEFAULT '{}'"),
 ]
 
 

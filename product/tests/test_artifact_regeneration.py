@@ -21,14 +21,14 @@ from resume_tailorer.models import CareerTruthProfile, WorkExperience
 
 def _change(
     change_id="c1", original_text="Original bullet", proposed_text="Proposed bullet",
-    disposition=ChangeDisposition.PENDING, source_index=None,
+    disposition=ChangeDisposition.PENDING, source_index=None, manual_text=None,
 ) -> ResumeChange:
     return ResumeChange(
         change_id=change_id, section="work_experience", source_index=source_index,
         original_text=original_text, proposed_text=proposed_text,
         category=ChangeCategory.REPHRASED, reason="test", job_requirement="",
         evidence_source="career_profile", evidence_text=original_text,
-        validation_status=ValidationStatus.PASS, disposition=disposition,
+        validation_status=ValidationStatus.PASS, disposition=disposition, manual_text=manual_text,
     )
 
 
@@ -49,9 +49,21 @@ class TestFinalTextForChange:
         change = _change(disposition=ChangeDisposition.RESTORED)
         assert final_text_for_change(change) == "Original bullet"
 
-    def test_manually_edited_uses_proposed_text_slot(self):
-        """The router stores the validated manual text back onto
-        proposed_text once accepted -- see review_changes."""
+    def test_manually_edited_uses_manual_text_not_proposed_text(self):
+        """manual_text is kept SEPARATE from proposed_text (which stays
+        the untouched AI proposal) -- see ResumeChange.manual_text's
+        docstring. An earlier version of this code overwrote proposed_text
+        directly, which broke apply_dispositions_to_text's find-and-replace
+        (it could no longer locate the AI's original wording in the
+        baseline text) and silently dropped every manual edit on
+        regeneration."""
+        change = _change(
+            proposed_text="AI's original proposal", manual_text="User's own edit",
+            disposition=ChangeDisposition.MANUALLY_EDITED,
+        )
+        assert final_text_for_change(change) == "User's own edit"
+
+    def test_manually_edited_without_manual_text_falls_back_to_proposed_text(self):
         change = _change(proposed_text="User's own edit", disposition=ChangeDisposition.MANUALLY_EDITED)
         assert final_text_for_change(change) == "User's own edit"
 
@@ -91,6 +103,22 @@ class TestApplyDispositionsToText:
         first = apply_dispositions_to_text(baseline, [change])
         second = apply_dispositions_to_text(first, [change])
         assert first == second == "- Deployed services on AWS"
+
+    def test_manually_edited_change_is_substituted_into_the_baseline(self):
+        """Regression test: apply_dispositions_to_text must find the AI's
+        ORIGINAL proposal (proposed_text, untouched) in the baseline text
+        and replace it with manual_text -- not compare proposed_text
+        against itself, which is what silently dropped every manual edit
+        before ResumeChange.manual_text was split out as its own field."""
+        baseline = "- Deployed cloud services on AWS infrastructure"
+        change = _change(
+            original_text="Deployed services on AWS",
+            proposed_text="Deployed cloud services on AWS infrastructure",
+            manual_text="Deployed cloud services on AWS infrastructure (reviewed by a human)",
+            disposition=ChangeDisposition.MANUALLY_EDITED,
+        )
+        result = apply_dispositions_to_text(baseline, [change])
+        assert result == "- Deployed cloud services on AWS infrastructure (reviewed by a human)"
 
 
 class TestValidateManualText:

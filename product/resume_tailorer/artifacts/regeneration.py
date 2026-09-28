@@ -31,10 +31,14 @@ def final_text_for_change(change: ResumeChange) -> str:
     this change, given its current disposition. REJECTED/RESTORED revert
     to what was already true before tailoring touched it; MANUALLY_EDITED
     uses the user's own (already-validated -- see validate_manual_text)
-    text, stored back onto proposed_text once accepted; PENDING/ACCEPTED
+    text, held in manual_text so proposed_text keeps carrying the
+    untouched AI proposal (apply_dispositions_to_text needs that exact
+    original wording to locate in the baseline text); PENDING/ACCEPTED
     keep the original AI-proposed rewrite."""
     if change.disposition in (ChangeDisposition.REJECTED, ChangeDisposition.RESTORED):
         return change.original_text
+    if change.disposition is ChangeDisposition.MANUALLY_EDITED and change.manual_text:
+        return change.manual_text
     return change.proposed_text
 
 

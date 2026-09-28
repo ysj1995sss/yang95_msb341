@@ -89,7 +89,7 @@ def _regenerate_from_current_dispositions() -> None:
     for change in changes:
         disposition_str = dispositions.get(change.change_id, str(change.disposition))
         disposition = ChangeDisposition(disposition_str)
-        proposed_text = change.proposed_text
+        manual_text = None
         if disposition == ChangeDisposition.MANUALLY_EDITED:
             manual_text = manual_texts.get(change.change_id, "").strip()
             if not manual_text:
@@ -102,8 +102,10 @@ def _regenerate_from_current_dispositions() -> None:
                     + "; ".join(issues)
                 )
                 return
-            proposed_text = manual_text
-        updated_changes.append(_replace(change, disposition=disposition, proposed_text=proposed_text))
+        # proposed_text is left as the AI's original proposal -- never
+        # overwritten -- so regenerate_freeform_artifact can still find it
+        # verbatim in the run's baseline text. See ResumeChange.manual_text.
+        updated_changes.append(_replace(change, disposition=disposition, manual_text=manual_text))
 
     profile = state["profile"]
     gap_report = state["gap_report"]
