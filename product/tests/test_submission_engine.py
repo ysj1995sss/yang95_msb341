@@ -7,7 +7,7 @@ from resume_tailorer.applications import submission_engine as submission_engine_
 from resume_tailorer.applications.ats_parsers.greenhouse_parser import GreenhouseParser
 from resume_tailorer.applications.submission_engine import SubmissionEngine
 from resume_tailorer.applications.database import ApplicationDatabase
-from resume_tailorer.applications.models import ApplicationMode, ApplicationStatus, ATSCapability
+from resume_tailorer.applications.models import ApplicationMode, ApplicationStatus, ATSCapability, SubmissionResult
 from resume_tailorer.models.career_profile import CareerTruthProfile, EducationEntry, WorkExperience
 
 
@@ -300,3 +300,156 @@ def test_submission_captures_filled_fields(temp_db):
         )
     assert result.form_fields_submitted.get("first_name") == "Jane"
     assert result.form_fields_submitted.get("email") == "jane@example.com"
+
+
+def test_snapshots_are_persisted_on_the_submission(temp_db):
+    engine = SubmissionEngine(temp_db)
+    with patch.object(engine, "_fetch_form_html", return_value=SAMPLE_FORM_HTML):
+        result = engine.apply_for_job(
+            job_posting_id="greenhouse_1",
+            form_url="https://boards.greenhouse.io/company/jobs/1",
+            ats_platform="greenhouse",
+            profile=_make_profile(),
+            resume_pdf_path="/tmp/resume.pdf",
+            candidate_fit_score=85.0,
+            resume_match_score=90.0,
+            mode=ApplicationMode.ASSIST,
+            job_snapshot={"company": "Acme", "title": "Engineer"},
+            candidate_fit_snapshot={"overall_fit": 85.0},
+            career_profile_version="hash-abc",
+        )
+    persisted = temp_db.get_submission(result.application_id)
+    assert persisted.job_snapshot == {"company": "Acme", "title": "Engineer"}
+    assert persisted.candidate_fit_snapshot == {"overall_fit": 85.0}
+    assert persisted.career_profile_version == "hash-abc"
+
+
+class TestIdempotencyInEngine:
+    def test_second_real_submit_for_the_same_job_is_refused(self, temp_db, monkeypatch):
+        monkeypatch.setitem(submission_engine_module._PARSER_MAP, "greenhouse", _CapableGreenhouseParser)
+        engine = SubmissionEngine(temp_db)
+        with patch.object(engine, "_submit_to_platform", return_value="CONF-1"):
+            with patch.object(engine, "_fetch_form_html", return_value=SAMPLE_FORM_HTML):
+                engine.apply_for_job(
+                    job_posting_id="greenhouse_1",
+                    form_url="https://boards.greenhouse.io/company/jobs/1",
+                    ats_platform="greenhouse",
+                    profile=_make_profile(),
+                    resume_pdf_path="/tmp/resume.pdf",
+                    candidate_fit_score=85.0,
+                    resume_match_score=90.0,
+                    mode=ApplicationMode.ASSIST,
+                    dry_run=False,
+                )
+                with pytest.raises(ValueError, match="already has a confirmed submission"):
+                    engine.apply_for_job(
+                        job_posting_id="greenhouse_1",
+                        form_url="https://boards.greenhouse.io/company/jobs/1",
+                        ats_platform="greenhouse",
+                        profile=_make_profile(),
+                        resume_pdf_path="/tmp/resume.pdf",
+                        candidate_fit_score=85.0,
+                        resume_match_score=90.0,
+                        mode=ApplicationMode.ASSIST,
+                        dry_run=False,
+                    )
+
+    def test_preview_after_a_real_submit_is_still_allowed(self, temp_db, monkeypatch):
+        """Idempotency blocks a second REAL submit, not harmless previews."""
+        monkeypatch.setitem(submission_engine_module._PARSER_MAP, "greenhouse", _CapableGreenhouseParser)
+        engine = SubmissionEngine(temp_db)
+        with patch.object(engine, "_submit_to_platform", return_value="CONF-1"):
+            with patch.object(engine, "_fetch_form_html", return_value=SAMPLE_FORM_HTML):
+                engine.apply_for_job(
+                    job_posting_id="greenhouse_1",
+                    form_url="https://boards.greenhouse.io/company/jobs/1",
+                    ats_platform="greenhouse",
+                    profile=_make_profile(),
+                    resume_pdf_path="/tmp/resume.pdf",
+                    candidate_fit_score=85.0,
+                    resume_match_score=90.0,
+                    mode=ApplicationMode.ASSIST,
+                    dry_run=False,
+                )
+                # dry_run=True (the default) must not be blocked by idempotency.
+                result = engine.apply_for_job(
+                    job_posting_id="greenhouse_1",
+                    form_url="https://boards.greenhouse.io/company/jobs/1",
+                    ats_platform="greenhouse",
+                    profile=_make_profile(),
+                    resume_pdf_path="/tmp/resume.pdf",
+                    candidate_fit_score=85.0,
+                    resume_match_score=90.0,
+                    mode=ApplicationMode.ASSIST,
+                )
+                assert result.application_id
+
+
+class TestSubmissionAttemptTracking:
+    def test_capability_block_records_a_failed_attempt(self, temp_db):
+        """A real-submit request against a platform without
+        final_submission is itself worth an audit trail entry."""
+        engine = SubmissionEngine(temp_db)
+        with patch.object(engine, "_fetch_form_html", return_value=SAMPLE_FORM_HTML):
+            with pytest.raises(ValueError, match="final_submission"):
+                engine.apply_for_job(
+                    job_posting_id="greenhouse_1",
+                    form_url="https://boards.greenhouse.io/company/jobs/1",
+                    ats_platform="greenhouse",
+                    profile=_make_profile(),
+                    resume_pdf_path="/tmp/resume.pdf",
+                    candidate_fit_score=85.0,
+                    resume_match_score=90.0,
+                    mode=ApplicationMode.ASSIST,
+                    dry_run=False,
+                )
+        submissions = temp_db.get_submissions_by_job("greenhouse_1")
+        attempts = temp_db.get_attempts_by_application(submissions[0].application_id)
+        assert len(attempts) == 1
+        assert attempts[0].result == SubmissionResult.FAILED
+        assert attempts[0].error_code == "UNSUPPORTED_PLATFORM"
+
+    def test_successful_real_submit_records_a_confirmed_attempt(self, temp_db, monkeypatch):
+        monkeypatch.setitem(submission_engine_module._PARSER_MAP, "greenhouse", _CapableGreenhouseParser)
+        engine = SubmissionEngine(temp_db)
+        with patch.object(engine, "_submit_to_platform", return_value="CONF-99"):
+            with patch.object(engine, "_fetch_form_html", return_value=SAMPLE_FORM_HTML):
+                result = engine.apply_for_job(
+                    job_posting_id="greenhouse_1",
+                    form_url="https://boards.greenhouse.io/company/jobs/1",
+                    ats_platform="greenhouse",
+                    profile=_make_profile(),
+                    resume_pdf_path="/tmp/resume.pdf",
+                    candidate_fit_score=85.0,
+                    resume_match_score=90.0,
+                    mode=ApplicationMode.ASSIST,
+                    dry_run=False,
+                )
+        attempts = temp_db.get_attempts_by_application(result.application_id)
+        assert len(attempts) == 1
+        assert attempts[0].result == SubmissionResult.CONFIRMED
+        assert attempts[0].confirmation_number == "CONF-99"
+
+    def test_failed_real_submit_records_a_failed_attempt_with_error(self, temp_db, monkeypatch):
+        monkeypatch.setitem(submission_engine_module._PARSER_MAP, "greenhouse", _CapableGreenhouseParser)
+        engine = SubmissionEngine(temp_db)
+        with patch.object(engine, "_submit_to_platform", side_effect=Exception("network error")):
+            with patch.object(engine, "_fetch_form_html", return_value=SAMPLE_FORM_HTML):
+                with pytest.raises(Exception, match="network error"):
+                    engine.apply_for_job(
+                        job_posting_id="greenhouse_1",
+                        form_url="https://boards.greenhouse.io/company/jobs/1",
+                        ats_platform="greenhouse",
+                        profile=_make_profile(),
+                        resume_pdf_path="/tmp/resume.pdf",
+                        candidate_fit_score=85.0,
+                        resume_match_score=90.0,
+                        mode=ApplicationMode.ASSIST,
+                        dry_run=False,
+                    )
+        submissions = temp_db.get_submissions_by_job("greenhouse_1")
+        attempts = temp_db.get_attempts_by_application(submissions[0].application_id)
+        assert len(attempts) == 1
+        assert attempts[0].result == SubmissionResult.FAILED
+        assert attempts[0].error_code == "SUBMIT_REQUEST_FAILED"
+        assert "network error" in attempts[0].error_message

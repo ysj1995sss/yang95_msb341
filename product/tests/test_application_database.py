@@ -1,3 +1,4 @@
+import sqlite3
 import pytest
 import tempfile
 import os
@@ -6,6 +7,9 @@ from resume_tailorer.applications.models import (
     ApplicationMode,
     ApplicationStatus,
     ApplicationSubmission,
+    StatusSource,
+    SubmissionAttempt,
+    SubmissionResult,
 )
 
 
@@ -151,3 +155,185 @@ def test_get_all_applications_returns_current_status_only(temp_db):
     all_apps = temp_db.get_all_applications()
     assert len(all_apps) == 1
     assert all_apps[0].status == ApplicationStatus.INTERVIEW
+
+
+def test_snapshot_and_next_action_fields_round_trip(temp_db):
+    sub = _make_submission()
+    sub.job_snapshot = {"company": "Acme", "title": "Engineer"}
+    sub.candidate_fit_snapshot = {"overall_fit": 82.0}
+    sub.career_profile_version = "hash-abc"
+    sub.answers_version = "v1"
+    app_id = temp_db.save_submission(sub)
+
+    persisted = temp_db.get_submission(app_id)
+    assert persisted.job_snapshot == {"company": "Acme", "title": "Engineer"}
+    assert persisted.candidate_fit_snapshot == {"overall_fit": 82.0}
+    assert persisted.career_profile_version == "hash-abc"
+    assert persisted.answers_version == "v1"
+    assert persisted.next_action == ""
+    assert persisted.next_action_due is None
+
+
+def test_update_next_action(temp_db):
+    app_id = temp_db.save_submission(_make_submission())
+    assert temp_db.update_next_action(app_id, "Prepare for interview", "2026-10-01", "Bring portfolio") is True
+
+    persisted = temp_db.get_submission(app_id)
+    assert persisted.next_action == "Prepare for interview"
+    assert persisted.next_action_due == "2026-10-01"
+    assert persisted.next_action_notes == "Bring portfolio"
+
+
+def test_update_next_action_unknown_application_returns_false(temp_db):
+    assert temp_db.update_next_action("not-a-real-id", "Follow up") is False
+
+
+def test_additive_migration_backfills_columns_on_a_pre_existing_database(tmp_path):
+    """A local applications.db created before these columns existed must
+    keep working -- never break on first query after an upgrade."""
+    path = str(tmp_path / "legacy.db")
+    conn = sqlite3.connect(path)
+    conn.execute("""
+        CREATE TABLE applications (
+            application_id TEXT PRIMARY KEY, job_posting_id TEXT NOT NULL, mode TEXT NOT NULL,
+            resume_used TEXT, candidate_fit_score REAL, resume_match_score REAL,
+            form_fields_submitted TEXT, custom_answers TEXT, ats_platform TEXT, form_url TEXT,
+            submission_timestamp TIMESTAMP, confirmation_number TEXT
+        )
+    """)
+    conn.execute("""
+        CREATE TABLE application_status_history (
+            id INTEGER PRIMARY KEY AUTOINCREMENT, application_id TEXT NOT NULL,
+            job_posting_id TEXT NOT NULL, status TEXT NOT NULL, notes TEXT,
+            status_updated TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+    conn.commit()
+    conn.close()
+
+    db = ApplicationDatabase(path)
+    db.create_tables()  # must not raise, and must backfill the new columns
+    app_id = db.save_submission(_make_submission())
+    assert db.get_submission(app_id).job_snapshot == {}
+    db.update_status(app_id, ApplicationStatus.APPLIED)
+    history = db.get_status_history(app_id)
+    assert history[0].source is StatusSource.USER
+    db.close()
+
+
+class TestSubmissionAttempts:
+    def test_record_and_retrieve_an_attempt(self, temp_db):
+        app_id = temp_db.save_submission(_make_submission())
+        attempt = SubmissionAttempt(
+            application_id=app_id, mode=ApplicationMode.ASSIST, provider="greenhouse",
+            result=SubmissionResult.STARTED,
+        )
+        attempt_id = temp_db.record_attempt(attempt)
+        assert attempt_id
+
+        attempts = temp_db.get_attempts_by_application(app_id)
+        assert len(attempts) == 1
+        assert attempts[0].result is SubmissionResult.STARTED
+        assert attempts[0].completed_at is None
+
+    def test_complete_attempt_updates_result_and_completion_time(self, temp_db):
+        app_id = temp_db.save_submission(_make_submission())
+        attempt_id = temp_db.record_attempt(SubmissionAttempt(
+            application_id=app_id, mode=ApplicationMode.ASSIST, provider="greenhouse",
+            result=SubmissionResult.STARTED,
+        ))
+        assert temp_db.complete_attempt(
+            attempt_id, SubmissionResult.FAILED, error_code="NETWORK_ERROR", error_message="timed out",
+        ) is True
+
+        attempts = temp_db.get_attempts_by_application(app_id)
+        assert attempts[0].result is SubmissionResult.FAILED
+        assert attempts[0].error_code == "NETWORK_ERROR"
+        assert attempts[0].completed_at is not None
+
+    def test_complete_unknown_attempt_returns_false(self, temp_db):
+        assert temp_db.complete_attempt("not-a-real-attempt", SubmissionResult.FAILED) is False
+
+    def test_multiple_attempts_recorded_in_order(self, temp_db):
+        app_id = temp_db.save_submission(_make_submission())
+        first = temp_db.record_attempt(SubmissionAttempt(
+            application_id=app_id, mode=ApplicationMode.ASSIST, provider="greenhouse",
+            result=SubmissionResult.FAILED,
+        ))
+        second = temp_db.record_attempt(SubmissionAttempt(
+            application_id=app_id, mode=ApplicationMode.ASSIST, provider="greenhouse",
+            result=SubmissionResult.CONFIRMED,
+        ))
+        attempts = temp_db.get_attempts_by_application(app_id)
+        assert [a.attempt_id for a in attempts] == [first, second]
+
+
+class TestIdempotency:
+    def test_no_confirmed_submission_by_default(self, temp_db):
+        temp_db.save_submission(_make_submission(job_posting_id="greenhouse_1"))
+        assert temp_db.has_confirmed_submission("greenhouse_1") is False
+
+    def test_confirmed_attempt_trips_the_idempotency_check(self, temp_db):
+        app_id = temp_db.save_submission(_make_submission(job_posting_id="greenhouse_1"))
+        temp_db.record_attempt(SubmissionAttempt(
+            application_id=app_id, mode=ApplicationMode.ASSIST, provider="greenhouse",
+            result=SubmissionResult.CONFIRMED,
+        ))
+        assert temp_db.has_confirmed_submission("greenhouse_1") is True
+
+    def test_manually_confirmed_attempt_also_trips_the_check(self, temp_db):
+        app_id = temp_db.save_submission(_make_submission(job_posting_id="greenhouse_1"))
+        temp_db.record_attempt(SubmissionAttempt(
+            application_id=app_id, mode=ApplicationMode.MANUAL, provider="greenhouse",
+            result=SubmissionResult.MANUALLY_CONFIRMED,
+        ))
+        assert temp_db.has_confirmed_submission("greenhouse_1") is True
+
+    def test_failed_attempt_does_not_trip_the_check(self, temp_db):
+        app_id = temp_db.save_submission(_make_submission(job_posting_id="greenhouse_1"))
+        temp_db.record_attempt(SubmissionAttempt(
+            application_id=app_id, mode=ApplicationMode.ASSIST, provider="greenhouse",
+            result=SubmissionResult.FAILED,
+        ))
+        assert temp_db.has_confirmed_submission("greenhouse_1") is False
+
+    def test_a_different_job_is_unaffected(self, temp_db):
+        app_id = temp_db.save_submission(_make_submission(job_posting_id="greenhouse_1"))
+        temp_db.record_attempt(SubmissionAttempt(
+            application_id=app_id, mode=ApplicationMode.ASSIST, provider="greenhouse",
+            result=SubmissionResult.CONFIRMED,
+        ))
+        assert temp_db.has_confirmed_submission("greenhouse_2") is False
+
+
+class TestStatusProvenance:
+    def test_status_defaults_to_user_source_with_no_confidence(self, temp_db):
+        app_id = temp_db.save_submission(_make_submission())
+        temp_db.update_status(app_id, ApplicationStatus.APPLIED)
+        history = temp_db.get_status_history(app_id)
+        assert history[0].source is StatusSource.USER
+        assert history[0].confidence is None
+        assert history[0].evidence == ""
+
+    def test_status_with_automated_source_and_confidence(self, temp_db):
+        app_id = temp_db.save_submission(_make_submission())
+        temp_db.update_status(
+            app_id, ApplicationStatus.INTERVIEW,
+            source=StatusSource.EMAIL_INTEGRATION, confidence="high",
+            evidence="Subject: Interview invitation from Acme",
+        )
+        history = temp_db.get_status_history(app_id)
+        assert history[0].source is StatusSource.EMAIL_INTEGRATION
+        assert history[0].confidence == "high"
+        assert "Interview invitation" in history[0].evidence
+
+    def test_user_correction_always_allowed_after_automated_entry(self, temp_db):
+        """A user must be able to override a low-confidence automated
+        status -- no automation entry can block a user's own correction."""
+        app_id = temp_db.save_submission(_make_submission())
+        temp_db.update_status(
+            app_id, ApplicationStatus.REJECTED,
+            source=StatusSource.EMAIL_INTEGRATION, confidence="low",
+        )
+        assert temp_db.update_status(app_id, ApplicationStatus.INTERVIEW, source=StatusSource.USER) is True
+        assert temp_db.get_current_status(app_id) == ApplicationStatus.INTERVIEW

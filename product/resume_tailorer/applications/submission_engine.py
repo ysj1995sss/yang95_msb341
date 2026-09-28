@@ -31,6 +31,8 @@ from resume_tailorer.applications.models import (
     ApplicationMode,
     ApplicationStatus,
     ApplicationSubmission,
+    SubmissionAttempt,
+    SubmissionResult,
 )
 from resume_tailorer.models.career_profile import CareerTruthProfile
 
@@ -56,6 +58,10 @@ class SubmissionEngine:
         resume_match_score: float,
         mode: ApplicationMode,
         dry_run: bool = True,
+        job_snapshot: Optional[dict] = None,
+        candidate_fit_snapshot: Optional[dict] = None,
+        career_profile_version: str = "",
+        answers_version: str = "",
     ) -> ApplicationSubmission:
         """
         Parse the job's application form, fill known fields, optionally
@@ -97,6 +103,16 @@ class SubmissionEngine:
         capability = parser.get_capability()
         real_submit = (not dry_run) and (mode != ApplicationMode.MANUAL)
 
+        # Idempotency (spec 003 Step 22): never silently submit the same
+        # job twice. Checked before any parsing/network work for a real
+        # submit -- a prior CONFIRMED or MANUALLY_CONFIRMED attempt for
+        # this job_posting_id is a hard stop, not a warning to click past.
+        if real_submit and self.db.has_confirmed_submission(job_posting_id):
+            raise ValueError(
+                f"This job ({job_posting_id}) already has a confirmed submission on record. "
+                f"Refusing to submit again -- check the dashboard if you believe this is wrong."
+            )
+
         form_html = self._fetch_form_html(form_url)
         fields = parser.parse_form(form_html)
         filled_fields = self.form_filler.fill_form(fields, profile)
@@ -116,22 +132,6 @@ class SubmissionEngine:
                 f"confidently filled from the candidate profile."
             )
 
-        # Hard safety gate (spec 003, decision 016): a real submission is
-        # never attempted against a platform that hasn't proven it can
-        # actually complete one -- checked as the LAST gate before any real
-        # network POST, so Assist mode's preview/validation value (parsing,
-        # prefilling, flagging unfilled required fields) still works even
-        # when real submission isn't supported yet. Failing loudly here
-        # instead of silently POSTing to a URL that was never a real
-        # form-submission endpoint, and treating any 2xx response as
-        # success, is the actual bug this gate fixes (decision 016).
-        if real_submit and not capability.final_submission:
-            raise ValueError(
-                f"Cannot submit for real: {ats_platform} does not currently support "
-                f"final_submission ({capability.notes or 'not yet verified working against a real form'}). "
-                f"Use Manual mode, or Preview (dry run) to see what would be attempted."
-            )
-
         form_fields_submitted = {f.field_name: f.value for f in filled_fields if f.prefilled}
 
         submission = ApplicationSubmission(
@@ -144,6 +144,10 @@ class SubmissionEngine:
             custom_answers={},  # AI-drafted custom answers are out of scope for this MVP
             ats_platform=ats_platform,
             form_url=form_url,
+            job_snapshot=job_snapshot or {},
+            candidate_fit_snapshot=candidate_fit_snapshot or {},
+            career_profile_version=career_profile_version,
+            answers_version=answers_version,
         )
 
         # Record the attempt BEFORE any real network call, so a failed
@@ -164,10 +168,45 @@ class SubmissionEngine:
             )
 
         if real_submit:
+            attempt_id = self.db.record_attempt(SubmissionAttempt(
+                application_id=application_id, mode=mode, provider=ats_platform,
+                result=SubmissionResult.STARTED,
+            ))
+
+            # Hard safety gate (spec 003, decision 016): a real submission is
+            # never attempted against a platform that hasn't proven it can
+            # actually complete one -- checked as the LAST gate before any
+            # real network POST, so Assist mode's preview/validation value
+            # (parsing, prefilling, flagging unfilled required fields)
+            # still works even when real submission isn't supported yet.
+            # Failing loudly here instead of silently POSTing to a URL that
+            # was never a real form-submission endpoint, and treating any
+            # 2xx response as success, is the actual bug this gate fixes.
+            if not capability.final_submission:
+                self.db.complete_attempt(
+                    attempt_id, SubmissionResult.FAILED,
+                    error_code="UNSUPPORTED_PLATFORM",
+                    error_message=f"{ats_platform} does not declare final_submission capability",
+                )
+                raise ValueError(
+                    f"Cannot submit for real: {ats_platform} does not currently support "
+                    f"final_submission ({capability.notes or 'not yet verified working against a real form'}). "
+                    f"Use Manual mode, or Preview (dry run) to see what would be attempted."
+                )
+
             self._respect_rate_limit()
-            confirmation_number = self._submit_to_platform(form_url, form_fields_submitted)
+            try:
+                confirmation_number = self._submit_to_platform(form_url, form_fields_submitted)
+            except Exception as exc:
+                self.db.complete_attempt(
+                    attempt_id, SubmissionResult.FAILED,
+                    error_code="SUBMIT_REQUEST_FAILED", error_message=str(exc),
+                )
+                raise
+
             submission.confirmation_number = confirmation_number
             self.db.update_confirmation_number(application_id, confirmation_number)
+            self.db.complete_attempt(attempt_id, SubmissionResult.CONFIRMED, confirmation_number=confirmation_number)
             self.db.update_status(
                 application_id,
                 ApplicationStatus.APPLIED,

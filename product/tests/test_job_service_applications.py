@@ -104,3 +104,32 @@ def test_apply_for_job_raises_for_unknown_job_id(job_service):
 
 def test_job_service_exposes_applications_db(job_service):
     assert job_service.applications_db is not None
+
+
+def test_apply_for_job_persists_job_and_fit_snapshots(job_service):
+    posting = JobPosting(
+        source=JobSource.GREENHOUSE,
+        source_id="3",
+        company="TestCo",
+        title="Engineer",
+        location="Remote",
+        description="desc",
+        url="https://boards.greenhouse.io/testco/jobs/3",
+        ats_platform="greenhouse",
+    )
+    job_id = job_service.db.save_job_posting(posting)
+
+    with patch("resume_tailorer.applications.submission_engine.SubmissionEngine._fetch_form_html", return_value=SAMPLE_FORM_HTML):
+        result = job_service.apply_for_job(
+            job_id=job_id,
+            profile=_make_profile(),
+            resume_pdf_path="/tmp/resume.pdf",
+            mode=ApplicationMode.ASSIST,
+            resume_match_score=88.0,
+        )
+
+    persisted = job_service.applications_db.get_submission(result.application_id)
+    assert persisted.job_snapshot["company"] == "TestCo"
+    assert persisted.job_snapshot["title"] == "Engineer"
+    assert "overall_fit" in persisted.candidate_fit_snapshot
+    assert persisted.career_profile_version  # non-empty hash

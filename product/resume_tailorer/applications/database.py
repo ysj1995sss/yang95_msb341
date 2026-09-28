@@ -11,7 +11,29 @@ from resume_tailorer.applications.models import (
     ApplicationStatus,
     ApplicationSubmission,
     ApplicationTracker,
+    StatusSource,
+    SubmissionAttempt,
+    SubmissionResult,
 )
+
+# (column, SQL definition) added after the original schema -- guarded by an
+# existence check in _apply_additive_migrations so a pre-existing local
+# applications.db file (created before this column set existed) still
+# works, matching apps/api/app/migrations.py's additive-only pattern.
+_ADDITIVE_APPLICATION_COLUMNS: list[tuple[str, str]] = [
+    ("job_snapshot", "TEXT DEFAULT '{}'"),
+    ("candidate_fit_snapshot", "TEXT DEFAULT '{}'"),
+    ("career_profile_version", "TEXT DEFAULT ''"),
+    ("answers_version", "TEXT DEFAULT ''"),
+    ("next_action", "TEXT DEFAULT ''"),
+    ("next_action_due", "TEXT DEFAULT NULL"),
+    ("next_action_notes", "TEXT DEFAULT ''"),
+]
+_ADDITIVE_STATUS_HISTORY_COLUMNS: list[tuple[str, str]] = [
+    ("source", "TEXT DEFAULT 'user'"),
+    ("confidence", "TEXT DEFAULT NULL"),
+    ("evidence", "TEXT DEFAULT ''"),
+]
 
 
 class ApplicationDatabase:
@@ -56,6 +78,38 @@ class ApplicationDatabase:
                 FOREIGN KEY(application_id) REFERENCES applications(application_id)
             )
         """)
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS submission_attempts (
+                attempt_id TEXT PRIMARY KEY,
+                application_id TEXT NOT NULL,
+                mode TEXT NOT NULL,
+                provider TEXT NOT NULL,
+                result TEXT NOT NULL,
+                started_at TIMESTAMP NOT NULL,
+                completed_at TIMESTAMP,
+                error_code TEXT,
+                error_message TEXT,
+                confirmation_number TEXT,
+                confirmation_url TEXT,
+                FOREIGN KEY(application_id) REFERENCES applications(application_id)
+            )
+        """)
+        self.conn.commit()
+        self._apply_additive_migrations()
+
+    def _apply_additive_migrations(self) -> None:
+        """Add columns to a pre-existing applications.db that predates
+        them -- never drops/renames/alters an existing column, matching
+        apps/api/app/migrations.py's established pattern for this repo."""
+        cursor = self.conn.cursor()
+        for table, columns in (
+            ("applications", _ADDITIVE_APPLICATION_COLUMNS),
+            ("application_status_history", _ADDITIVE_STATUS_HISTORY_COLUMNS),
+        ):
+            existing = {row["name"] for row in cursor.execute(f"PRAGMA table_info({table})")}
+            for column, definition in columns:
+                if column not in existing:
+                    cursor.execute(f"ALTER TABLE {table} ADD COLUMN {column} {definition}")
         self.conn.commit()
 
     def save_submission(self, submission: ApplicationSubmission) -> str:
@@ -73,8 +127,10 @@ class ApplicationDatabase:
                 application_id, job_posting_id, mode, resume_used,
                 candidate_fit_score, resume_match_score,
                 form_fields_submitted, custom_answers,
-                ats_platform, form_url, submission_timestamp, confirmation_number
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ats_platform, form_url, submission_timestamp, confirmation_number,
+                job_snapshot, candidate_fit_snapshot, career_profile_version, answers_version,
+                next_action, next_action_due, next_action_notes
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (
             application_id,
             submission.job_posting_id,
@@ -88,10 +144,109 @@ class ApplicationDatabase:
             submission.form_url,
             submission.submission_timestamp.isoformat(),
             submission.confirmation_number,
+            json.dumps(submission.job_snapshot),
+            json.dumps(submission.candidate_fit_snapshot),
+            submission.career_profile_version,
+            submission.answers_version,
+            submission.next_action,
+            submission.next_action_due,
+            submission.next_action_notes,
         ))
 
         self.conn.commit()
         return application_id
+
+    def has_confirmed_submission(self, job_posting_id: str) -> bool:
+        """Idempotency check (spec 003 Step 22): has this job already been
+        REALLY submitted (a confirmed or manually-confirmed attempt)?
+        Dry-run previews never create a submission_attempts row, so they
+        never trip this check -- only a real, evidenced submission does."""
+        cursor = self.conn.cursor()
+        cursor.execute("""
+            SELECT 1 FROM submission_attempts sa
+            JOIN applications a ON a.application_id = sa.application_id
+            WHERE a.job_posting_id = ? AND sa.result IN (?, ?)
+            LIMIT 1
+        """, (job_posting_id, SubmissionResult.CONFIRMED.value, SubmissionResult.MANUALLY_CONFIRMED.value))
+        return cursor.fetchone() is not None
+
+    def record_attempt(self, attempt: SubmissionAttempt) -> str:
+        """Record a submission attempt -- called for EVERY attempt,
+        including ones that fail before any real network call, so a failed
+        attempt always leaves an audit trail (spec 003 Step 22)."""
+        attempt_id = f"att_{uuid.uuid4().hex[:12]}"
+        cursor = self.conn.cursor()
+        cursor.execute("""
+            INSERT INTO submission_attempts (
+                attempt_id, application_id, mode, provider, result,
+                started_at, completed_at, error_code, error_message,
+                confirmation_number, confirmation_url
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, (
+            attempt_id,
+            attempt.application_id,
+            attempt.mode.value,
+            attempt.provider,
+            attempt.result.value,
+            attempt.started_at.isoformat(),
+            attempt.completed_at.isoformat() if attempt.completed_at else None,
+            attempt.error_code,
+            attempt.error_message,
+            attempt.confirmation_number,
+            attempt.confirmation_url,
+        ))
+        self.conn.commit()
+        return attempt_id
+
+    def complete_attempt(
+        self,
+        attempt_id: str,
+        result: SubmissionResult,
+        error_code: str = "",
+        error_message: str = "",
+        confirmation_number: str = "",
+        confirmation_url: str = "",
+    ) -> bool:
+        """Update an attempt with its final outcome."""
+        cursor = self.conn.cursor()
+        cursor.execute("SELECT attempt_id FROM submission_attempts WHERE attempt_id = ?", (attempt_id,))
+        if not cursor.fetchone():
+            return False
+        cursor.execute("""
+            UPDATE submission_attempts
+            SET result = ?, completed_at = ?, error_code = ?, error_message = ?,
+                confirmation_number = ?, confirmation_url = ?
+            WHERE attempt_id = ?
+        """, (
+            result.value, datetime.now().isoformat(), error_code, error_message,
+            confirmation_number, confirmation_url, attempt_id,
+        ))
+        self.conn.commit()
+        return True
+
+    def get_attempts_by_application(self, application_id: str) -> List[SubmissionAttempt]:
+        cursor = self.conn.cursor()
+        cursor.execute("""
+            SELECT * FROM submission_attempts WHERE application_id = ? ORDER BY started_at ASC
+        """, (application_id,))
+        return [self._row_to_attempt(row) for row in cursor.fetchall()]
+
+    def update_next_action(
+        self, application_id: str, next_action: str, next_action_due: Optional[str] = None, notes: str = ""
+    ) -> bool:
+        """Update an application's next-action fields. next_action_due is
+        only ever what the caller (a user-confirmed value) passes in --
+        this method never invents or defaults a due date."""
+        cursor = self.conn.cursor()
+        cursor.execute("SELECT application_id FROM applications WHERE application_id = ?", (application_id,))
+        if not cursor.fetchone():
+            return False
+        cursor.execute("""
+            UPDATE applications SET next_action = ?, next_action_due = ?, next_action_notes = ?
+            WHERE application_id = ?
+        """, (next_action, next_action_due, notes, application_id))
+        self.conn.commit()
+        return True
 
     def update_confirmation_number(self, application_id: str, confirmation_number: str) -> bool:
         """Write back a confirmation number after a successful real submission.
@@ -129,7 +284,19 @@ class ApplicationDatabase:
         cursor.execute("SELECT * FROM applications WHERE job_posting_id = ?", (job_posting_id,))
         return [self._row_to_submission(row) for row in cursor.fetchall()]
 
-    def update_status(self, application_id: str, status: ApplicationStatus, notes: str = "") -> bool:
+    def update_status(
+        self,
+        application_id: str,
+        status: ApplicationStatus,
+        notes: str = "",
+        source: StatusSource = StatusSource.USER,
+        confidence: Optional[str] = None,
+        evidence: str = "",
+    ) -> bool:
+        """Add a new status-history entry. Always allowed regardless of the
+        current status or its source -- a user correction must never be
+        blocked by a prior automated (or even prior user) entry (spec 003
+        Step 23's "user can always correct status")."""
         cursor = self.conn.cursor()
         cursor.execute("SELECT job_posting_id FROM applications WHERE application_id = ?", (application_id,))
         row = cursor.fetchone()
@@ -137,9 +304,10 @@ class ApplicationDatabase:
             return False
 
         cursor.execute("""
-            INSERT INTO application_status_history (application_id, job_posting_id, status, notes)
-            VALUES (?, ?, ?, ?)
-        """, (application_id, row["job_posting_id"], status.value, notes))
+            INSERT INTO application_status_history
+                (application_id, job_posting_id, status, notes, source, confidence, evidence)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+        """, (application_id, row["job_posting_id"], status.value, notes, source.value, confidence, evidence))
         self.conn.commit()
         return True
 
@@ -185,7 +353,13 @@ class ApplicationDatabase:
         """)
         return [self._row_to_tracker(row) for row in cursor.fetchall()]
 
+    @staticmethod
+    def _get(row, key, default=None):
+        """Safe column access for a row that may predate an additive column."""
+        return row[key] if key in row.keys() else default
+
     def _row_to_submission(self, row) -> ApplicationSubmission:
+        get = self._get
         return ApplicationSubmission(
             job_posting_id=row["job_posting_id"],
             mode=ApplicationMode(row["mode"]),
@@ -199,6 +373,13 @@ class ApplicationDatabase:
             submission_timestamp=datetime.fromisoformat(row["submission_timestamp"]),
             confirmation_number=row["confirmation_number"] or "",
             application_id=row["application_id"],
+            job_snapshot=json.loads(get(row, "job_snapshot") or "{}"),
+            candidate_fit_snapshot=json.loads(get(row, "candidate_fit_snapshot") or "{}"),
+            career_profile_version=get(row, "career_profile_version") or "",
+            answers_version=get(row, "answers_version") or "",
+            next_action=get(row, "next_action") or "",
+            next_action_due=get(row, "next_action_due"),
+            next_action_notes=get(row, "next_action_notes") or "",
         )
 
     def _row_to_tracker(self, row) -> ApplicationTracker:
@@ -209,6 +390,24 @@ class ApplicationDatabase:
             notes=row["notes"] or "",
             status_updated=datetime.fromisoformat(row["status_updated"])
             if isinstance(row["status_updated"], str) else row["status_updated"],
+            source=StatusSource(self._get(row, "source") or "user"),
+            confidence=self._get(row, "confidence"),
+            evidence=self._get(row, "evidence") or "",
+        )
+
+    def _row_to_attempt(self, row) -> SubmissionAttempt:
+        return SubmissionAttempt(
+            attempt_id=row["attempt_id"],
+            application_id=row["application_id"],
+            mode=ApplicationMode(row["mode"]),
+            provider=row["provider"],
+            result=SubmissionResult(row["result"]),
+            started_at=datetime.fromisoformat(row["started_at"]),
+            completed_at=datetime.fromisoformat(row["completed_at"]) if row["completed_at"] else None,
+            error_code=row["error_code"] or "",
+            error_message=row["error_message"] or "",
+            confirmation_number=row["confirmation_number"] or "",
+            confirmation_url=row["confirmation_url"] or "",
         )
 
     def close(self) -> None:

@@ -33,6 +33,19 @@ from resume_tailorer.applications.submission_engine import SubmissionEngine
 PENDING_TAILOR_JOB_KEY = "pending_tailor_job"
 
 
+def _profile_hash(profile: CareerTruthProfile) -> str:
+    """Content hash of a profile snapshot -- same canonical-JSON-then-sha256
+    approach as apps/api's profile_snapshot_hash (Steps 16-20), so an
+    application record can show whether the candidate's profile has
+    changed since they applied, without storing the whole profile twice."""
+    import dataclasses
+    import hashlib
+    import json
+
+    canonical = json.dumps(dataclasses.asdict(profile), sort_keys=True, default=str)
+    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+
+
 def build_tailor_snapshot(
     job: JobPosting,
     fit: FitResult | None = None,
@@ -294,7 +307,24 @@ class JobService:
         if job is None:
             raise ValueError(f"Job not found: {job_id}")
 
-        candidate_fit_score = self.fit_scorer.score_fit(profile, job)
+        fit_detail = self.fit_scorer.score_fit_detailed(profile, job)
+        candidate_fit_score = fit_detail.overall_fit if fit_detail.overall_fit is not None else 80.0
+
+        # Immutable snapshots (spec 003 Step 22): the dashboard must be able
+        # to show what was true when the user applied, not whatever the
+        # live job posting or fit score look like now -- same principle as
+        # TailoringRun.profile_snapshot_json from Steps 16-20.
+        job_snapshot = {
+            "company": job.company,
+            "title": job.title,
+            "location": job.location,
+            "url": job.url or "",
+            "ats_platform": job.ats_platform or "",
+            "work_mode": job.work_mode,
+            "salary_min": job.salary_min,
+            "salary_max": job.salary_max,
+        }
+        candidate_fit_snapshot = fit_detail.to_dict()
 
         return self._submission_engine.apply_for_job(
             job_posting_id=job_id,
@@ -302,6 +332,9 @@ class JobService:
             ats_platform=job.ats_platform.lower() if job.ats_platform else "",
             profile=profile,
             resume_pdf_path=resume_pdf_path,
+            job_snapshot=job_snapshot,
+            candidate_fit_snapshot=candidate_fit_snapshot,
+            career_profile_version=_profile_hash(profile),
             candidate_fit_score=candidate_fit_score,
             resume_match_score=resume_match_score,
             mode=mode,
