@@ -144,3 +144,72 @@ class UserJob(Base):
     fit_score: Mapped[float | None] = mapped_column(Float, nullable=True)
     fit_breakdown_json: Mapped[str] = mapped_column(Text, default="{}")
     last_scored_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
+
+class TailoringRun(Base):
+    """One preview/review lifecycle (Steps 16-20, spec 002 section 5.3).
+
+    Everything needed to deterministically regenerate an artifact from
+    scratch is snapshotted here at creation time -- the profile can change
+    after this run is created (a later PUT /profile edit), but this run's
+    own tailoring must always regenerate against the EXACT inputs it was
+    proposed against, not whatever the profile looks like now. Snapshot/
+    change/report/validation payloads are stored as canonical JSON text,
+    matching every other *_json column in this module (Profile, Goals,
+    Job, UserJob), rather than introducing a different storage shape here.
+    """
+
+    __tablename__ = "tailoring_runs"
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    user_id: Mapped[str] = mapped_column(String(36), ForeignKey("users.id"), index=True)
+    original_resume_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    original_resume_version: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # Hash (not the full profile) so a run stays a compact pointer while
+    # still detecting "the profile has since changed" -- the immutable
+    # snapshot the run needs for deterministic regeneration is the request
+    # options/job snapshot/proposed changes captured below, all of which
+    # are independent of what the LIVE profile currently looks like.
+    profile_snapshot_hash: Mapped[str] = mapped_column(String(64))
+    job_snapshot_json: Mapped[str] = mapped_column(Text, default="{}")
+    request_options_json: Mapped[str] = mapped_column(Text, default="{}")
+    candidate_fit_json: Mapped[str] = mapped_column(Text, default="{}")
+    proposed_changes_json: Mapped[str] = mapped_column(Text, default="[]")
+    reviewed_changes_json: Mapped[str] = mapped_column(Text, default="[]")
+    validation_json: Mapped[str] = mapped_column(Text, default="{}")
+    report_json: Mapped[str] = mapped_column(Text, default="{}")
+    # PROPOSED -> REVIEWED (a disposition changed) -> VALIDATED (PASS/WARNING
+    # regenerated) or FAILED (regeneration still FAILs).
+    state: Mapped[str] = mapped_column(String(16), default="PROPOSED")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+class TailoredArtifact(Base):
+    """One immutable generated file version for a TailoringRun. Regeneration
+    always creates a NEW row (see TailoringRunStore.save_artifact) --
+    existing rows are never updated or deleted, so a prior download link
+    keeps returning the exact bytes it always did. `user_id` is
+    denormalized from the owning run so ownership checks never need a
+    join, matching how ResumeFile/Profile already key directly on
+    user_id."""
+
+    __tablename__ = "tailored_artifacts"
+    __table_args__ = (
+        UniqueConstraint("run_id", "kind", "version", name="uq_run_kind_version"),
+    )
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    run_id: Mapped[str] = mapped_column(String(36), ForeignKey("tailoring_runs.id"), index=True)
+    user_id: Mapped[str] = mapped_column(String(36), ForeignKey("users.id"), index=True)
+    kind: Mapped[str] = mapped_column(String(8))  # "DOCX" | "PDF"
+    version: Mapped[int] = mapped_column(Integer)
+    filename: Mapped[str] = mapped_column(String(255))
+    mime_type: Mapped[str] = mapped_column(String(100))
+    data: Mapped[bytes] = mapped_column(LargeBinary)
+    sha256: Mapped[str] = mapped_column(String(64))
+    size_bytes: Mapped[int] = mapped_column(Integer)
+    validation_status: Mapped[str] = mapped_column(String(16))
+    # Points BACKWARD to the version this one replaces -- set once at
+    # creation, never written onto the older row afterward, so immutability
+    # holds for every artifact row for its entire lifetime.
+    supersedes_artifact_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
