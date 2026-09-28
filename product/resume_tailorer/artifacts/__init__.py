@@ -14,6 +14,8 @@ from .models import (
     ValidationFinding,
     ValidationStatus,
 )
+from .changes import build_freeform_changes
+from .report import build_final_report
 
 __all__ = [
     "ArtifactMetadata",
@@ -28,4 +30,6 @@ __all__ = [
     "ValidationFinding",
     "ValidationStatus",
     "safe_artifact_filename",
+    "build_final_report",
+    "build_freeform_changes",
 ]

@@ -17,6 +17,13 @@ from resume_tailorer.analyzers.resume_benchmarker import ResumeBenchmark
 from resume_tailorer.analyzers.gap_analyzer import GapReport, GapCategory, find_unsupported_claims
 from resume_tailorer.tailorer.optimizer import OptimizationResult
 from resume_tailorer.pdf.validator import ValidationResult
+from resume_tailorer.artifacts.models import (
+    ArtifactValidation,
+    FindingCategory,
+    FindingSeverity,
+    ValidationFinding,
+)
+from resume_tailorer.artifacts.report import build_final_report
 
 
 class ReportGenerator:
@@ -47,19 +54,29 @@ class ReportGenerator:
         qualifications_summary = self._build_qualifications_summary(gap_report)
         recommendations = self._build_recommendations(gap_report, optimization_result, pdf_validation)
         unsupported_claims_added = find_unsupported_claims(gap_report, optimization_result.tailored_resume)
+        shared_report = build_final_report(
+            candidate_fit=None,
+            fit_breakdown={},
+            original_alignment=original_score,
+            tailored_alignment=tailored_score,
+            gap_report=gap_report,
+            validation=self._as_artifact_validation(pdf_validation),
+            role=self._infer_job_title(job_analysis),
+            unsupported_claims=unsupported_claims_added,
+        )
 
         return {
             "candidate_name": profile.name,
-            "job_title": self._infer_job_title(job_analysis),
+            "job_title": shared_report.role,
             # Sprint 2 feature — not implemented in MVP.
-            "candidate_fit_score": None,
+            "candidate_fit_score": shared_report.candidate_fit,
             "candidate_fit_score_available": False,
-            "original_match_score": original_score,
+            "original_match_score": shared_report.original_alignment,
             # Spec 001 item 19: "unsupported claims added (should always be 0)".
             # A non-empty list here is a real signal to review, not necessarily
             # fabrication -- see find_unsupported_claims's docstring.
-            "unsupported_claims_added": unsupported_claims_added,
-            "tailored_match_score": tailored_score,
+            "unsupported_claims_added": list(shared_report.unsupported_claims),
+            "tailored_match_score": shared_report.tailored_alignment,
             "score_improvement": score_improvement,
             "optimization_iterations": optimization_result.iterations,
             "optimization_ceiling_reached": optimization_result.ceiling_reached,
@@ -73,6 +90,24 @@ class ReportGenerator:
             },
             "recommendations": recommendations,
         }
+
+    @staticmethod
+    def _as_artifact_validation(pdf_validation: ValidationResult) -> ArtifactValidation:
+        findings = [
+            ValidationFinding(
+                code="LEGACY_PDF_VALIDATION_ISSUE",
+                severity=FindingSeverity.FAIL,
+                category=FindingCategory.VISUAL,
+                message=str(issue),
+            )
+            for issue in pdf_validation.issues
+        ]
+        return ArtifactValidation.from_findings(
+            findings,
+            tailored_page_count=pdf_validation.page_count,
+            extracted_text=pdf_validation.extracted_text,
+            checks_run=("legacy_pdf_validation",),
+        )
 
     def _infer_job_title(self, job_analysis: JobAnalysis) -> str:
         """Best-effort job title placeholder; JobAnalysis has no title field."""

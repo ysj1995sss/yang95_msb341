@@ -18,6 +18,7 @@ class BulletChange:
     tailored: str
     change_type: str  # "rephrased", "reordered", "highlighted", "removed", "fabrication_risk"
     reasoning: str
+    similarity: float | None = None
 
 
 @dataclass
@@ -172,6 +173,7 @@ class DiffGenerator:
                             tailored=orig,
                             change_type="reordered",
                             reasoning="Bullet order changed to prioritize relevance to this job",
+                            similarity=1.0,
                         )
                     )
             return changes
@@ -197,15 +199,15 @@ class DiffGenerator:
                 pairs.sort(key=lambda p: p[0], reverse=True)
                 matched_orig = set()
                 matched_tail = set()
-                matches = []  # (oi, ti)
+                matches = []  # (similarity, oi, ti)
                 for ratio, oi, ti in pairs:
                     if oi in matched_orig or ti in matched_tail:
                         continue
                     matched_orig.add(oi)
                     matched_tail.add(ti)
-                    matches.append((oi, ti))
+                    matches.append((ratio, oi, ti))
 
-                for oi, ti in matches:
+                for ratio, oi, ti in matches:
                     orig_bullet = orig_slice[oi]
                     tail_bullet = tail_slice[ti]
                     if self._is_rephrased(orig_bullet, tail_bullet):
@@ -221,6 +223,7 @@ class DiffGenerator:
                             tailored=tail_bullet,
                             change_type=change_type,
                             reasoning=reasoning,
+                            similarity=ratio,
                         )
                     )
 
@@ -233,6 +236,7 @@ class DiffGenerator:
                                 tailored="",
                                 change_type="removed",
                                 reasoning="Deprioritized for space; not directly relevant to this job",
+                                similarity=0.0,
                             )
                         )
 
@@ -245,6 +249,7 @@ class DiffGenerator:
                                 tailored=tail_bullet,
                                 change_type="added",
                                 reasoning="NEW BULLET - should not occur if tailoring is truthful",
+                                similarity=0.0,
                             )
                         )
 
@@ -257,6 +262,7 @@ class DiffGenerator:
                             tailored="",
                             change_type="removed",
                             reasoning="Deprioritized for space; not directly relevant to this job",
+                            similarity=0.0,
                         )
                     )
 
@@ -269,6 +275,7 @@ class DiffGenerator:
                             tailored=tailored[idx],
                             change_type="added",
                             reasoning="NEW BULLET - should not occur if tailoring is truthful",
+                            similarity=0.0,
                         )
                     )
 
