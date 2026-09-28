@@ -4,7 +4,7 @@ import os
 
 from resume_tailorer.applications.status_tracker import StatusTracker
 from resume_tailorer.applications.database import ApplicationDatabase
-from resume_tailorer.applications.models import ApplicationMode, ApplicationStatus, ApplicationSubmission
+from resume_tailorer.applications.models import ApplicationMode, ApplicationStatus, ApplicationSubmission, StatusSource
 
 
 @pytest.fixture
@@ -114,3 +114,39 @@ def test_status_tracker_get_all_applications(temp_db):
 
     all_apps = tracker.get_all_applications()
     assert len(all_apps) == 2
+
+
+def test_status_tracker_update_status_defaults_to_user_source(temp_db):
+    app_id = _seed_application(temp_db)
+    tracker = StatusTracker(temp_db)
+    tracker.update_status(app_id, ApplicationStatus.APPLIED)
+    history = tracker.get_status_history(app_id)
+    assert history[-1].source is StatusSource.USER
+    assert history[-1].confidence is None
+
+
+def test_record_low_confidence_signal_uses_system_source(temp_db):
+    app_id = _seed_application(temp_db)
+    tracker = StatusTracker(temp_db)
+    tracker.record_low_confidence_signal(
+        app_id, ApplicationStatus.INTERVIEW, evidence="Subject: interview invite", confidence="high",
+    )
+    history = tracker.get_status_history(app_id)
+    assert history[-1].source is StatusSource.SYSTEM
+    assert history[-1].confidence == "high"
+    assert "interview invite" in history[-1].evidence
+
+
+def test_user_status_always_overrides_a_prior_automated_signal(temp_db):
+    """A low-confidence automated rejection signal must never block the
+    user's own correction (spec 003 Step 23)."""
+    app_id = _seed_application(temp_db)
+    tracker = StatusTracker(temp_db)
+    tracker.record_low_confidence_signal(
+        app_id, ApplicationStatus.REJECTED, evidence="ambiguous email", confidence="low",
+    )
+    assert tracker.get_current_status(app_id) == ApplicationStatus.REJECTED
+
+    assert tracker.update_status(app_id, ApplicationStatus.INTERVIEW) is True
+    assert tracker.get_current_status(app_id) == ApplicationStatus.INTERVIEW
+    assert tracker.get_status_history(app_id)[-1].source is StatusSource.USER
