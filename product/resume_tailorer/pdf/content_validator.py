@@ -6,6 +6,7 @@ import re
 import unicodedata
 
 from resume_tailorer.artifacts.models import (
+    ChangeCategory,
     ChangeDisposition,
     FindingCategory,
     FindingSeverity,
@@ -79,10 +80,23 @@ def validate_pdf_content(
             findings.append(_failure("EDUCATION_DATE_MISSING", FindingCategory.CONTENT,
                                      f"Education date is missing: {education.year}"))
 
+    # A bullet the user explicitly reviewed and let be condensed away
+    # (space-trimming, category CONDENSED -- visible to the reviewer, not
+    # a silent drop) must not force its metric to still be "expected" in
+    # the final text. Found live (2026-09-28): a real resume where a
+    # metric-bearing bullet was legitimately condensed for space always
+    # failed validation, because this check compared against the WHOLE,
+    # unconditional profile text regardless of any reviewed disposition.
+    condensed_originals = {
+        change.original_text
+        for change in accepted_changes
+        if change.category is ChangeCategory.CONDENSED
+    }
     source_text = " ".join(
         value
         for job in profile.work_experience
         for value in [*job.responsibilities, *job.accomplishments]
+        if value not in condensed_originals
     )
     expected_metrics = {match.group().strip() for match in _METRIC_RE.finditer(source_text)}
     missing_metrics = sorted(metric for metric in expected_metrics if metric not in text)

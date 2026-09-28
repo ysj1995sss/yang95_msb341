@@ -51,35 +51,85 @@ PDF to visually compare against on the freeform/reconstructed path; this is corr
 fix — it was a downstream consequence of the same mis-pairing (a mislabeled change's expected text
 no longer lined up with what actually appeared in the regenerated PDF), not a separate bug.
 
-## A known, still-safe rough edge this fix did not resolve
+## Update (same day): the rough edge below turned out to hit real resumes immediately, and was fixed
 
-When the number of skills/education-note items happens to be close to the number of *genuinely*
-new/fabricated bullets in a tailored resume, `difflib.SequenceMatcher` can cross-pair an unrelated
-skill (e.g. "Supply Chain Analytics") against a real fabricated bullet as a low-similarity
-"modified" pair, instead of cleanly flagging the fabricated bullet as "added." The end-to-end
-safety guarantee still holds — `build_freeform_changes`'s `AMBIGUOUS_PAIRING_THRESHOLD` (0.45)
-catches the low similarity and still marks it `REJECTED`/`FAIL`, so nothing fabricated is ever
-silently accepted — but the change is displayed to the reviewer with a confusing, nonsensical
-"Original: Supply Chain Analytics" line instead of a clean "this bullet appears to be new" flag.
-This is a review-UX quality issue, not a truthfulness violation, and is a known limitation, not
-fixed in this pass (see "What would change our mind").
+The "known, still-safe rough edge" originally documented in this section was NOT a theoretical
+edge case — it hit the very next real resume tested (same day, one retry later), producing the
+same class of false fabrication flag this decision already fixed once. The user's real resume
+(BYU MBA, ~17 skills, 3-4 work-experience bullets, education honors) showed FIVE truthful, lightly
+reworded bullets each appearing TWICE: once as a spurious `COMPETENCY_CHANGED — NEW BULLET`
+("added", no original) and once as a spurious `CONDENSED` removal of the ORIGINAL wording — the
+system had correctly recognized both halves of the same edit individually, but never recognized
+them as the same bullet.
+
+**Root cause of the split:** `_compute_changes`'s `"replace"` opcode branch pairs bullets by
+similarity, but only WITHIN its own opcode block's slice
+(`orig_slice = original[i1:i2]` / `tail_slice = tailored[j1:j2]`) — never against the full lists.
+`difflib.SequenceMatcher`'s opcode partitioning is position-sensitive: because the tailored
+document's natural section order (Education, then Experience, then Skills) differs from the
+profile's internal storage order (job-by-job, then education, then skills — the order
+`_extract_bullets_from_profile` emits in), a bullet's original and reworded versions can land in
+DIFFERENT opcode blocks. One block reports the original as `"removed"` (no match in ITS slice); a
+different block reports the reworded version as `"added"` (no match in ITS slice) — even though
+they're obviously the same bullet with a clause appended.
+
+A second, related symptom showed up under stress-testing with a larger, more realistic profile
+(~24 original items across categories): a `"replace"` block's greedy pairing has NO minimum-quality
+floor, so when a block happens to mix unrelated categories (e.g. skills interleaved with
+work-experience bullets because of how the surrounding content lined up), it will confidently pair
+e.g. `"Product Marketing"` against an unrelated new sentence at 13-25% similarity instead of
+recognizing either as unmatched.
+
+**Fix:** added `DiffGenerator._reconcile_cross_block_matches`, a global second pass over the
+WHOLE `changes` list (not scoped to one opcode block). It pools every `"removed"`/`"added"` entry,
+plus the two halves of any `"modified"`/`"rephrased"` pair below a trust floor
+(`_MIN_TRUSTED_PAIR_SIMILARITY = 0.4`), and searches for a near-certain match
+(`_RESCUE_SIMILARITY_THRESHOLD = 0.75`) for each, regardless of which opcode block produced it. A
+low-confidence pair is only overridden when something clearly better is found elsewhere — a resume
+with only one bullet on each side has no better option available, so its original (if imperfect)
+pairing is kept rather than discarded, preserving the semantic-drift/length-delta checks that only
+run on a real original/tailored pair.
+
+A third, previously undiscovered bug in the SAME investigation: `validate_pdf_content`'s
+`METRIC_MISSING` check built its "metrics that must survive" set from the profile's ENTIRE
+work-experience text, unconditionally — so a metric-bearing bullet the user explicitly reviewed
+and accepted condensing away (category `CONDENSED`, a visible, reviewable change) still made
+validation FAIL, as if the metric had silently vanished. Any real resume needing even one
+metric-bearing bullet trimmed for space would have hit this. Fixed by excluding a bullet's text
+from the expected-metrics source when it has a corresponding `CONDENSED`-category change in
+`accepted_changes` — an explicit, reviewed removal is not a silent one.
+
+Re-verified end to end against the exact resume shape that surfaced all of this (real profile
+structure, real tailored text, real PDF generation, real validation): **FAIL → clean WARNING**,
+with only the expected, benign `VISUAL_CHECK_SKIPPED` remaining.
 
 ## Verification
 
 - New regression tests (`product/tests/test_resume_diff.py::TestFreeformPathRecognizesTheWholeProfile`,
-  4 tests) confirm: a skill, an education honor, and a responsibility restated as a tailored bullet
-  are no longer flagged as fabricated; a genuinely fabricated bullet with no counterpart anywhere in
-  the profile is still caught end-to-end (via `build_freeform_changes`, not just the raw diff).
-- Full product suite: 689 passed (was 685 before this fix), no regressions.
-- Live reproduction: real resume → real LLM tailoring call → real PDF generation → real validation,
-  confirmed FAIL → WARNING for the exact resume shape that surfaced this bug.
+  6 tests after the update) confirm: a skill, an education honor, and a responsibility restated as
+  a tailored bullet are no longer flagged as fabricated; a bullet split across opcode blocks is
+  reconciled into one rephrased/modified change; an exact duplicate split across blocks is
+  recognized as unchanged; a genuinely fabricated bullet with no counterpart anywhere in the
+  profile is still caught end-to-end (via `build_freeform_changes`, not just the raw diff). Two new
+  tests in `test_pdf_content_validator.py` cover the `METRIC_MISSING`/`CONDENSED` fix in both
+  directions (legitimately condensed metric not flagged; a genuinely unexplained missing metric
+  still is).
+- Full product suite: 693 passed (was 685 before this whole investigation), no regressions. One
+  pre-existing test (`test_reorder_plus_reword_plus_new_bullet_not_scrambled`) was updated: it had
+  been pinning down the OLD, worse behavior (a pure bullet move showing as two spurious unpaired
+  remove/add entries) as if it were a deliberate design choice, rather than the strictly-better
+  "recognized as the same bullet" outcome the reconciliation pass now produces.
+- Live reproduction: real profile structure → tailored text shaped like the real resume that
+  surfaced this → real PDF generation → real validation, confirmed FAIL → clean WARNING.
 
 ## What would change our mind
 
-If the skills/new-bullet cross-pairing rough edge above causes real reviewer confusion in practice
-(not just a theoretical edge case), the correct fix is section-aware diffing — comparing tailored
-SKILLS-section bullets only against profile skills/tools/certifications, EDUCATION-section bullets
-only against education notes, and WORK EXPERIENCE bullets only against accomplishments/
-responsibilities — rather than one flat list fed to a single `SequenceMatcher` pass. That is a
-larger, riskier refactor of `_compute_changes` and deserves its own pass, not a quick patch bolted
-onto this fix.
+If a future live test still finds a cross-category pairing that neither the reconciliation pass's
+0.75 rescue threshold nor the 0.4 trust floor catches correctly, the next step is section-aware
+diffing — comparing tailored SKILLS-section bullets only against profile skills/tools/
+certifications, EDUCATION-section bullets only against education notes, and WORK EXPERIENCE
+bullets only against accomplishments/responsibilities — rather than one flat list fed to a single
+`SequenceMatcher` pass. That would need real section-header detection in the tailored text (the
+DOCX path's anchor-detection logic is the closest existing precedent) and is a larger, riskier
+refactor than this pass; only worth it if the cheaper reconciliation-pass fix proves insufficient
+against further real-world testing.

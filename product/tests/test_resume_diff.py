@@ -241,7 +241,16 @@ def test_mixed_bullet_markers_all_extracted():
 
 
 def test_reorder_plus_reword_plus_new_bullet_not_scrambled():
-    """Reorder + reword + fabricated bullet are classified independently."""
+    """Reorder + reword + fabricated bullet are classified independently.
+
+    Before the cross-block reconciliation pass (decision 018/019), a pure
+    move landed as a spurious unpaired "removed" + "added" of the SAME
+    string in different opcode blocks -- deterministic, but needlessly
+    made an unchanged bullet look like it needed review. The reconciler
+    now correctly recognizes these as the same bullet (change_type
+    "unchanged"), which is strictly better for a reviewer without
+    weakening the fabrication check below.
+    """
     profile = _profile(
         [
             "Built a REST API handling 100K requests per day",
@@ -269,11 +278,15 @@ def test_reorder_plus_reword_plus_new_bullet_not_scrambled():
     assert len(kubernetes_added) == 1
     assert kubernetes_added[0].original == ""
 
-    # The moved bullet keeps its text intact: difflib reports a move as a
-    # remove + add of the SAME string, never as a scrambled rewrite.
+    # The moved bullet keeps its text intact and is recognized as the same
+    # bullet, not left as two unrelated remove/add entries.
     moved_text = "Reduced CI pipeline runtime from 40 minutes to 12 minutes"
-    assert any(c.change_type == "added" and c.tailored == moved_text for c in report.changes)
-    assert any(c.change_type == "removed" and c.original == moved_text for c in report.changes)
+    assert any(
+        c.change_type == "unchanged" and c.original == moved_text and c.tailored == moved_text
+        for c in report.changes
+    )
+    assert not any(c.tailored == moved_text and c.change_type == "added" for c in report.changes)
+    assert not any(c.original == moved_text and c.change_type == "removed" for c in report.changes)
 
     # The reworded bullet is paired with ITS original, not with a reordered one.
     reworded = [
@@ -504,6 +517,61 @@ class TestFreeformPathRecognizesTheWholeProfile:
 
         added = [c for c in report.changes if c.change_type == "added"]
         assert added == []
+
+    def test_reworded_bullet_split_across_opcode_blocks_is_not_flagged_as_added(self):
+        """Found live (2026-09-28) on a REAL resume: SequenceMatcher's
+        opcode blocks are position-local (see the "replace" tag's greedy
+        pairing, scoped to only its own slice). When the tailored
+        document's section order (e.g. Education, then Experience, then
+        Skills) differs from the profile's internal storage order (job-by-
+        job, then education, then skills), a lightly-reworded bullet's
+        original and tailored versions can land in DIFFERENT opcode
+        blocks -- one block reports the original as "removed" (no match
+        in ITS slice), a completely different block reports the reworded
+        version as "added" (no match in ITS slice) -- even though,
+        globally, they're obviously the same bullet with one clause
+        appended. This must be reconciled into a single rephrased/modified
+        change, not two spurious removed+added entries."""
+        profile = _profile(
+            ["Consulted Acme Client: Analyzed data to diagnose business challenge and develop growth strategy"],
+            skills=["Tableau", "SQL", "Excel", "Power BI", "PMS", "NIQ"],
+        )
+        # Tailored document order: skills-heavy content FIRST (unlike the
+        # profile's storage order, which puts work-experience bullets
+        # first) -- this reordering is what pushes the real match into a
+        # different opcode block than the naive same-position case.
+        tailored_text = (
+            "- Tableau\n- SQL\n- Excel\n"
+            "- Consulted Acme Client: Analyzed data to diagnose business challenge and develop "
+            "growth strategy and long-term positioning\n"
+        )
+
+        report = DiffGenerator().generate_diff(profile, tailored_text)
+
+        added = [c for c in report.changes if c.change_type == "added"]
+        assert added == [], f"expected no false 'added' bullets, got: {added}"
+        rescued = [c for c in report.changes if "long-term positioning" in c.tailored]
+        assert rescued and rescued[0].change_type in ("rephrased", "modified")
+
+    def test_an_exact_duplicate_split_across_blocks_is_recognized_as_unchanged(self):
+        profile = _profile(
+            ["Managed a small team"],
+            education=[EducationEntry(
+                degree="MBA", field="Business", institution="State University", year=2027,
+                notes=["Awarded Half-Tuition Merit Scholarship"],
+            )],
+            skills=["Tableau", "SQL", "Excel", "Power BI"],
+        )
+        tailored_text = (
+            "- Tableau\n- SQL\n- Excel\n"
+            "- Awarded Half-Tuition Merit Scholarship\n"
+            "- Managed a cross-functional team\n"
+        )
+
+        report = DiffGenerator().generate_diff(profile, tailored_text)
+
+        added = [c for c in report.changes if c.change_type == "added"]
+        assert not any("Scholarship" in c.tailored for c in added)
 
     def test_a_genuinely_new_bullet_with_no_match_anywhere_is_still_caught(self):
         """The fix must not swallow real fabrication detection. A bullet

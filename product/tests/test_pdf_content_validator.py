@@ -100,3 +100,32 @@ def test_education_year_as_a_real_int_does_not_crash():
     text_missing_year = "Test Candidate candidate@example.test Example University MBA Business"
     findings = validate_pdf_content(text_missing_year, profile, [])
     assert "EDUCATION_DATE_MISSING" in {finding.code for finding in findings}
+
+
+def test_metric_in_a_legitimately_condensed_bullet_is_not_flagged_missing():
+    """Found live (2026-09-28): a real resume with a metric-bearing bullet
+    legitimately condensed for space (category CONDENSED -- a visible,
+    reviewable change, not a silent drop) always failed METRIC_MISSING,
+    because this check compared against ALL of the profile's work-
+    experience text unconditionally, regardless of any reviewed
+    disposition. A condensed bullet's metric must not still be
+    "expected" once the condensing itself is what the reviewer sees."""
+    condensed_change = ResumeChange(
+        change_id="paragraph:2", section="work_experience", source_index=2,
+        original_text="Improved retention by 20%", proposed_text="",
+        category=ChangeCategory.CONDENSED, reason="Deprioritized for space",
+        job_requirement="", evidence_source="original_resume",
+        evidence_text="Improved retention by 20%", validation_status=ValidationStatus.PASS,
+        disposition=ChangeDisposition.PENDING,
+    )
+    text = "Test Candidate candidate@example.test Example Corp Manager 2022-2024 Example University MBA 2027"
+    findings = validate_pdf_content(text, _profile(), [condensed_change])
+    assert "METRIC_MISSING" not in {finding.code for finding in findings}
+
+
+def test_metric_missing_still_fires_when_not_explained_by_a_reviewed_change():
+    """The fix above must not silently swallow a genuinely missing
+    metric -- only a CONDENSED-category change explains its absence."""
+    text = "Test Candidate candidate@example.test Example Corp Manager 2022-2024 Example University MBA 2027"
+    findings = validate_pdf_content(text, _profile(), [])
+    assert "METRIC_MISSING" in {finding.code for finding in findings}
