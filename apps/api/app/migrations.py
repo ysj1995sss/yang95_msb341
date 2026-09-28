@@ -22,6 +22,8 @@ _ADDITIVE_COLUMNS: list[tuple[str, str, str]] = [
     ("resume_files", "size_bytes", "INTEGER"),
     ("resume_files", "version", "INTEGER DEFAULT 1"),
     ("profiles", "verification_json", "TEXT DEFAULT '{}'"),
+    ("tailoring_runs", "baseline_tailored_text", "TEXT DEFAULT ''"),
+    ("tailoring_runs", "source_kind", "VARCHAR(8) DEFAULT 'PDF'"),
 ]
 
 

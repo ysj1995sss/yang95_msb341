@@ -175,6 +175,18 @@ class TailoringRun(Base):
     candidate_fit_json: Mapped[str] = mapped_column(Text, default="{}")
     proposed_changes_json: Mapped[str] = mapped_column(Text, default="[]")
     reviewed_changes_json: Mapped[str] = mapped_column(Text, default="[]")
+    # The freeform/PDF-only path's first-pass whole-resume text, needed so
+    # regeneration can rebuild "apply reviewed dispositions to the baseline"
+    # deterministically instead of re-running the LLM. Empty for a DOCX-
+    # original run, where the original file bytes + BulletEdit-derived
+    # changes are the source of truth for regeneration instead.
+    baseline_tailored_text: Mapped[str] = mapped_column(Text, default="")
+    # "DOCX" | "PDF" -- which regeneration path this run uses. Stored
+    # explicitly rather than inferred from other fields at regenerate time
+    # (e.g. "is baseline_tailored_text empty") -- an inferred check has an
+    # edge case for every possible way the inputs could coincidentally look
+    # like the other path; an explicit field has none.
+    source_kind: Mapped[str] = mapped_column(String(8), default="PDF")
     validation_json: Mapped[str] = mapped_column(Text, default="{}")
     report_json: Mapped[str] = mapped_column(Text, default="{}")
     # PROPOSED -> REVIEWED (a disposition changed) -> VALIDATED (PASS/WARNING

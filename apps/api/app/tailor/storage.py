@@ -37,6 +37,8 @@ class TailoringRunStore:
         candidate_fit: Mapping[str, Any],
         proposed_changes: Sequence[Any],
         validation: Mapping[str, Any],
+        baseline_tailored_text: str = "",
+        source_kind: str = "PDF",
     ) -> TailoringRun:
         run = TailoringRun(
             user_id=user_id,
@@ -50,6 +52,8 @@ class TailoringRunStore:
             reviewed_changes_json=_dump(list(proposed_changes)),
             validation_json=_dump(dict(validation)),
             report_json="{}",
+            baseline_tailored_text=baseline_tailored_text,
+            source_kind=source_kind,
             state="PROPOSED",
         )
         self.db.add(run)

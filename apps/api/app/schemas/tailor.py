@@ -1,5 +1,7 @@
 from pydantic import BaseModel, Field
 
+from app.schemas.artifact import ArtifactMetadataOut, ArtifactValidationOut, FinalApplicationReportOut, ResumeChangeOut
+
 TargetLength = str  # "1_page" | "2_page" | "preserve"
 
 
@@ -82,3 +84,14 @@ class TailorResult(BaseModel):
     bullets_rejected: int = 0
     addressable_requirements: int = 0
     tailoring_seems_shallow: bool = False
+
+    # Steps 16-20 (spec 002): additive fields from the shared validated
+    # artifact pipeline. Every field above this point is untouched and
+    # keeps its exact pre-migration meaning -- these are new, not
+    # replacements, so an existing caller reading only the old fields
+    # keeps working unchanged during the migration window.
+    run_id: str | None = None
+    report: FinalApplicationReportOut | None = None
+    validation: ArtifactValidationOut | None = None
+    resume_changes: list[ResumeChangeOut] = Field(default_factory=list)
+    artifacts: list[ArtifactMetadataOut] = Field(default_factory=list)
