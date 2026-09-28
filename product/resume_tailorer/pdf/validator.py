@@ -23,6 +23,17 @@ from dataclasses import dataclass, field
 
 from pypdf import PdfReader
 
+from resume_tailorer.artifacts.models import (
+    ArtifactValidation,
+    FindingCategory,
+    FindingSeverity,
+    ResumeChange,
+    ValidationFinding,
+)
+from resume_tailorer.models import CareerTruthProfile
+from resume_tailorer.pdf.content_validator import validate_pdf_content
+from resume_tailorer.pdf.visual_validator import compare_pdf_renders
+
 
 @dataclass
 class ValidationResult:
@@ -164,3 +175,80 @@ class PDFValidator:
         normal_count = len(normal_pattern.findall(text))
         ratio = normal_count / len(text)
         return ratio >= self.MIN_READABLE_RATIO
+
+    def validate_artifact(
+        self,
+        pdf_path: str,
+        profile: CareerTruthProfile,
+        expected_page_count: int | None,
+        accepted_changes: list[ResumeChange],
+        original_pdf_path: str | None = None,
+        edited_regions: list[tuple[float, float, float, float]] | None = None,
+    ) -> ArtifactValidation:
+        """Run the structured Step 18 gate while preserving legacy validate()."""
+        legacy = self.validate(pdf_path, target_length="preserve")
+        findings: list[ValidationFinding] = []
+        for issue in legacy.issues:
+            lowered = issue.lower()
+            if "file not found" in lowered:
+                code, category = "FILE_MISSING", FindingCategory.STRUCTURE
+            elif "could not open" in lowered:
+                code, category = "PDF_CORRUPT", FindingCategory.STRUCTURE
+            elif "no extractable text" in lowered:
+                code, category = "TEXT_NOT_EXTRACTABLE", FindingCategory.ATS
+            else:
+                code, category = "PDF_TECHNICAL_VALIDATION_FAILED", FindingCategory.ATS
+            findings.append(ValidationFinding(code, FindingSeverity.FAIL, category, issue))
+
+        if (
+            expected_page_count is not None
+            and legacy.page_count
+            and legacy.page_count != expected_page_count
+        ):
+            findings.append(
+                ValidationFinding(
+                    "PAGE_COUNT_CHANGED",
+                    FindingSeverity.FAIL,
+                    FindingCategory.VISUAL,
+                    f"Page count changed: expected {expected_page_count}, got {legacy.page_count}.",
+                    {"expected": expected_page_count, "actual": legacy.page_count},
+                )
+            )
+
+        if legacy.extracted_text:
+            findings.extend(validate_pdf_content(legacy.extracted_text, profile, accepted_changes))
+
+        if original_pdf_path:
+            try:
+                findings.extend(
+                    compare_pdf_renders(
+                        original_pdf_path,
+                        pdf_path,
+                        edited_regions=edited_regions or [],
+                    )
+                )
+            except Exception as exc:
+                findings.append(
+                    ValidationFinding(
+                        "VISUAL_VALIDATION_FAILED",
+                        FindingSeverity.FAIL,
+                        FindingCategory.VISUAL,
+                        f"Visual validation could not complete: {exc}",
+                    )
+                )
+        else:
+            findings.append(
+                ValidationFinding(
+                    "VISUAL_CHECK_SKIPPED",
+                    FindingSeverity.WARNING,
+                    FindingCategory.VISUAL,
+                    "No original PDF was available for render comparison.",
+                )
+            )
+
+        return ArtifactValidation.from_findings(
+            findings,
+            tailored_page_count=legacy.page_count,
+            extracted_text=legacy.extracted_text,
+            checks_run=("pdf_open", "text_extraction", "content", "visual"),
+        )

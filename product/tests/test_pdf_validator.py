@@ -19,6 +19,8 @@ from reportlab.pdfgen import canvas
 
 from resume_tailorer.pdf.generator import PDFGenerator
 from resume_tailorer.pdf.validator import PDFValidator, ValidationResult
+from resume_tailorer.artifacts.models import ValidationStatus
+from resume_tailorer.models import CareerTruthProfile
 
 
 SAMPLE_RESUME_TEXT = """Jane Smith
@@ -287,3 +289,26 @@ def test_validate_with_invalid_target_length_raises_value_error(generated_pdf_pa
     validator = PDFValidator()
     with pytest.raises(ValueError, match="target_length"):
         validator.validate(generated_pdf_path, target_length="3_page")
+
+
+def test_validate_artifact_returns_structured_failure_for_missing_contact(generated_pdf_path):
+    profile = CareerTruthProfile(
+        contact_info={"name": "Missing Person", "email": "missing@example.test"},
+        education=[], work_experience=[], skills=[], tools=[], certifications=[], accomplishments=[]
+    )
+    result = PDFValidator().validate_artifact(
+        generated_pdf_path, profile=profile, expected_page_count=1, accepted_changes=[]
+    )
+    assert result.status is ValidationStatus.FAIL
+    assert result.has_code("CONTACT_MISSING")
+
+
+def test_validate_artifact_marks_skipped_visual_check_as_warning(generated_pdf_path):
+    profile = CareerTruthProfile(
+        contact_info={}, education=[], work_experience=[], skills=[], tools=[],
+        certifications=[], accomplishments=[]
+    )
+    result = PDFValidator().validate_artifact(
+        generated_pdf_path, profile=profile, expected_page_count=1, accepted_changes=[]
+    )
+    assert result.has_code("VISUAL_CHECK_SKIPPED")
