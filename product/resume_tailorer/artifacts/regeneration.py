@@ -2,6 +2,11 @@
 dispositions -- never by re-invoking the LLM tailorer, which would
 produce different, unreviewed text and silently discard a user's
 accept/reject/restore/manual-edit decisions (spec 002 section 10).
+
+Lives in product/ (not an API-layer module) because it has zero
+dependency on FastAPI/SQLAlchemy -- shared by apps/api's regeneration
+endpoint AND the Streamlit review UI (Task 8), matching decision 014's
+"one shared pipeline, adapters don't reimplement" principle.
 """
 
 from __future__ import annotations
@@ -13,13 +18,11 @@ from typing import Sequence
 
 from docx import Document
 
-from resume_tailorer.artifacts.filenames import safe_artifact_filename
 from resume_tailorer.artifacts.models import ChangeDisposition, ResumeChange
 from resume_tailorer.docx_export.pipeline import DocxTailoringResult, finalize_docx_edits
 from resume_tailorer.models.career_profile import CareerTruthProfile
 from resume_tailorer.parsers.docx_structure import extract_docx_structure
 from resume_tailorer.pdf.generator import PDFGenerator
-from resume_tailorer.pdf.validator import PDFValidator
 from resume_tailorer.tailorer.docx_bullet_tailorer import BulletEdit
 
 

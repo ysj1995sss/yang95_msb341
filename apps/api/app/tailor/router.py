@@ -20,7 +20,7 @@ from app.schemas.artifact import (
     ValidationFindingOut,
 )
 from app.schemas.tailor import BulletChangeOut, GapItemOut, TailorRequest, TailorResult
-from app.tailor.regeneration import (
+from resume_tailorer.artifacts.regeneration import (
     regenerate_docx_artifact,
     regenerate_freeform_artifact,
     validate_manual_text,
