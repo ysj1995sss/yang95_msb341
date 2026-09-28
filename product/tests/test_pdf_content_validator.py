@@ -79,3 +79,24 @@ Example University MBA Business 2027
 - Improved customer retention by 20%
 """
     assert validate_pdf_content(text, _profile(), [_accepted_change()]) == []
+
+
+def test_education_year_as_a_real_int_does_not_crash():
+    """EducationEntry.year is typed `int` (see models/career_profile.py) --
+    a resume parsed from a real file always produces an int here, not the
+    str this file's other fixtures happen to pass. Found live via the
+    Task 9 acceptance fixtures: any parsed resume with a graduation year
+    crashed validate_pdf_content with a TypeError before this fix."""
+    profile = CareerTruthProfile(
+        contact_info={"name": "Test Candidate", "email": "candidate@example.test"},
+        education=[EducationEntry(degree="MBA", field="Business", institution="Example University", year=2027)],
+        work_experience=[],
+        skills=[], tools=[], certifications=[], accomplishments=[],
+    )
+    text = "Test Candidate candidate@example.test Example University MBA Business 2027"
+    findings = validate_pdf_content(text, profile, [])
+    assert "EDUCATION_DATE_MISSING" not in {finding.code for finding in findings}
+
+    text_missing_year = "Test Candidate candidate@example.test Example University MBA Business"
+    findings = validate_pdf_content(text_missing_year, profile, [])
+    assert "EDUCATION_DATE_MISSING" in {finding.code for finding in findings}

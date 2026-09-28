@@ -75,7 +75,7 @@ def validate_pdf_content(
         if education.institution and not _contains(text, education.institution):
             findings.append(_failure("EDUCATION_MISSING", FindingCategory.CONTENT,
                                      f"Education entry is missing: {education.institution}"))
-        if education.year and not _contains(text, education.year):
+        if education.year and not _contains(text, str(education.year)):
             findings.append(_failure("EDUCATION_DATE_MISSING", FindingCategory.CONTENT,
                                      f"Education date is missing: {education.year}"))
 
