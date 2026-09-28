@@ -81,13 +81,25 @@ class SubmissionEngine:
                 submission — only parses, fills, and records what WOULD
                 be submitted. Only Assist/Auto modes ever submit for
                 real, and only when this is explicitly False.
+            job_snapshot: Immutable snapshot of the job posting at
+                submission time (spec 003 Step 22), for the dashboard.
+            candidate_fit_snapshot: Immutable snapshot of the candidate
+                fit result at submission time.
+            career_profile_version: Content hash of the profile used, so a
+                later profile edit is detectable without storing the whole
+                profile twice.
+            answers_version: Reserved for a future custom-answers version
+                pointer; unused today (custom_answers is always {}).
 
         Returns:
             The recorded ApplicationSubmission (with application_id set).
 
         Raises:
-            ValueError: If the platform is unsupported, or if Auto mode
-                would submit with an unfilled required field.
+            ValueError: If the platform is unsupported; if a real submit
+                would leave an unfilled required field; if the platform
+                doesn't declare final_submission capability (decision 016);
+                or if this job already has a confirmed submission on record
+                (idempotency).
         """
         parser_class = _PARSER_MAP.get(ats_platform)
         if parser_class is None:
