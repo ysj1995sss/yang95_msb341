@@ -13,6 +13,8 @@ from resume_tailorer.docx_export.converter import DocxConversionUnavailable
 from resume_tailorer.docx_export import pipeline as pipeline_module
 from resume_tailorer.docx_export.pipeline import run_docx_tailoring_pipeline
 from resume_tailorer.docx_export.pipeline import changes_from_bullet_edits
+from resume_tailorer.docx_export.pipeline import finalize_docx_edits
+from resume_tailorer.parsers.docx_structure import extract_docx_structure
 from resume_tailorer.parsers.docx_structure import Bullet
 from resume_tailorer.artifacts.models import ValidationStatus
 
@@ -359,3 +361,40 @@ def test_resume_wide_optimization_pass_does_not_run_when_nothing_to_focus_on(
         bullet_tailorer=tailorer,
     )
     assert len(tailorer.calls) == 1
+
+
+def test_finalize_docx_edits_never_calls_the_tailorer(
+    tmp_path, monkeypatch, sample_profile, sample_gap_report
+):
+    """Steps 16-20 regeneration reconstructs BulletEdits from stored,
+    human-reviewed ResumeChange dispositions and splices them directly --
+    finalize_docx_edits is the shared, tailorer-free half of the pipeline
+    that makes this possible without re-invoking the LLM (which would
+    silently discard the review)."""
+    monkeypatch.setattr(
+        pipeline_module, "convert_docx_to_pdf",
+        lambda src, dst: (_ for _ in ()).throw(DocxConversionUnavailable("skip")),
+    )
+    import io
+
+    original_bytes = _sample_docx_bytes(tmp_path)
+    doc = Document(io.BytesIO(original_bytes))
+    structure = extract_docx_structure(doc)
+    bullets = structure.splice_targets(doc.paragraphs)
+    target = next(b for b in bullets if b.text == "Did a thing")
+    edits = [BulletEdit(target.paragraph_index, target.text, "Reverted to original", changed=True)]
+
+    result = finalize_docx_edits(
+        doc=doc,
+        structure=structure,
+        bullets=bullets,
+        edits=edits,
+        original_docx_bytes=original_bytes,
+        gap_report=sample_gap_report,
+        profile=sample_profile,
+        convert_to_pdf=False,
+    )
+
+    spliced = Document(io.BytesIO(result.docx_bytes))
+    assert any(p.text == "Reverted to original" for p in spliced.paragraphs)
+    assert result.bullets_evaluated == 0  # caller-supplied, not re-derived

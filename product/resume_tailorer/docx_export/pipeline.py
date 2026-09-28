@@ -192,14 +192,76 @@ def run_docx_tailoring_pipeline(
                 "still-underrepresented requirement(s) with strong evidence."
             )
 
-    editable_indices = {edit.paragraph_index for edit in tailoring_result.edits}
+    bullets_changed = sum(1 for e in tailoring_result.edits if e.changed)
+    bullets_rejected = sum(1 for e in tailoring_result.edits if e.rejected_reason)
+    # Re-check after the possible optimization pass above -- if it
+    # genuinely helped, bullets_changed is now higher and this may no
+    # longer be shallow; if it found nothing safe to add (or never ran
+    # because there was nothing concrete to focus on), the warning still
+    # belongs in front of the user.
+    tailoring_seems_shallow = bullets_changed <= 2 and addressable_requirements > 4
+    if tailoring_seems_shallow:
+        warnings.append(
+            f"Tailoring may be too shallow: only {bullets_changed} bullet(s) changed while "
+            f"{addressable_requirements} job requirements have real evidence in the resume. "
+            "Consider reviewing the gap report for evidence the tailoring pass didn't surface."
+        )
+
+    return finalize_docx_edits(
+        doc=doc,
+        structure=structure,
+        bullets=bullets,
+        edits=tailoring_result.edits,
+        original_docx_bytes=original_docx_bytes,
+        gap_report=gap_report,
+        profile=profile,
+        convert_to_pdf=convert_to_pdf,
+        extra_warnings=warnings,
+        bullets_evaluated=len(bullets),
+        bullets_changed=bullets_changed,
+        bullets_rejected=bullets_rejected,
+        addressable_requirements=addressable_requirements,
+        tailoring_seems_shallow=tailoring_seems_shallow,
+    )
+
+
+def finalize_docx_edits(
+    *,
+    doc,
+    structure: DocxStructure,
+    bullets: list[Bullet],
+    edits: list[BulletEdit],
+    original_docx_bytes: bytes,
+    gap_report: GapReport,
+    profile: CareerTruthProfile,
+    convert_to_pdf: bool,
+    extra_warnings: list[str] | None = None,
+    bullets_evaluated: int = 0,
+    bullets_changed: int = 0,
+    bullets_rejected: int = 0,
+    addressable_requirements: int = 0,
+    tailoring_seems_shallow: bool = False,
+) -> "DocxTailoringResult":
+    """
+    Splice a KNOWN set of edits into `doc`, convert to PDF, and validate --
+    the part of the DOCX pipeline that has nothing to do with calling an
+    LLM. Shared by run_docx_tailoring_pipeline (edits come from a fresh
+    DocxBulletTailorer pass) and Steps 16-20 regeneration (edits are
+    reconstructed from stored, human-reviewed ResumeChange dispositions --
+    see apps/api/app/tailor/regeneration.py). Regeneration must never
+    re-invoke the tailorer: re-running the LLM would produce different,
+    unreviewed text, silently discarding the user's accept/reject/manual-
+    edit decisions.
+    """
+    warnings = list(extra_warnings or [])
+    editable_indices = {edit.paragraph_index for edit in edits}
     before_layout = capture_layout_signature(doc, editable_indices)
     structured_findings: list[ValidationFinding] = []
-    for edit in tailoring_result.edits:
+    for edit in edits:
         structured_findings.extend(
             inline_formatting_findings(doc.paragraphs[edit.paragraph_index], edit.changed)
         )
-    spliced_doc = splice_bullets_into_docx(doc, tailoring_result.edits)
+    spliced_doc = splice_bullets_into_docx(doc, edits)
     after_layout = capture_layout_signature(spliced_doc, editable_indices)
     structured_findings.extend(compare_layout_signatures(before_layout, after_layout))
 
@@ -263,27 +325,12 @@ def run_docx_tailoring_pipeline(
             )
         )
 
-    scoring_text = _synthesize_scoring_text(profile, structure, tailoring_result.edits)
-
-    bullets_changed = sum(1 for e in tailoring_result.edits if e.changed)
-    bullets_rejected = sum(1 for e in tailoring_result.edits if e.rejected_reason)
-    # Re-check after the possible optimization pass above -- if it
-    # genuinely helped, bullets_changed is now higher and this may no
-    # longer be shallow; if it found nothing safe to add (or never ran
-    # because there was nothing concrete to focus on), the warning still
-    # belongs in front of the user.
-    tailoring_seems_shallow = bullets_changed <= 2 and addressable_requirements > 4
-    if tailoring_seems_shallow:
-        warnings.append(
-            f"Tailoring may be too shallow: only {bullets_changed} bullet(s) changed while "
-            f"{addressable_requirements} job requirements have real evidence in the resume. "
-            "Consider reviewing the gap report for evidence the tailoring pass didn't surface."
-        )
+    scoring_text = _synthesize_scoring_text(profile, structure, edits)
 
     return DocxTailoringResult(
         docx_bytes=docx_bytes,
         tailored_scoring_text=scoring_text,
-        edits=tailoring_result.edits,
+        edits=edits,
         original_page_count=original_page_count,
         tailored_page_count=tailored_page_count,
         page_count_preserved=page_count_preserved,
@@ -291,12 +338,12 @@ def run_docx_tailoring_pipeline(
         pdf_validation_issues=pdf_validation_issues,
         conversion_available=conversion_available,
         bullet_warnings=warnings,
-        bullets_evaluated=len(bullets),
+        bullets_evaluated=bullets_evaluated,
         bullets_changed=bullets_changed,
         bullets_rejected=bullets_rejected,
         addressable_requirements=addressable_requirements,
         tailoring_seems_shallow=tailoring_seems_shallow,
-        changes=changes_from_bullet_edits(tailoring_result.edits, bullets, gap_report),
+        changes=changes_from_bullet_edits(edits, bullets, gap_report),
         validation=ArtifactValidation.from_findings(
             structured_findings,
             original_page_count=original_page_count,
