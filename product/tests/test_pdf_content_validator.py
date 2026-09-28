@@ -79,4 +79,3 @@ Example University MBA Business 2027
 - Improved customer retention by 20%
 """
     assert validate_pdf_content(text, _profile(), [_accepted_change()]) == []
-

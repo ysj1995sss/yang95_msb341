@@ -68,4 +68,3 @@ def test_shared_models_are_immutable():
 
     with pytest.raises(FrozenInstanceError):
         change.proposed_text = "Changed after creation"
-

@@ -30,4 +30,3 @@ def safe_artifact_filename(
         f"{safe_company}_{safe_role}_Tailored_Resume_v{version}."
         f"{normalized_extension.lower()}"
     )
-

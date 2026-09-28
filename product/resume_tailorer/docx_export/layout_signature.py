@@ -125,4 +125,3 @@ def compare_layout_signatures(
             )
         )
     return findings
-

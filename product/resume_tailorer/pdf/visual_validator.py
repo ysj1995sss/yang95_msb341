@@ -45,7 +45,6 @@ def _geometry_findings(page: fitz.Page, page_index: int) -> list[ValidationFindi
             break
     return findings
 
-
 def compare_pdf_renders(
     original_pdf_path: str,
     tailored_pdf_path: str,
@@ -92,4 +91,3 @@ def compare_pdf_renders(
                                          page=page_index + 1,
                                          outside_diff_ratio=ratio))
     return findings
-

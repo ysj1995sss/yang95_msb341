@@ -139,4 +139,3 @@ class FinalApplicationReport:
     original_page_count: int | None
     tailored_page_count: int | None
     artifacts: tuple[ArtifactMetadata, ...] = ()
-

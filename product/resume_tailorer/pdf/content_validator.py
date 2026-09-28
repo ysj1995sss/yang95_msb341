@@ -122,4 +122,3 @@ def validate_pdf_content(
         findings.append(_failure("TRUNCATED_TEXT", FindingCategory.CONTENT,
                                  "A line appears truncated in the generated PDF."))
     return findings
-

@@ -117,7 +117,6 @@ class ValidatedArtifactPipeline:
             attempt_count=len(attempts),
             attempts=tuple(attempts),
         )
-
     @staticmethod
     def _is_correctable(validation: ArtifactValidation) -> bool:
         failures = {
@@ -195,4 +194,3 @@ class ValidatedArtifactPipeline:
             validation=validation,
             scoring_text=request.tailored_text,
         )
-

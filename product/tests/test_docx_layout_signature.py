@@ -56,4 +56,3 @@ def test_margin_change_is_a_failure():
     )
 
     assert any(finding.code == "DOCX_SECTION_LAYOUT_CHANGED" for finding in findings)
-
