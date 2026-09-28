@@ -21,6 +21,7 @@ of the real-submission path.
 
 import streamlit as st
 
+from resume_tailorer.applications.capabilities import get_capability
 from resume_tailorer.applications.models import ApplicationMode, ApplicationStatus
 from resume_tailorer.applications.status_tracker import StatusTracker
 from resume_tailorer.applications.ui_helpers import format_application_for_display
@@ -109,15 +110,32 @@ def _render_submit_tab(service: JobService) -> None:
         "Pre-filled from the last tailoring run when available. 0 means unknown, not a real 0% match."
     )
 
+    # Look up the platform's declared capability BEFORE rendering the submit
+    # button, so a platform that can't complete a real submission (every
+    # platform today -- decision 016) gets a hard-disabled button with a
+    # clear reason, not just a checkbox + hope the engine's own safety gate
+    # catches it after the click.
+    job_lookup = service.db.get_job_posting(job_id_input) if job_id_input else None
+    ats_platform = (job_lookup.ats_platform if job_lookup else "") or ""
+    capability = get_capability(ats_platform)
+    real_submit_possible = mode == ApplicationMode.MANUAL or capability.final_submission
+
     preview_clicked = st.button("Preview (dry run — never submits)")
     confirm_understanding = st.checkbox(
-        "I understand this may attempt a real submission to the employer's ATS."
+        "I understand this may attempt a real submission to the employer's ATS.",
+        disabled=not real_submit_possible,
     )
     preview_done = bool(st.session_state.get("apply_preview_done"))
     submit_clicked = st.button(
         "Confirm & Submit (real submission for Assist/Auto)",
-        disabled=not (confirm_understanding and preview_done),
+        disabled=not (real_submit_possible and confirm_understanding and preview_done),
     )
+    if mode != ApplicationMode.MANUAL and not capability.final_submission:
+        st.info(
+            f"Confirm & Submit is disabled for {ats_platform or 'this platform'} in "
+            f"{mode.value.title()} mode: {capability.notes or 'real submission is not yet supported.'} "
+            f"Use Preview to see what would be attempted, or switch to Manual mode to apply yourself."
+        )
     if not preview_done:
         st.caption("Run Preview first. Confirm & Submit stays disabled until a preview succeeds.")
 

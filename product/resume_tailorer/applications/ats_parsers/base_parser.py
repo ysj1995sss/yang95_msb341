@@ -13,7 +13,7 @@ from typing import List
 
 from bs4 import BeautifulSoup
 
-from resume_tailorer.applications.models import FormField
+from resume_tailorer.applications.models import ATSCapability, FormField
 
 # Input types we never treat as a user-fillable field.
 _IGNORED_INPUT_TYPES = {"hidden", "submit", "button", "image", "reset"}
@@ -39,7 +39,18 @@ class BaseATSParser(ABC):
 
     @abstractmethod
     def is_supported(self) -> bool:
-        """Whether this platform's forms can actually be parsed from static HTML."""
+        """Whether this platform's forms can actually be parsed from static HTML.
+
+        Kept for backward compatibility with existing callers/tests.
+        get_capability() (spec 003 Step 21) is the richer, authoritative
+        source of truth going forward -- it can express "manual works but
+        real submission doesn't," which a single bool cannot.
+        """
+        raise NotImplementedError
+
+    @abstractmethod
+    def get_capability(self) -> ATSCapability:
+        """Declare what this platform's integration can actually do."""
         raise NotImplementedError
 
     @abstractmethod

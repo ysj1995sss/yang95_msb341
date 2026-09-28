@@ -11,7 +11,7 @@ empty field list, rather than pretending to work.
 from typing import List
 
 from resume_tailorer.applications.ats_parsers.base_parser import BaseATSParser
-from resume_tailorer.applications.models import FormField
+from resume_tailorer.applications.models import ATSCapability, FormField
 
 
 class WorkdayParser(BaseATSParser):
@@ -22,6 +22,20 @@ class WorkdayParser(BaseATSParser):
 
     def is_supported(self) -> bool:
         return False
+
+    def get_capability(self) -> ATSCapability:
+        return ATSCapability(
+            platform="workday",
+            manual_supported=True,
+            assist_supported=False,
+            auto_supported=False,
+            resume_upload=False,
+            profile_prefill=False,
+            custom_questions=False,
+            final_submission=False,
+            status_fetch=False,
+            notes="Client-side SPA; no fields ever parsed from a plain HTTP GET.",
+        )
 
     def parse_form(self, form_html: str) -> List[FormField]:
         return []

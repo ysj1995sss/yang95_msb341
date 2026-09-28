@@ -3,10 +3,22 @@ import tempfile
 import os
 from unittest.mock import patch, MagicMock
 
+from resume_tailorer.applications import submission_engine as submission_engine_module
+from resume_tailorer.applications.ats_parsers.greenhouse_parser import GreenhouseParser
 from resume_tailorer.applications.submission_engine import SubmissionEngine
 from resume_tailorer.applications.database import ApplicationDatabase
-from resume_tailorer.applications.models import ApplicationMode, ApplicationStatus
+from resume_tailorer.applications.models import ApplicationMode, ApplicationStatus, ATSCapability
 from resume_tailorer.models.career_profile import CareerTruthProfile, EducationEntry, WorkExperience
+
+
+class _CapableGreenhouseParser(GreenhouseParser):
+    """Test-only stand-in for a platform that HAS proven real submission
+    works -- exercises the real-submit code path without depending on any
+    real platform actually having final_submission=True today (none do;
+    see decision 016)."""
+
+    def get_capability(self) -> ATSCapability:
+        return ATSCapability(platform="greenhouse", final_submission=True, profile_prefill=True)
 
 
 SAMPLE_FORM_HTML = """
@@ -63,7 +75,33 @@ def test_dry_run_defaults_to_true_and_never_calls_submit(temp_db):
     assert temp_db.get_current_status(result.application_id) is None
 
 
-def test_dry_run_false_calls_submit_for_assist_mode(temp_db):
+def test_dry_run_false_is_blocked_for_a_platform_without_final_submission_capability(temp_db):
+    """No real platform currently declares final_submission=True (decision
+    016) -- a real-submit attempt against Greenhouse must fail loudly
+    instead of silently POSTing to a URL that was never a real
+    form-submission endpoint."""
+    engine = SubmissionEngine(temp_db)
+    with patch.object(engine, "_submit_to_platform") as mock_submit:
+        with patch.object(engine, "_fetch_form_html", return_value=SAMPLE_FORM_HTML):
+            with pytest.raises(ValueError, match="final_submission"):
+                engine.apply_for_job(
+                    job_posting_id="greenhouse_1",
+                    form_url="https://boards.greenhouse.io/company/jobs/1",
+                    ats_platform="greenhouse",
+                    profile=_make_profile(),
+                    resume_pdf_path="/tmp/resume.pdf",
+                    candidate_fit_score=85.0,
+                    resume_match_score=90.0,
+                    mode=ApplicationMode.ASSIST,
+                    dry_run=False,
+                )
+    mock_submit.assert_not_called()
+
+
+def test_dry_run_false_calls_submit_when_platform_has_final_submission_capability(temp_db, monkeypatch):
+    """Once a platform genuinely proves it can complete a real submission,
+    the real-submit code path itself still works end to end."""
+    monkeypatch.setitem(submission_engine_module._PARSER_MAP, "greenhouse", _CapableGreenhouseParser)
     engine = SubmissionEngine(temp_db)
     with patch.object(engine, "_submit_to_platform", return_value="CONF-123") as mock_submit:
         with patch.object(engine, "_fetch_form_html", return_value=SAMPLE_FORM_HTML):
@@ -168,8 +206,9 @@ def test_unsupported_platform_refuses_submission(temp_db):
         )
 
 
-def test_submission_recorded_before_real_submit_attempted(temp_db):
+def test_submission_recorded_before_real_submit_attempted(temp_db, monkeypatch):
     """The audit record must exist even if the real POST would fail — verify save happens first."""
+    monkeypatch.setitem(submission_engine_module._PARSER_MAP, "greenhouse", _CapableGreenhouseParser)
     engine = SubmissionEngine(temp_db)
     with patch.object(engine, "_submit_to_platform", side_effect=Exception("network error")):
         with patch.object(engine, "_fetch_form_html", return_value=SAMPLE_FORM_HTML):

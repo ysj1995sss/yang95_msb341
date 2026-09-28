@@ -3,7 +3,7 @@
 from typing import List
 
 from resume_tailorer.applications.ats_parsers.base_parser import BaseATSParser
-from resume_tailorer.applications.models import FormField
+from resume_tailorer.applications.models import ATSCapability, FormField
 
 
 class LeverParser(BaseATSParser):
@@ -14,6 +14,24 @@ class LeverParser(BaseATSParser):
 
     def is_supported(self) -> bool:
         return True
+
+    def get_capability(self) -> ATSCapability:
+        # Not independently live-verified (decision 012), but assumed
+        # architecturally similar to Greenhouse -- a modern SPA-based ATS.
+        # Declared unsupported for real submission rather than assumed
+        # working until proven otherwise.
+        return ATSCapability(
+            platform="lever",
+            manual_supported=True,
+            assist_supported=False,
+            auto_supported=False,
+            resume_upload=False,
+            profile_prefill=True,
+            custom_questions=False,
+            final_submission=False,
+            status_fetch=False,
+            notes="Assumed JS-rendered like Greenhouse (decision 012); not independently verified.",
+        )
 
     def parse_form(self, form_html: str) -> List[FormField]:
         return self._extract_fields(form_html)

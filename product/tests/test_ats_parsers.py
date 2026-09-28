@@ -60,6 +60,33 @@ def test_ashby_parser_platform_name():
     assert parser.is_supported() is True
 
 
+def test_greenhouse_lever_ashby_declare_no_final_submission_capability():
+    """Decision 012 proved real forms are JS-rendered SPAs a static fetch
+    can't see -- no platform may claim it can actually complete a real
+    submission until that's proven otherwise (decision 016)."""
+    for parser in (GreenhouseParser(), LeverParser(), AshbyParser()):
+        cap = parser.get_capability()
+        assert cap.manual_supported is True
+        assert cap.final_submission is False
+        assert cap.assist_supported is False
+        assert cap.auto_supported is False
+        assert cap.resume_upload is False
+
+
+def test_greenhouse_declares_profile_prefill_capability():
+    # Prefill logic itself is real and correct for whatever fields a page
+    # exposes -- the gap is that pages expose almost none, not that
+    # prefill is broken.
+    assert GreenhouseParser().get_capability().profile_prefill is True
+
+
+def test_workday_declares_no_capability_beyond_manual():
+    cap = WorkdayParser().get_capability()
+    assert cap.manual_supported is True
+    assert cap.profile_prefill is False
+    assert cap.final_submission is False
+
+
 def test_workday_parser_reports_unsupported():
     parser = WorkdayParser()
     assert parser.get_platform_name() == "workday"

@@ -24,10 +24,7 @@ from typing import Optional
 
 import requests
 
-from resume_tailorer.applications.ats_parsers.greenhouse_parser import GreenhouseParser
-from resume_tailorer.applications.ats_parsers.lever_parser import LeverParser
-from resume_tailorer.applications.ats_parsers.ashby_parser import AshbyParser
-from resume_tailorer.applications.ats_parsers.workday_parser import WorkdayParser
+from resume_tailorer.applications.capabilities import _PARSER_MAP
 from resume_tailorer.applications.database import ApplicationDatabase
 from resume_tailorer.applications.form_filler import FormFiller
 from resume_tailorer.applications.models import (
@@ -36,13 +33,6 @@ from resume_tailorer.applications.models import (
     ApplicationSubmission,
 )
 from resume_tailorer.models.career_profile import CareerTruthProfile
-
-_PARSER_MAP = {
-    "greenhouse": GreenhouseParser,
-    "lever": LeverParser,
-    "ashby": AshbyParser,
-    "workday": WorkdayParser,
-}
 
 _MIN_SUBMISSION_INTERVAL_SECONDS = 5.0
 
@@ -104,6 +94,9 @@ class SubmissionEngine:
                 f"(its application forms require a real browser to render)."
             )
 
+        capability = parser.get_capability()
+        real_submit = (not dry_run) and (mode != ApplicationMode.MANUAL)
+
         form_html = self._fetch_form_html(form_url)
         fields = parser.parse_form(form_html)
         filled_fields = self.form_filler.fill_form(fields, profile)
@@ -115,13 +108,28 @@ class SubmissionEngine:
             )
 
         unfilled_required = [f for f in filled_fields if f.required and not f.prefilled]
-        real_submit = (not dry_run) and (mode != ApplicationMode.MANUAL)
 
         if real_submit and unfilled_required:
             names = ", ".join(f.field_name for f in unfilled_required)
             raise ValueError(
                 f"Cannot submit: required field(s) [{names}] could not be "
                 f"confidently filled from the candidate profile."
+            )
+
+        # Hard safety gate (spec 003, decision 016): a real submission is
+        # never attempted against a platform that hasn't proven it can
+        # actually complete one -- checked as the LAST gate before any real
+        # network POST, so Assist mode's preview/validation value (parsing,
+        # prefilling, flagging unfilled required fields) still works even
+        # when real submission isn't supported yet. Failing loudly here
+        # instead of silently POSTing to a URL that was never a real
+        # form-submission endpoint, and treating any 2xx response as
+        # success, is the actual bug this gate fixes (decision 016).
+        if real_submit and not capability.final_submission:
+            raise ValueError(
+                f"Cannot submit for real: {ats_platform} does not currently support "
+                f"final_submission ({capability.notes or 'not yet verified working against a real form'}). "
+                f"Use Manual mode, or Preview (dry run) to see what would be attempted."
             )
 
         form_fields_submitted = {f.field_name: f.value for f in filled_fields if f.prefilled}
@@ -155,8 +163,7 @@ class SubmissionEngine:
                 notes="Manual mode: apply via the provided link, then update status here once submitted.",
             )
 
-        should_actually_submit = (not dry_run) and (mode != ApplicationMode.MANUAL)
-        if should_actually_submit:
+        if real_submit:
             self._respect_rate_limit()
             confirmation_number = self._submit_to_platform(form_url, form_fields_submitted)
             submission.confirmation_number = confirmation_number
