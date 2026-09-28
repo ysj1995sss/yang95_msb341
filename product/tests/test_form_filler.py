@@ -197,3 +197,25 @@ def test_location_alias_does_not_fill_relocation():
     filled = filler.fill_form(fields, _make_profile())
     assert filled[0].prefilled is False
     assert filled[0].value == ""
+
+
+@pytest.mark.parametrize("field_name", [
+    "work_authorization", "authorized_to_work", "visa_sponsorship", "require_sponsorship",
+    "disability_status", "veteran_status", "race", "ethnicity", "gender", "gender_identity",
+    "criminal_history", "felony_conviction", "desired_salary", "salary_expectation",
+    "willing_to_relocate", "relocation_required", "legal_attestation", "terms_agreement",
+    "non_compete", "background_check_consent",
+])
+def test_never_auto_fills_sensitive_or_legally_significant_fields(field_name):
+    """Spec 003's USER-AGENCY PRINCIPLE: never guess sensitive or legally
+    significant application answers (work authorization, sponsorship,
+    disability, veteran status, demographic questions, criminal history,
+    salary expectations, relocation willingness, legal attestations).
+    FormFiller's alias whitelist should never match any of these -- this
+    test exists so a future alias addition can't accidentally start
+    filling one without a human noticing."""
+    filler = FormFiller()
+    fields = [FormField(field_name=field_name, field_type="text")]
+    filled = filler.fill_form(fields, _make_profile())
+    assert filled[0].prefilled is False
+    assert filled[0].value == ""
