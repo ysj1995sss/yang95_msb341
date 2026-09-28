@@ -20,23 +20,29 @@ a brand new session act like a colleague who already knows what you are working 
   API adapter parity) are built and merged — see `decisions/014` and
   `decisions/015-steps-16-20-build-summary.md`; the one deliberately-deferred piece is the bounded
   correction loop's actual condensation logic (decision 015's "known limitations"). Steps 21–24
-  (application modes/submission/status) are substantially built but Assist/Auto mode doesn't work
-  against real ATS forms yet — see
-  `decisions/012-assist-auto-mode-does-not-work-against-real-ats-forms.md`. Manual mode is the
-  one reliable application-submission path today.
+  (application modes/submission/status/dashboard) were revised this session — see
+  `decisions/016-ats-capability-model-and-hard-submission-safety-gate.md` (a real safety bug: the
+  real-submit path could silently record a false "Applied" status; fixed with an explicit
+  capability model and a hard gate) and `decisions/017-steps-21-24-revision-summary.md` (full
+  rebuild summary: attempt tracking, idempotency, immutable job/fit snapshots, status provenance,
+  a full dashboard rebuild). Assist/Auto mode still doesn't work against real ATS forms — see
+  `decisions/012-assist-auto-mode-does-not-work-against-real-ats-forms.md` — but the code now says
+  so honestly and refuses instead of silently pretending otherwise. Manual mode is the one
+  reliable application-submission path today.
 - **Next build:** (a) wire up the Steps 16-20 correction/condensation loop (decision 015), (b)
   close the freeform/PDF tailoring path's remaining gaps (no repair loop, no hard length gate —
-  decision 013), (c) revisit Assist/Auto mode via real browser automation (decision 012 scoped
-  this out deliberately — needs its own conversation before starting), or (d) something else
-  entirely — nothing is currently in progress.
+  decision 013), (c) custom/job-specific application question answering (decision 017), (d)
+  revisit Assist/Auto mode via real browser automation (decision 012 scoped this out
+  deliberately — needs its own conversation before starting), or (e) something else entirely —
+  nothing is currently in progress.
 - **Where to see it:** `product/resume_tailorer/app.py` (tailor); `pages/2_Job_Search.py`
   (discovery); `pages/3_Applications.py` (application submission + status dashboard).
 - **Biggest open risk:** real end-to-end usage by people other than the builder — the tailoring
   and discovery pipelines are verified live against real postings, but the full search → triage →
   tailor → apply loop hasn't been used by anyone else yet.
 - **Handoff doc:** `HANDOFF-TO-CODEX.md` — read this when starting a new Codex session, along
-  with `decisions/001`, `009`, `012`, `013`, `014`, and `015` for the architecture and the most
-  recent work.
+  with `decisions/001`, `009`, `012`, `013`, `014`, `015`, `016`, and `017` for the architecture
+  and the most recent work.
 
 ## How this repo works
 
@@ -51,7 +57,7 @@ a brand new session act like a colleague who already knows what you are working 
 - **Stack:** Python (resume_tailorer package), Streamlit for UI, an LLM API for tailoring (see `product/resume_tailorer/llm/`), pytest for testing, reportlab for PDF generation, python-docx + docx2pdf for the DOCX splice pipeline, multiple job board scrapers (Greenhouse live; LinkedIn/Indeed/Handshake limited/demo).
 - **Two separate venvs:** `product/.venv` (core engine + Streamlit) and `apps/api/.venv` (FastAPI backend). Set `PYTHONPATH` to include `product/` when running Streamlit or product tests directly.
 - **How work ships:** Streamlit app + FastAPI backend run locally; eventual deployment TBD.
-- **Testing and style:** pytest for unit and integration tests; extensive fixture-based testing with real job descriptions. Run the full suite (`product/`: currently 610 tests; `apps/api/`: currently 60) before claiming anything is done.
+- **Testing and style:** pytest for unit and integration tests; extensive fixture-based testing with real job descriptions. Run the full suite (`product/`: currently 685 tests; `apps/api/`: currently 60) before claiming anything is done.
 
 ## Working with me
 

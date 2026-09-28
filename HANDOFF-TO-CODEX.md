@@ -1,12 +1,12 @@
 # Handoff to Codex — Job Copilot
 
-**Date:** 2026-09-27
-**From:** Claude Code (Steps 16-20 Tasks 6-9 + whole-branch review, on top of Codex's Tasks 1-5)
+**Date:** 2026-09-28
+**From:** Claude Code (Steps 21-24 revision, on top of the Steps 16-20 handoff)
 **Repo:** `ysj1995sss/yang95_msb341`
 **Audience:** A fresh Codex session continuing this product.
 
 Read this file first, then `AGENTS.md`, then the decisions listed below. Do not re-litigate
-decisions 001, 006, 009, 012, 014, or 015 unless new evidence forces it.
+decisions 001, 006, 009, 012, 014, 015, 016, or 017 unless new evidence forces it.
 
 ---
 
@@ -34,7 +34,7 @@ as it reads.
 | Job discovery engine | `product/resume_tailorer/job_search/` | Scout, dedupe, fit, quality, dashboard helpers, SQLite |
 | Tailoring pipeline | `product/resume_tailorer/analyzers/`, `tailorer/`, `docx_export/` | Steps 10-15 — see decision 013 |
 | Validated artifact pipeline | `product/resume_tailorer/artifacts/` | Steps 16-20 — see decisions 014, 015 |
-| Application flow | `product/resume_tailorer/applications/` | Steps 21-24 — see decision 012 |
+| Application flow | `product/resume_tailorer/applications/` | Steps 21-24 — see decisions 012, 016, 017 |
 | FastAPI backend | `apps/api/` | Profile, jobs upsert/list, tailor; delegates dedupe/normalize/fit to product |
 | Specs / decisions / sprints | `specs/`, `decisions/`, `sprints/` | Product truth and history |
 
@@ -55,14 +55,29 @@ logic lives in `product/`; API must not fork a second scorer, fingerprint, or ta
 
 ## 3. Git status (as of handoff)
 
-Steps 16-20 (spec 002, decisions 014/015) were built on `codex/validated-artifacts-steps-16-20`,
-reviewed, fix-verified, and integrated into `main` in this session (fast-forward or merge commit —
-see decision 015 / git log for the exact result). `main` should be fully up to date with everything
+Steps 21-24 (spec 003, decisions 016/017) were revised directly on `main` in this session — no
+feature branch, committed incrementally phase by phase, all on top of Steps 16-20 (spec 002,
+decisions 014/015), which were themselves built on `codex/validated-artifacts-steps-16-20` and
+integrated into `main` in the prior session. `main` should be fully up to date with everything
 below by the time you read this — no open PRs, no uncommitted work, nothing to merge first.
-`git pull` before starting is still good practice in case something landed after this doc was
-written.
+`main` was 18 commits ahead of `origin/main` as of the Steps 16-20 handoff and was pushed at the
+user's request; confirm with `git status` / `git log origin/main..main` whether this session's
+Steps 21-24 commits have been pushed too. `git pull` before starting is still good practice in
+case something landed after this doc was written.
 
-Latest commits on `main`, newest first (Steps 16-20 slice):
+Latest commits on `main`, newest first (Steps 21-24 slice):
+- `docs: complete apply_for_job's docstring for the new snapshot/safety params`
+- `test: guard against auto-filling sensitive/legally significant fields` (Phase F — security)
+- `feat: rebuild the Applications dashboard` (Phase E — spec 003 Step 24)
+- `feat: dashboard formatting/filtering/sorting helpers` (Phase E groundwork)
+- `feat: expose status provenance through StatusTracker` (Phase D)
+- `feat: track submission attempts, enforce idempotency, snapshot job/fit data` (Phase C)
+- `fix: hard-gate real ATS submission on a proven capability, not a click` (Phase B — decision 016,
+  the actual safety bug fix)
+- `docs: specify Steps 21-24 application tracking revision` (spec 003)
+
+Before this slice, latest commits on `main`, newest first (Steps 16-20 slice):
+- `docs: close Steps 16-20 validated artifact build` (decision 015)
 - `fix: preserve manual edits and pin regeneration to the run's profile snapshot` — whole-branch
   review fixes (decision 015)
 - `test: add anonymized DOCX/PDF acceptance fixtures for Steps 16-20` (Task 9)
@@ -75,7 +90,7 @@ Latest commits on `main`, newest first (Steps 16-20 slice):
 - Tasks 1-5 (Codex): validated artifact domain models, DOCX layout signature validation,
   structured visual PDF validation, unified report/change models, artifact orchestration pipeline
 
-Before this slice, latest commits on `main`, newest first:
+Before that slice, latest commits on `main`, newest first:
 - `865d70b` — Steps 10-15 audit summary + Phase G live regression (decision 013)
 - `4e30372` / `5a1ad23` / `6f8854c` / `b7eaa09` / `6024269` / `1636d6d` — Steps 10-15 audit Phases F/E/C/D/D/B
 - `b136542` — Job Search → Applications handoff, Assist/Auto mode honesty fixes (decision 012)
@@ -119,14 +134,24 @@ both paths end-to-end. **Known gap, not built:** the bounded one-retry correctio
 wired into either adapter, because a real corrector needs actual LLM-based paragraph condensation
 that doesn't exist anywhere yet — see decision 015's "Known limitations" before building this.
 
-### Steps 21-24 — Application flow, substantially built — decision 012
-`ApplicationMode`/`ApplicationStatus` domain models, full audit-trail database, submission engine
-with dry-run-by-default safety gates and a bounded repair-style retry, Streamlit page with a
-submit tab (Preview-before-Submit gate) and a status dashboard. **Assist/Auto mode does not work
-against real ATS forms** — verified live: a real Greenhouse application form is JavaScript-
-rendered with almost no server-side-named fields, which this static-HTML-parsing pipeline
-structurally cannot read. Manual mode (generate resume, hand the candidate the link) is the one
-mode that's honest and reliable today; the product says so in its own UI.
+### Steps 21-24 — Application flow, revised this session — decisions 012, 016, 017
+`ApplicationMode`/`ApplicationStatus` domain models, full audit-trail database, submission engine,
+Streamlit page with a submit tab (Preview-before-Submit gate) and a full status dashboard.
+**Assist/Auto mode does not work against real ATS forms** — verified live: a real Greenhouse
+application form is JavaScript-rendered with almost no server-side-named fields, which this
+static-HTML-parsing pipeline structurally cannot read (decision 012). This session found and fixed
+a real safety bug on top of that honest-but-unsafe state: the real-submit code path treated any
+non-error HTTP response as a successful submission, which could have silently recorded a false
+"Applied" status — see decision 016. `ATSCapability` now makes every platform declare
+`final_submission=False` explicitly, and `SubmissionEngine` hard-blocks the real POST on that flag.
+Also added this session: `SubmissionAttempt` audit tracking (a real-submit request always leaves a
+row, including failures), idempotency (refuses a second real submit for an already-confirmed job),
+immutable job/candidate-fit snapshots on every `ApplicationSubmission`, status provenance
+(source/confidence/evidence, ready for a future email/ATS integration that doesn't exist yet), and
+a full dashboard rebuild (saved views, filters, sorting, application detail, editable next-action).
+Manual mode (generate resume, hand the candidate the link) remains the one mode that's honest and
+reliable for actually submitting an application; the product says so in its own UI. See decision
+017 for the full build summary and known limitations.
 
 ### Explicitly out of scope until the product asks
 - Browser-automation-based Assist/Auto submission (decision 012 — a deliberate, separate decision
@@ -136,6 +161,13 @@ mode that's honest and reliable today; the product says so in its own UI.
 - The bounded correction/condensation loop's actual condensation logic (decision 015) — the
   orchestration shell exists and is tested; the LLM-based "shorten this paragraph without changing
   its claims" component it needs does not exist anywhere yet
+- Real submission for any ATS platform (decision 016) — every platform declares
+  `final_submission=False`; flipping this requires either a documented submission API or approved
+  browser automation, not a code change alone
+- Custom/job-specific application question answering (decision 017) — `custom_answers` is
+  hardcoded to `{}`; the architecture anticipates this but nothing drafts or stores answers
+- Email/ATS status integration (decision 017) — the `source`/`confidence`/`evidence` fields and
+  `StatusTracker.record_low_confidence_signal` are groundwork only, nothing calls them yet
 - New live ATS providers beyond Greenhouse (Lever/Ashby/Workday parsers exist but are unverified
   against real forms)
 - Persisted `search_runs`/RawJob tables; live URL revalidation of every stored job on every load
@@ -160,6 +192,15 @@ almost certainly another LLM call, then wiring that callback + the pipeline clas
 `apps/api/app/tailor/router.py`'s `tailor_preview`/`regenerate` and
 `product/resume_tailorer/app.py`. Read decision 015 in full first — it explains exactly why this
 wasn't built in the same session that found the gap.
+
+### A3. Custom/job-specific application question answering (decision 017's "known limitations")
+`SubmissionEngine`/`FormFiller` only ever fill a curated, safe whitelist (name/email/phone/
+location/current employer/title). Free-text or select-type job-specific questions ("Why do you
+want to work here?", "Years of experience with X?") are left blank for the user in Manual/Assist
+mode; nothing drafts or suggests an answer. Building this needs its own careful design for what's
+safe to suggest vs. what always needs the user's own input (spec 003's answer-source-of-truth
+model already separates verified-reusable/job-specific/sensitive/unknown — that's the intended
+shape, not yet implemented behind it).
 
 ### B. Real end-to-end usage
 Get someone other than the builder through the full search → triage → tailor → apply loop and
@@ -193,8 +234,11 @@ decisions/012-assist-auto-mode-does-not-work-against-real-ats-forms.md
 decisions/013-steps-10-15-rebuild-summary.md
 decisions/014-use-one-validated-artifact-pipeline-for-steps-16-20.md
 decisions/015-steps-16-20-build-summary.md
+decisions/016-ats-capability-model-and-hard-submission-safety-gate.md
+decisions/017-steps-21-24-revision-summary.md
 specs/001-job-application-copilot.md
 specs/002-steps-16-20-validated-artifact-pipeline.md
+specs/003-steps-21-24-application-tracking-revision.md
 product/resume_tailorer/analyzers/job_analyzer.py       # Step 10
 product/resume_tailorer/analyzers/gap_analyzer.py        # Steps 11-12
 product/resume_tailorer/tailorer/docx_bullet_tailorer.py # Step 13 (DOCX path)
@@ -203,6 +247,9 @@ product/resume_tailorer/docx_export/pipeline.py          # Step 14 + Steps 16-20
 product/resume_tailorer/artifacts/                        # Steps 16-20 domain models/pipeline/regeneration
 product/resume_tailorer/ui/artifact_review.py             # Steps 16-20 Streamlit review helpers
 product/resume_tailorer/applications/                     # Steps 21-24
+product/resume_tailorer/applications/capabilities.py       # Steps 21-24 ATSCapability lookup (decision 016)
+product/resume_tailorer/applications/submission_engine.py  # Steps 21-24 safety gate + attempt tracking + idempotency
+product/resume_tailorer/applications/ui_helpers.py         # Steps 21-24 dashboard views/filters/sorting
 apps/api/app/tailor/router.py                              # Steps 16-20 preview/review/regenerate/download
 apps/api/app/tailor/storage.py                             # Steps 16-20 immutable persistence
 ```
@@ -230,7 +277,7 @@ apps/api/app/tailor/storage.py                             # Steps 16-20 immutab
 ## 8. Verification commands
 
 ```bash
-cd product && ./.venv/Scripts/python.exe -m pytest -q          # expect 610 passed
+cd product && ./.venv/Scripts/python.exe -m pytest -q          # expect 685 passed
 cd apps/api && ./.venv/Scripts/python.exe -m pytest -q          # expect 60 passed
 ```
 
@@ -284,6 +331,14 @@ cd apps/api
   `run.profile_snapshot_json`, never `db.get(Profile, user.id)` — the run must regenerate against
   the exact profile it was proposed against, not whatever the user's profile looks like now
   (decision 015, finding 2).
+- Never let `SubmissionEngine` perform a real POST for a platform whose `ATSCapability.final_submission`
+  is `False` — that flag exists specifically because a prior version of this code treated any
+  non-error HTTP response as a successful submission against a URL that was never a real
+  form-submission endpoint (decision 016). If you're adding a new ATS platform, its capability
+  must default to `final_submission=False` until independently proven working live.
+- `ApplicationSubmission`/`SubmissionAttempt`/status-history columns are additive-only in
+  `applications.db`, same pattern as `apps/api/app/migrations.py` — never rename or drop a
+  column; add a new one guarded by an existence check in `_apply_additive_migrations`.
 
 ---
 
