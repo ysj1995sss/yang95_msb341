@@ -8,6 +8,7 @@ checker keep working unchanged on DOCX output too.
 
 import io
 import os
+import re
 import tempfile
 from dataclasses import dataclass, field, replace
 
@@ -23,6 +24,20 @@ from resume_tailorer.docx_export.splicer import splice_bullets_into_docx, save_d
 from resume_tailorer.docx_export.converter import convert_docx_to_pdf, DocxConversionUnavailable
 from resume_tailorer.pdf.validator import PDFValidator
 from resume_tailorer.utils.scoring import qualification_match_ratio
+from resume_tailorer.artifacts.models import (
+    ArtifactValidation,
+    ChangeCategory,
+    FindingCategory,
+    FindingSeverity,
+    ResumeChange,
+    ValidationFinding,
+    ValidationStatus,
+)
+from resume_tailorer.docx_export.layout_signature import (
+    capture_layout_signature,
+    compare_layout_signatures,
+)
+from resume_tailorer.docx_export.splicer import inline_formatting_findings
 
 
 @dataclass
@@ -48,6 +63,66 @@ class DocxTailoringResult:
     bullets_rejected: int = 0
     addressable_requirements: int = 0
     tailoring_seems_shallow: bool = False
+    changes: list[ResumeChange] = field(default_factory=list)
+    validation: ArtifactValidation = field(
+        default_factory=lambda: ArtifactValidation.from_findings([])
+    )
+
+
+def changes_from_bullet_edits(
+    edits: list[BulletEdit],
+    bullets: list[Bullet],
+    gap_report: GapReport,
+) -> list[ResumeChange]:
+    """Build traceable DOCX changes from exact paragraph pairings."""
+    bullets_by_index = {bullet.paragraph_index: bullet for bullet in bullets}
+    changes: list[ResumeChange] = []
+    for edit in edits:
+        if not edit.changed and not edit.rejected_reason:
+            continue
+        bullet = bullets_by_index.get(edit.paragraph_index)
+        if bullet is None:
+            continue
+        gap = _best_gap_for_edit(edit, gap_report)
+        rejected = bool(edit.rejected_reason)
+        category = (
+            ChangeCategory.REJECTED
+            if rejected
+            else ChangeCategory.COMPETENCY_CHANGED
+            if bullet.section == "competencies"
+            else ChangeCategory.REPHRASED
+        )
+        changes.append(
+            ResumeChange(
+                change_id=f"paragraph:{edit.paragraph_index}",
+                section=bullet.section,
+                source_index=edit.paragraph_index,
+                original_text=edit.original_text,
+                proposed_text=edit.new_text,
+                category=category,
+                reason=(
+                    edit.rejected_reason
+                    or "Matches verified job language while preserving the original claim."
+                ),
+                job_requirement=gap.requirement if gap else "",
+                evidence_source="career_truth_profile" if gap else "original_resume",
+                evidence_text=gap.candidate_evidence if gap else edit.original_text,
+                validation_status=(ValidationStatus.FAIL if rejected else ValidationStatus.PASS),
+            )
+        )
+    return changes
+
+
+def _best_gap_for_edit(edit: BulletEdit, gap_report: GapReport):
+    words = set(re.findall(r"[a-z0-9]+", f"{edit.original_text} {edit.new_text}".lower()))
+    ranked = []
+    for item in gap_report.items:
+        gap_words = set(re.findall(r"[a-z0-9]+", f"{item.requirement} {item.candidate_evidence}".lower()))
+        ranked.append((len(words & gap_words), item))
+    if not ranked:
+        return None
+    score, item = max(ranked, key=lambda pair: pair[0])
+    return item if score else None
 
 
 def run_docx_tailoring_pipeline(
@@ -117,7 +192,16 @@ def run_docx_tailoring_pipeline(
                 "still-underrepresented requirement(s) with strong evidence."
             )
 
+    editable_indices = {edit.paragraph_index for edit in tailoring_result.edits}
+    before_layout = capture_layout_signature(doc, editable_indices)
+    structured_findings: list[ValidationFinding] = []
+    for edit in tailoring_result.edits:
+        structured_findings.extend(
+            inline_formatting_findings(doc.paragraphs[edit.paragraph_index], edit.changed)
+        )
     spliced_doc = splice_bullets_into_docx(doc, tailoring_result.edits)
+    after_layout = capture_layout_signature(spliced_doc, editable_indices)
+    structured_findings.extend(compare_layout_signatures(before_layout, after_layout))
 
     with tempfile.TemporaryDirectory() as tmp_dir:
         original_path = os.path.join(tmp_dir, "original.docx")
@@ -149,6 +233,14 @@ def run_docx_tailoring_pipeline(
             except DocxConversionUnavailable as exc:
                 conversion_available = False
                 warnings.append(str(exc))
+                structured_findings.append(
+                    ValidationFinding(
+                        "DOCX_CONVERSION_UNAVAILABLE",
+                        FindingSeverity.WARNING,
+                        FindingCategory.CONVERSION,
+                        str(exc),
+                    )
+                )
 
         with open(tailored_docx_path, "rb") as f:
             docx_bytes = f.read()
@@ -161,6 +253,14 @@ def run_docx_tailoring_pipeline(
     if page_count_preserved is False:
         warnings.append(
             f"Page count changed: {original_page_count} -> {tailored_page_count}."
+        )
+        structured_findings.append(
+            ValidationFinding(
+                "PAGE_COUNT_CHANGED",
+                FindingSeverity.FAIL,
+                FindingCategory.VISUAL,
+                f"Page count changed: {original_page_count} -> {tailored_page_count}.",
+            )
         )
 
     scoring_text = _synthesize_scoring_text(profile, structure, tailoring_result.edits)
@@ -196,6 +296,13 @@ def run_docx_tailoring_pipeline(
         bullets_rejected=bullets_rejected,
         addressable_requirements=addressable_requirements,
         tailoring_seems_shallow=tailoring_seems_shallow,
+        changes=changes_from_bullet_edits(tailoring_result.edits, bullets, gap_report),
+        validation=ArtifactValidation.from_findings(
+            structured_findings,
+            original_page_count=original_page_count,
+            tailored_page_count=tailored_page_count,
+            checks_run=("docx_layout", "inline_formatting", "page_count"),
+        ),
     )
 
 

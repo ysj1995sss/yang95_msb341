@@ -5,8 +5,39 @@ docx_structure.py for how splice targets are identified.
 """
 
 from docx.document import Document as DocxDocument
+from docx.text.paragraph import Paragraph
 
+from resume_tailorer.artifacts.models import FindingCategory, FindingSeverity, ValidationFinding
 from resume_tailorer.tailorer.docx_bullet_tailorer import BulletEdit
+
+
+def _run_format(run) -> tuple:
+    return (
+        run.bold,
+        run.italic,
+        run.underline,
+        run.font.name,
+        run.font.size.pt if run.font.size is not None else None,
+    )
+
+
+def inline_formatting_findings(
+    paragraph: Paragraph, changed: bool
+) -> list[ValidationFinding]:
+    """Warn when a rewrite necessarily collapses genuinely different run styles."""
+    if not changed:
+        return []
+    formats = {_run_format(run) for run in paragraph.runs if run.text}
+    if len(formats) <= 1:
+        return []
+    return [
+        ValidationFinding(
+            "INLINE_FORMATTING_SIMPLIFIED",
+            FindingSeverity.WARNING,
+            FindingCategory.VISUAL,
+            "A rewritten paragraph contained mixed inline formatting; the first run's style was preserved.",
+        )
+    ]
 
 
 def splice_bullets_into_docx(doc: DocxDocument, edits: list[BulletEdit]) -> DocxDocument:

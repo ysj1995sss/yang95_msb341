@@ -1,7 +1,10 @@
 from docx import Document
 
 from resume_tailorer.tailorer.docx_bullet_tailorer import BulletEdit
-from resume_tailorer.docx_export.splicer import splice_bullets_into_docx
+from resume_tailorer.docx_export.splicer import (
+    inline_formatting_findings,
+    splice_bullets_into_docx,
+)
 
 
 def test_multi_run_paragraph_collapses_to_run_zero_formatting():
@@ -59,3 +62,24 @@ def test_only_targeted_paragraph_is_modified_others_untouched():
     assert spliced.paragraphs[0].text == "Untouched heading"
     assert spliced.paragraphs[1].text == "Rewritten bullet one"
     assert spliced.paragraphs[2].text == "Untouched bullet two"
+
+
+def test_mixed_inline_formatting_on_changed_bullet_warns():
+    doc = Document()
+    paragraph = doc.add_paragraph(style="List Paragraph")
+    paragraph.add_run("Led ")
+    paragraph.add_run("critical").bold = True
+    paragraph.add_run(" launch")
+
+    findings = inline_formatting_findings(paragraph, changed=True)
+
+    assert [finding.code for finding in findings] == ["INLINE_FORMATTING_SIMPLIFIED"]
+
+
+def test_mixed_inline_formatting_on_unchanged_bullet_does_not_warn():
+    doc = Document()
+    paragraph = doc.add_paragraph()
+    paragraph.add_run("Led ")
+    paragraph.add_run("critical").bold = True
+
+    assert inline_formatting_findings(paragraph, changed=False) == []

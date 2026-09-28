@@ -12,6 +12,9 @@ from resume_tailorer.tailorer.docx_bullet_tailorer import BulletEdit, BulletTail
 from resume_tailorer.docx_export.converter import DocxConversionUnavailable
 from resume_tailorer.docx_export import pipeline as pipeline_module
 from resume_tailorer.docx_export.pipeline import run_docx_tailoring_pipeline
+from resume_tailorer.docx_export.pipeline import changes_from_bullet_edits
+from resume_tailorer.parsers.docx_structure import Bullet
+from resume_tailorer.artifacts.models import ValidationStatus
 
 
 def _add_bullet_paragraph(doc: Document, text: str):
@@ -173,6 +176,40 @@ def test_convert_to_pdf_false_skips_conversion_entirely(
     assert result.conversion_available is False
     assert result.pdf_bytes is None
     assert result.docx_bytes
+
+
+def test_docx_result_uses_bullet_edit_pairing_not_similarity_matching():
+    bullet = Bullet(7, "Original exact bullet", "work_experience", job_index=0)
+    edit = BulletEdit(7, "Original exact bullet", "Tailored exact bullet", True)
+
+    changes = changes_from_bullet_edits(
+        [edit], [bullet], GapReport(items=[], summary="No gaps")
+    )
+
+    assert changes[0].source_index == 7
+    assert changes[0].original_text == "Original exact bullet"
+    assert changes[0].proposed_text == "Tailored exact bullet"
+
+
+def test_pipeline_exposes_structured_docx_validation(
+    tmp_path, monkeypatch, sample_profile, sample_job_analysis, sample_gap_report
+):
+    monkeypatch.setattr(
+        pipeline_module,
+        "convert_docx_to_pdf",
+        lambda src, dst: (_ for _ in ()).throw(DocxConversionUnavailable("skip")),
+    )
+
+    result = run_docx_tailoring_pipeline(
+        _sample_docx_bytes(tmp_path),
+        sample_profile,
+        sample_job_analysis,
+        sample_gap_report,
+        bullet_tailorer=_StubBulletTailorer(),
+    )
+
+    assert result.validation.status in {ValidationStatus.PASS, ValidationStatus.WARNING}
+    assert result.changes[0].source_index == 5
 
 
 def test_shallow_tailoring_is_flagged_when_evidence_goes_unused(
