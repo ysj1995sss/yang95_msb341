@@ -36,7 +36,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from resume_tailorer.models import CareerTruthProfile
+from resume_tailorer.models import CareerTruthProfile, WorkExperience
 from resume_tailorer.parsers.resume_parser import ResumeParser
 from resume_tailorer.analyzers.job_analyzer import JobAnalyzer, JobAnalysis
 from resume_tailorer.analyzers.resume_benchmarker import ResumeBenchmarker, ResumeBenchmark
@@ -47,6 +47,10 @@ from resume_tailorer.tailorer.optimizer import ResumeTailoringOptimizer, Optimiz
 from resume_tailorer.pdf.generator import PDFGenerator
 from resume_tailorer.pdf.validator import PDFValidator, ValidationResult
 from resume_tailorer.report_generator import ReportGenerator
+from resume_tailorer.docx_export.pipeline import run_docx_tailoring_pipeline
+from resume_tailorer.tailorer.docx_bullet_tailorer import BulletEdit, BulletTailoringResult
+from resume_tailorer.artifacts.models import FidelityMode
+from resume_tailorer.artifacts.report import build_final_report
 
 from tests.fixtures.real_job_descriptions import JOB_DESCRIPTIONS
 
@@ -241,3 +245,91 @@ class TestMockedEndToEndPipeline:
         assert expected_keys.issubset(report.keys())
         assert report["candidate_name"] == profile.name
         assert report["pdf_validation_passed"] is True
+
+
+def _sample_docx_bytes(tmp_path) -> bytes:
+    from docx import Document
+    from docx.oxml import OxmlElement
+    from docx.oxml.ns import qn
+
+    doc = Document()
+    doc.add_paragraph("Jane Doe")
+    doc.add_paragraph("PROFESSIONAL EXPERIENCE")
+    doc.add_paragraph("Marketing Manager")
+    doc.add_paragraph("Acme Corp | Remote\t2022-2024")
+    paragraph = doc.add_paragraph("Did a thing", style="List Paragraph")
+    pPr = paragraph._p.get_or_add_pPr()
+    numPr = OxmlElement("w:numPr")
+    ilvl = OxmlElement("w:ilvl")
+    ilvl.set(qn("w:val"), "0")
+    numId = OxmlElement("w:numId")
+    numId.set(qn("w:val"), "1")
+    numPr.append(ilvl)
+    numPr.append(numId)
+    pPr.append(numPr)
+    path = tmp_path / "sample.docx"
+    doc.save(path)
+    return path.read_bytes()
+
+
+class _StubBulletTailorer:
+    """Rewrites only the one bullet -- exercises the real splice/validate
+    path without an LLM call."""
+
+    def tailor_bullets(self, bullets, profile, job_analysis, gap_report, max_repair_attempts=1, priority_focus=None):
+        edits = []
+        for b in bullets:
+            if b.text == "Did a thing":
+                edits.append(BulletEdit(b.paragraph_index, b.text, "Did a thing using SQL", changed=True))
+            else:
+                edits.append(BulletEdit(b.paragraph_index, b.text, b.text, changed=False))
+        return BulletTailoringResult(edits=edits, warnings=[])
+
+
+class TestArtifactPipelineIntegration:
+    """Task 8 (spec 002/decisions 014): app.py and the API router now
+    dispatch a DOCX upload to run_docx_tailoring_pipeline -- and its
+    output feeds build_final_report -- instead of the legacy freeform
+    reconstruction path Test 3 above covers. This is a mocked end-to-end
+    run of THAT path (no LLM call), verifying the artifact/report models
+    stay wired together correctly."""
+
+    def test_docx_upload_produces_a_validated_report(self, tmp_path):
+        profile = CareerTruthProfile(
+            contact_info={"name": "Jane Doe"},
+            education=[],
+            work_experience=[
+                WorkExperience(
+                    employer="Acme Corp", title="Marketing Manager", dates="2022-2024",
+                    responsibilities=[], accomplishments=[],
+                )
+            ],
+            skills=[], tools=[], certifications=[], accomplishments=[],
+        )
+        job_analysis = JobAnalyzer().analyze("Marketing role requiring SQL.")
+        benchmark = ResumeBenchmarker().benchmark(profile, job_analysis)
+        gap_report = GapAnalyzer().analyze(profile, job_analysis, benchmark)
+
+        original_bytes = _sample_docx_bytes(tmp_path)
+        docx_result = run_docx_tailoring_pipeline(
+            original_bytes, profile, job_analysis, gap_report,
+            bullet_tailorer=_StubBulletTailorer(), convert_to_pdf=False,
+        )
+
+        assert docx_result.docx_bytes
+        assert docx_result.changes
+        assert docx_result.validation.status is not None
+
+        report = build_final_report(
+            candidate_fit=None,
+            fit_breakdown={},
+            original_alignment=benchmark.original_match_score,
+            tailored_alignment=benchmark.original_match_score,
+            gap_report=gap_report,
+            validation=docx_result.validation,
+            fidelity_mode=FidelityMode.PRESERVED,
+        )
+
+        assert report.fidelity_mode is FidelityMode.PRESERVED
+        assert report.candidate_fit is None
+        assert report.validation is docx_result.validation

@@ -1,30 +1,22 @@
 """
-Streamlit Web UI for the Resume Tailoring pipeline (Task 12).
+Streamlit Web UI for the Resume Tailoring pipeline.
 
-Ties together the full pipeline built in Tasks 1-11:
+Steps 16-20 (spec 002, decision 014): this module now dispatches through
+the SAME shared validated-artifact building blocks apps/api/app/tailor/
+router.py uses -- a DOCX upload goes through the master-template splice
+pipeline (resume_tailorer.docx_export), a PDF-only/no-upload case goes
+through the freeform reconstruction path, and BOTH produce a structured
+ArtifactValidation, a ResumeChange list, and a FinalApplicationReport via
+the same product-layer functions the API calls. Previously this file
+ALWAYS used the freeform path, even for a DOCX upload -- the exact
+fragmentation problem decision 014 named as the reason Steps 16-20
+needed one shared pipeline instead of adapter-specific fixes.
 
-    upload resume + job description
-        -> ResumeParser.parse                (Task 2)
-        -> JobAnalyzer.analyze                (Task 4)
-        -> ResumeBenchmarker.benchmark        (Task 5)
-        -> GapAnalyzer.analyze                (Task 6)
-        -> ResumeTailorer.tailor              (Task 7, LLM via LLMClient)
-        -> ResumeTailoringOptimizer.optimize  (Task 9)
-        -> PDFGenerator.generate              (Task 10)
-        -> PDFValidator.validate              (Task 10)
-        -> ReportGenerator.generate_report    (Task 11)
-
-This module only orchestrates the components above. It performs no
-scoring, classification, or content generation of its own, and it never
-alters or bypasses the fabrication guardrails built into ResumeTailorer
-and ResumeTailoringOptimizer.
-
-NOTE ON THE PLAN'S SAMPLE CODE (lines 1887-2006): the plan's sample
-referenced `ReportGenerator.generate()`, `ValidationResult.errors`, and
-assumed slightly different call signatures. Those names drifted from
-what Tasks 5-11 actually implemented. This file uses the REAL signatures
-verified by reading the actual source (see report for details); the
-plan's sample served only as a guide to the overall UI flow.
+Review (accept/reject/restore/manually edit a change, then regenerate) is
+applied locally via resume_tailorer.artifacts.regeneration -- the same
+functions the API's regenerate endpoint calls -- rather than through a
+network request, since this Streamlit app has no user accounts/database
+of its own to route through.
 """
 
 import os
@@ -35,18 +27,36 @@ import streamlit as st
 from resume_tailorer.parsers import ResumeParser
 from resume_tailorer.analyzers import JobAnalyzer, ResumeBenchmarker, GapAnalyzer
 from resume_tailorer.tailorer import ResumeTailorer, ResumeTailoringOptimizer
-from resume_tailorer.pdf import PDFGenerator, PDFValidator
-from resume_tailorer.report_generator import ReportGenerator
+from resume_tailorer.tailorer.docx_bullet_tailorer import DocxBulletTailorer
+from resume_tailorer.pdf.generator import PDFGenerator
+from resume_tailorer.pdf.validator import PDFValidator
 from resume_tailorer.diff_generator import DiffGenerator
 from resume_tailorer.llm.settings import resolve_settings
 from resume_tailorer.llm.client import LLMClient
 from resume_tailorer.llm.ui import COMMON_MODELS, collect_sidebar_llm_fields
 from resume_tailorer.job_search.job_service import PENDING_TAILOR_JOB_KEY
+from resume_tailorer.docx_export import run_docx_tailoring_pipeline
+from resume_tailorer.analyzers.gap_analyzer import find_unsupported_claims
+from resume_tailorer.artifacts.changes import build_freeform_changes
+from resume_tailorer.artifacts.models import FidelityMode, ValidationStatus
+from resume_tailorer.artifacts.regeneration import (
+    apply_dispositions_to_text,
+    regenerate_docx_artifact,
+    regenerate_freeform_artifact,
+    validate_manual_text,
+)
+from resume_tailorer.artifacts.report import build_final_report
+from resume_tailorer.ui.artifact_review import visible_changes
 
 
 st.set_page_config(page_title="Resume Tailorer", page_icon="\U0001F4C4", layout="wide")
 
 _JD_SESSION_KEY = "job_description_text"
+_STATE_KEY = "artifact_run_state"
+
+# Disposition options offered per change. String values match
+# resume_tailorer.artifacts.models.ChangeDisposition exactly.
+_DISPOSITION_OPTIONS = ["ACCEPTED", "REJECTED", "MANUALLY_EDITED"]
 
 
 def _save_uploaded_file(uploaded_file) -> str:
@@ -56,6 +66,215 @@ def _save_uploaded_file(uploaded_file) -> str:
     with os.fdopen(fd, "wb") as f:
         f.write(uploaded_file.getbuffer())
     return tmp_path
+
+
+def _reset_review_state() -> None:
+    st.session_state.pop(_STATE_KEY, None)
+
+
+def _regenerate_from_current_dispositions() -> None:
+    """Apply the current per-change disposition/manual-text choices and
+    regenerate the artifact -- never re-invokes the LLM tailorer, so a
+    human's accept/reject/manual-edit choices are exactly what appears in
+    the output (spec 002 section 10)."""
+    state = st.session_state[_STATE_KEY]
+    changes = state["changes"]
+    dispositions = state["dispositions"]
+    manual_texts = state["manual_texts"]
+
+    from dataclasses import replace as _replace
+    from resume_tailorer.artifacts.models import ChangeDisposition
+
+    updated_changes = []
+    for change in changes:
+        disposition_str = dispositions.get(change.change_id, str(change.disposition))
+        disposition = ChangeDisposition(disposition_str)
+        proposed_text = change.proposed_text
+        if disposition == ChangeDisposition.MANUALLY_EDITED:
+            manual_text = manual_texts.get(change.change_id, "").strip()
+            if not manual_text:
+                st.error(f"Manual edit for '{change.original_text[:40]}...' cannot be empty.")
+                return
+            issues = validate_manual_text(change.original_text, manual_text, state["profile"])
+            if issues:
+                st.error(
+                    f"Manual edit for '{change.original_text[:40]}...' failed safety checks: "
+                    + "; ".join(issues)
+                )
+                return
+            proposed_text = manual_text
+        updated_changes.append(_replace(change, disposition=disposition, proposed_text=proposed_text))
+
+    profile = state["profile"]
+    gap_report = state["gap_report"]
+
+    if state["source_kind"] == "DOCX":
+        result = regenerate_docx_artifact(
+            original_docx_bytes=state["original_bytes"],
+            changes=updated_changes,
+            profile=profile,
+            gap_report=gap_report,
+            convert_to_pdf=True,
+        )
+        tailored_text = result.tailored_scoring_text
+        validation = result.validation
+        docx_bytes = result.docx_bytes
+        pdf_bytes = result.pdf_bytes
+    else:
+        pdf_bytes, tailored_text = regenerate_freeform_artifact(
+            baseline_tailored_text=state["baseline_text"],
+            changes=updated_changes,
+            profile=profile,
+            target_length=state["target_length"],
+            style_hints=state["style_hints"] or {},
+            company="",
+            role="",
+        )
+        with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as tmp:
+            tmp.write(pdf_bytes)
+            tmp_path = tmp.name
+        try:
+            validation = PDFValidator().validate_artifact(
+                tmp_path, profile=profile, expected_page_count=None, accepted_changes=updated_changes,
+            )
+        finally:
+            os.remove(tmp_path)
+        docx_bytes = None
+
+    unsupported_claims = find_unsupported_claims(gap_report, tailored_text)
+    report = build_final_report(
+        candidate_fit=None,
+        fit_breakdown={},
+        original_alignment=state["original_alignment"],
+        tailored_alignment=state["original_alignment"],
+        gap_report=gap_report,
+        validation=validation,
+        artifacts=(),
+        company="",
+        role="Target Role",
+        fidelity_mode=state["fidelity_mode"],
+        unsupported_claims=unsupported_claims,
+    )
+
+    state.update(
+        changes=updated_changes,
+        tailored_text=tailored_text,
+        validation=validation,
+        docx_bytes=docx_bytes,
+        pdf_bytes=pdf_bytes,
+        report=report,
+        reviewed=True,
+    )
+
+
+def _render_review_controls() -> None:
+    state = st.session_state[_STATE_KEY]
+    report = state["report"]
+
+    st.header("Results")
+
+    col1, col2 = st.columns(2)
+    col1.metric("Original resume alignment", f"{report.original_alignment:.0%}")
+    col2.metric("Tailored resume alignment", f"{report.tailored_alignment:.0%}")
+    st.caption(
+        "Candidate Fit (how well your actual background matches this job) is a separate "
+        "measure from Resume Alignment (how well THIS resume communicates it) -- Candidate "
+        "Fit isn't computed in this view yet; see the Job Search page for fit scoring."
+    )
+
+    status = report.validation.status
+    if status is ValidationStatus.PASS:
+        st.success("Validation PASSED -- this artifact is application-ready.")
+    elif status is ValidationStatus.WARNING:
+        st.warning("Validation passed with WARNINGS -- review before submitting:")
+        for finding in report.validation.findings:
+            st.write(f"- **{finding.code}**: {finding.message}")
+    else:
+        st.error("Validation FAILED -- do not submit this artifact as-is:")
+        for finding in report.validation.findings:
+            st.write(f"- **{finding.code}**: {finding.message}")
+
+    fidelity_label = "preserved exactly" if report.fidelity_mode is FidelityMode.PRESERVED else "reconstructed (not an exact visual match to your original)"
+    st.caption(f"Document fidelity: {fidelity_label}.")
+
+    st.subheader("Tailored resume text")
+    st.text_area("Tailored resume", state["tailored_text"], height=300)
+
+    st.subheader("Review changes")
+    advanced = st.checkbox("Show all changes (advanced view)", value=False)
+    shown = visible_changes(state["changes"], advanced=advanced)
+    if not shown:
+        st.caption("No meaningful changes to review.")
+
+    for change in shown:
+        with st.container(border=True):
+            st.markdown(f"**{change.category}** — {change.reason}")
+            st.write(f"Original: {change.original_text}")
+            st.write(f"Proposed: {change.proposed_text}")
+            if change.job_requirement:
+                st.caption(f"Addresses: {change.job_requirement} (evidence: {change.evidence_text})")
+
+            current = state["dispositions"].get(change.change_id, "ACCEPTED")
+            choice = st.radio(
+                "Disposition", _DISPOSITION_OPTIONS,
+                index=_DISPOSITION_OPTIONS.index(current) if current in _DISPOSITION_OPTIONS else 0,
+                key=f"disposition_{change.change_id}", horizontal=True,
+            )
+            state["dispositions"][change.change_id] = choice
+            if choice == "MANUALLY_EDITED":
+                manual_text = st.text_area(
+                    "Your edit", value=state["manual_texts"].get(change.change_id, change.proposed_text),
+                    key=f"manual_{change.change_id}",
+                )
+                state["manual_texts"][change.change_id] = manual_text
+
+    if st.button("Apply review and regenerate", type="primary"):
+        _regenerate_from_current_dispositions()
+        st.rerun()
+
+    if state.get("reviewed"):
+        st.subheader("Resume Changes (after review)")
+    _render_diagnostics_and_download(state)
+
+
+def _render_diagnostics_and_download(state: dict) -> None:
+    report = state["report"]
+
+    with st.expander("Diagnostics"):
+        st.write(f"Fidelity: {report.fidelity_mode}")
+        st.write(f"Original page count: {report.original_page_count}")
+        st.write(f"Tailored page count: {report.tailored_page_count}")
+        if report.unsupported_claims:
+            st.warning("Unsupported claims found in the tailored text:")
+            for claim in report.unsupported_claims:
+                st.write(f"- {claim}")
+        st.write("All validation findings:")
+        for finding in report.validation.findings:
+            st.write(f"- [{finding.severity}] {finding.code}: {finding.message}")
+
+    status = report.validation.status
+    docx_bytes = state.get("docx_bytes")
+    pdf_bytes = state.get("pdf_bytes")
+
+    if status is ValidationStatus.FAIL:
+        st.error("This artifact failed validation and is not available as an application-ready download.")
+        return
+
+    if status is ValidationStatus.WARNING:
+        st.warning("Downloading an artifact with unresolved warnings -- review them above first.")
+
+    name = state.get("candidate_name", "resume").replace(" ", "_")
+    if docx_bytes:
+        st.download_button(
+            "Download tailored resume (DOCX)", data=docx_bytes,
+            file_name=f"{name}_tailored_resume.docx",
+            mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        )
+    if pdf_bytes:
+        st.download_button(
+            "Download tailored resume (PDF)", data=pdf_bytes,
+            file_name=f"{name}_tailored_resume.pdf", mime="application/pdf",
+        )
 
 
 def main():
@@ -90,10 +309,6 @@ def main():
         )
 
         st.header("3. Choose the target resume length")
-        # Defaults to "Preserve original length" (index=2): the base rule
-        # is to match whatever length/style the user actually uploaded,
-        # not to assume everyone wants a fixed 1-page resume regardless of
-        # how long their real one is.
         length_choice_ui = st.selectbox(
             "Target resume length",
             options=["1 page", "2 pages", "Preserve original length"],
@@ -141,6 +356,13 @@ def main():
 
         run_clicked = st.button("Tailor my resume", type="primary")
 
+    if run_clicked:
+        _reset_review_state()
+
+    if _STATE_KEY in st.session_state:
+        _render_review_controls()
+        return
+
     if not run_clicked:
         st.info("Upload a resume, paste a job description, and click **Tailor my resume**.")
         return
@@ -174,25 +396,18 @@ def main():
 
     # --- Step 1: Parse resume --------------------------------------------------
     resume_path = None
+    original_bytes = resume_file.getvalue()
+    suffix = os.path.splitext(resume_file.name)[1].lower()
+    is_docx = suffix == ".docx"
     try:
         with st.spinner("Parsing resume..."):
             resume_path = _save_uploaded_file(resume_file)
             parser = ResumeParser()
             profile = parser.parse(resume_path)
-
-            # Extract the raw resume text so we can derive style hints
-            # (bullet character, heading style) from the source formatting.
-            # get_raw_text() is the same public dispatch ResumeParser.parse()
-            # uses internally, so there's a single source of truth for
-            # file-type dispatch.
             try:
                 raw_resume_text = parser.get_raw_text(resume_path)
             except ValueError:
                 raw_resume_text = ""
-            # file_path=resume_path additionally detects the original's
-            # page count and font family straight from the PDF structure,
-            # so "Preserve original length" actually preserves length and
-            # the output uses a similar font family.
             style_hints = parser.extract_style_hints(raw_resume_text, file_path=resume_path)
         st.session_state["career_profile"] = profile
         st.success(f"Resume parsed for {profile.name}.")
@@ -231,207 +446,98 @@ def main():
         st.error(f"Failed to run gap analysis: {exc}")
         return
 
-    # --- Step 5: Tailor resume (live LLM call) ----------------------------------
+    # --- Steps 13-20: tailor + generate a validated artifact --------------------
+    # A DOCX upload MUST reach the master-template splice pipeline -- never the
+    # freeform reconstruction path, which would discard the original's exact
+    # formatting (decision 006, decision 014).
+    baseline_text = ""
+    # DocxTailoringResult has no re-scored alignment number of its own (it
+    # only ever mutates a fixed set of bullets in place, unlike the
+    # freeform optimizer, which iterates against the benchmark score) --
+    # fall back to the original score for tailored_alignment on that path.
+    tailored_alignment = benchmark.original_match_score
     try:
-        with st.spinner("Tailoring resume with the configured LLM..."):
-            tailored_text = ResumeTailorer(llm=llm).tailor(
-                profile, job_analysis, gap_report, conservative=conservative_mode
-            )
-    except RuntimeError as exc:
-        st.error(str(exc))
-        return
-    except Exception as exc:
-        st.error(f"Resume tailoring failed: {exc}")
-        return
-
-    # --- Step 6: Optimize (iterative refinement, also calls LLM) ----------------
-    try:
-        with st.spinner("Optimizing tailored resume for alignment..."):
-            optimization_result = ResumeTailoringOptimizer(llm=llm).optimize(
-                profile, job_analysis, tailored_text, gap_report, conservative=conservative_mode
-            )
-    except RuntimeError as exc:
-        st.error(str(exc))
-        return
-    except Exception as exc:
-        st.error(f"Optimization failed: {exc}")
-        return
-
-    # --- Step 7: Generate PDF -----------------------------------------------------
-    try:
-        with st.spinner("Generating PDF..."):
-            pdf_path = PDFGenerator().generate(
-                optimization_result.tailored_resume,
-                profile.name,
-                target_length=target_length,
-                style_hints=style_hints,
-            )
-    except Exception as exc:
-        st.error(f"PDF generation failed: {exc}")
-        return
-
-    # --- Step 8: Validate PDF (hard gate) -----------------------------------------
-    try:
-        with st.spinner("Validating generated PDF..."):
-            # Resolve "preserve" to the concrete 1_page/2_page preset so the
-            # validator enforces the same page limit generate() targeted.
-            effective_length = PDFGenerator.resolve_target_length(target_length, style_hints)
-            pdf_validation = PDFValidator().validate(pdf_path, target_length=effective_length)
-    except Exception as exc:
-        st.error(f"PDF validation failed: {exc}")
-        return
-
-    # --- Step 9: Build final report -----------------------------------------------
-    try:
-        report = ReportGenerator().generate_report(
-            profile,
-            job_analysis,
-            benchmark,
-            gap_report,
-            optimization_result,
-            pdf_validation,
-        )
-    except Exception as exc:
-        st.error(f"Failed to build final report: {exc}")
-        return
-
-    # If the ONLY problem is that the content overflowed the 1-page target,
-    # the PDF itself is still text-based and ATS-readable — treat it as a
-    # recoverable "too long" case rather than a broken-PDF failure.
-    page_count_issue_only = (
-        not pdf_validation.passed
-        and len(pdf_validation.issues) == 1
-        and "page" in pdf_validation.issues[0].lower()
-        and pdf_validation.page_count > 0
-    )
-    length_overflow_only = page_count_issue_only and effective_length == "1_page"
-
-    # --- Display results ------------------------------------------------------------
-    st.header("Results")
-
-    col1, col2, col3 = st.columns(3)
-    col1.metric(
-        "Original match score",
-        f"{report['original_match_score']:.0%}",
-    )
-    col2.metric(
-        "Tailored match score",
-        f"{report['tailored_match_score']:.0%}",
-        delta=f"{report['score_improvement']:+.0%}",
-    )
-    col3.metric(
-        "Optimization iterations",
-        report["optimization_iterations"],
-    )
-
-    if report["pdf_validation_passed"]:
-        st.success("PDF validation passed: the generated resume is text-based and ATS-readable.")
-    elif length_overflow_only:
-        st.warning(
-            "The PDF is text-based and ATS-readable, but it didn't fit the 1-page target."
-        )
-        for issue in report["pdf_validation_details"]["issues"]:
-            st.write(f"- {issue}")
-    else:
-        st.error("PDF validation FAILED — do not send this resume as-is.")
-        for issue in report["pdf_validation_details"]["issues"]:
-            st.write(f"- {issue}")
-
-    if report["optimization_ceiling_reached"] and report["tailored_match_score"] < 0.85:
-        st.warning(
-            "Optimization reached a plateau before hitting the 85% alignment target. "
-            "See recommendations below."
-        )
-
-    st.subheader(f"Gaps addressed: {report['gaps_addressed_count']} / {report['total_gaps_count']}")
-
-    with st.expander("Qualifications summary (by category A-E)"):
-        for category_name, entries in report["qualifications_summary"].items():
-            if not entries:
-                continue
-            st.markdown(f"**Category {category_name}**")
-            for entry in entries:
-                st.write(f"- {entry['requirement']} — {entry['reason']}")
-
-    if report["recommendations"]:
-        st.subheader("Recommendations")
-        for rec in report["recommendations"]:
-            st.write(f"- {rec}")
-
-    st.subheader("Tailored resume text")
-    st.text_area("Tailored resume", optimization_result.tailored_resume, height=400)
-
-    # --- Resume Changes: side-by-side diff with reasoning ------------------------
-    st.subheader("Resume Changes")
-    try:
-        diff_report = DiffGenerator().generate_diff(profile, optimization_result.tailored_resume)
-    except Exception as exc:
-        st.warning(f"Could not generate the resume change breakdown: {exc}")
-        diff_report = None
-
-    if diff_report is not None:
-        col_orig, col_tail = st.columns(2)
-        with col_orig:
-            st.markdown("**Original bullets**")
-            if diff_report.original_bullets:
-                for bullet in diff_report.original_bullets:
-                    st.write(f"- {bullet}")
-            else:
-                st.caption("No accomplishment bullets found in the original resume.")
-        with col_tail:
-            st.markdown("**Tailored bullets**")
-            if diff_report.tailored_bullets:
-                for bullet in diff_report.tailored_bullets:
-                    st.write(f"- {bullet}")
-            else:
-                st.caption("No bullet points found in the tailored resume.")
-
-        if diff_report.changes:
-            with st.expander(f"What changed and why ({len(diff_report.changes)} change(s))"):
-                for i, change in enumerate(diff_report.changes, start=1):
-                    st.markdown(f"**{i}. {change.change_type.title()}**")
-                    st.write(f"Reasoning: {change.reasoning}")
-                    if change.original:
-                        st.write(f"Original: {change.original}")
-                    if change.tailored:
-                        st.write(f"Tailored: {change.tailored}")
-                    st.divider()
-        else:
-            st.caption("No bullet-level changes were detected.")
-
-        if diff_report.issues:
-            st.warning("Possible fabrication risks detected in the tailored resume:")
-            for issue in diff_report.issues:
-                st.write(f"- {issue}")
-
-    if os.path.exists(pdf_path):
-        if pdf_validation.passed:
-            with open(pdf_path, "rb") as f:
-                st.download_button(
-                    "Download tailored resume (PDF)",
-                    data=f.read(),
-                    file_name=f"{profile.name.replace(' ', '_')}_tailored_resume.pdf",
-                    mime="application/pdf",
+        if is_docx:
+            with st.spinner("Tailoring and generating your resume (this may take a moment)..."):
+                docx_result = run_docx_tailoring_pipeline(
+                    original_bytes, profile, job_analysis, gap_report,
+                    bullet_tailorer=DocxBulletTailorer(llm=llm),
+                    convert_to_pdf=True,
                 )
+            tailored_text = docx_result.tailored_scoring_text
+            changes = list(docx_result.changes)
+            validation = docx_result.validation
+            docx_bytes = docx_result.docx_bytes
+            pdf_bytes = docx_result.pdf_bytes
+            fidelity_mode = FidelityMode.PRESERVED
         else:
-            # Don't leave the user with nothing when the only problem is that
-            # the content overflowed the 1-page target — offer the PDF with a
-            # clear warning plus a concrete next step.
-            if length_overflow_only:
-                st.warning(
-                    f"Your tailored resume needs {pdf_validation.page_count} pages to hold all "
-                    "the content while staying readable — it doesn't fit on 1 page. "
-                    "Try selecting **2 pages** or **Preserve original length** in the sidebar "
-                    "and generating again. The PDF is still available below if you'd like to "
-                    "review it as-is."
+            with st.spinner("Tailoring resume with the configured LLM..."):
+                initial_tailored = ResumeTailorer(llm=llm).tailor(
+                    profile, job_analysis, gap_report, conservative=conservative_mode
+                )
+            with st.spinner("Optimizing tailored resume for alignment..."):
+                optimization_result = ResumeTailoringOptimizer(llm=llm).optimize(
+                    profile, job_analysis, initial_tailored, gap_report, conservative=conservative_mode
+                )
+            tailored_text = optimization_result.tailored_resume
+            baseline_text = tailored_text
+            tailored_alignment = optimization_result.final_score
+            changes = build_freeform_changes(profile, tailored_text, gap_report)
+            with st.spinner("Generating and validating PDF..."):
+                pdf_path = PDFGenerator().generate(
+                    tailored_text, profile.name, target_length=target_length, style_hints=style_hints,
+                )
+                validation = PDFValidator().validate_artifact(
+                    pdf_path, profile=profile, expected_page_count=None, accepted_changes=changes,
                 )
                 with open(pdf_path, "rb") as f:
-                    st.download_button(
-                        "Download PDF anyway (exceeds 1-page target)",
-                        data=f.read(),
-                        file_name=f"{profile.name.replace(' ', '_')}_tailored_resume.pdf",
-                        mime="application/pdf",
-                    )
+                    pdf_bytes = f.read()
+            docx_bytes = None
+            fidelity_mode = FidelityMode.RECONSTRUCTED
+    except RuntimeError as exc:
+        st.error(str(exc))
+        return
+    except Exception as exc:
+        st.error(f"Tailoring failed: {exc}")
+        return
+
+    unsupported_claims = find_unsupported_claims(gap_report, tailored_text)
+    report = build_final_report(
+        candidate_fit=None,
+        fit_breakdown={},
+        original_alignment=benchmark.original_match_score,
+        tailored_alignment=tailored_alignment,
+        gap_report=gap_report,
+        validation=validation,
+        artifacts=(),
+        company="",
+        role="Target Role",
+        fidelity_mode=fidelity_mode,
+        unsupported_claims=unsupported_claims,
+    )
+
+    st.session_state[_STATE_KEY] = {
+        "source_kind": "DOCX" if is_docx else "PDF",
+        "original_bytes": original_bytes,
+        "baseline_text": baseline_text,
+        "target_length": target_length,
+        "style_hints": style_hints,
+        "profile": profile,
+        "gap_report": gap_report,
+        "original_alignment": benchmark.original_match_score,
+        "fidelity_mode": fidelity_mode,
+        "changes": changes,
+        "dispositions": {},
+        "manual_texts": {},
+        "tailored_text": tailored_text,
+        "validation": validation,
+        "docx_bytes": docx_bytes,
+        "pdf_bytes": pdf_bytes,
+        "report": report,
+        "candidate_name": profile.name,
+        "reviewed": False,
+    }
+    st.rerun()
 
 
 if __name__ == "__main__":
