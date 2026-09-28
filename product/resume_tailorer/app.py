@@ -22,7 +22,15 @@ of its own to route through.
 import os
 import tempfile
 
+from dotenv import load_dotenv
 import streamlit as st
+
+# Loads LLM_MODEL/LLM_API_KEY/LLM_API_BASE from a local .env file (gitignored)
+# if one exists, so a real key never has to be pasted into the sidebar or
+# exported by hand in every new terminal. Does nothing if no .env is present
+# or the values are already set in the real environment (load_dotenv never
+# overrides an existing env var by default).
+load_dotenv()
 
 from resume_tailorer.parsers import ResumeParser
 from resume_tailorer.analyzers import JobAnalyzer, ResumeBenchmarker, GapAnalyzer

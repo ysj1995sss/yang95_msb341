@@ -7,7 +7,7 @@ from resume_tailorer.diff_generator import (
     BulletChange,
     DiffGenerator,
 )
-from resume_tailorer.models import CareerTruthProfile, WorkExperience
+from resume_tailorer.models import CareerTruthProfile, EducationEntry, WorkExperience
 
 
 def test_diff_generator_initialization():
@@ -177,17 +177,17 @@ def test_diff_report_renders_in_streamlit():
     ]
 
 
-def _profile(accomplishments, skills=None, tools=None, employer="TechCorp"):
+def _profile(accomplishments, skills=None, tools=None, employer="TechCorp", education=None, responsibilities=None):
     """Build a single-job CareerTruthProfile for diff tests."""
     return CareerTruthProfile(
         contact_info={},
-        education=[],
+        education=list(education or []),
         work_experience=[
             WorkExperience(
                 employer=employer,
                 title="Engineer",
                 dates="2023-2024",
-                responsibilities=[],
+                responsibilities=list(responsibilities or []),
                 accomplishments=list(accomplishments),
             )
         ],
@@ -457,3 +457,79 @@ class TestFreeformPathLengthControl:
         report = DiffGenerator().generate_diff(profile, tailored_text)
 
         assert not any("wrap onto an extra line" in issue for issue in report.issues)
+
+
+class TestFreeformPathRecognizesTheWholeProfile:
+    """Found live (2026-09-28), first real end-to-end test with a live LLM:
+    a real resume's education honors/scholarships and skills list both got
+    mislabeled as fabricated 'added' bullets. _extract_bullets_from_profile
+    only ever read job.accomplishments -- job.responsibilities, education
+    notes, skills/tools/certifications, and summary were invisible to the
+    pairing step, so ANY tailored bullet built from those (100% truthful)
+    categories had no possible match and was always misclassified as new.
+    This is the exact gap _profile_blob (the fabrication-risk check's
+    trusted vocabulary) was already fixed for once before -- see its own
+    docstring -- just never mirrored in the pairing step that decides
+    change_type in the first place."""
+
+    def test_a_skill_restated_as_a_bullet_is_not_flagged_as_added(self):
+        profile = _profile(["Built internal tools"], skills=["Digital Marketing", "Prompt Engineering"])
+        tailored_text = "- Built internal tools\n- Digital Marketing\n- Prompt Engineering\n"
+
+        report = DiffGenerator().generate_diff(profile, tailored_text)
+
+        added = [c for c in report.changes if c.change_type == "added"]
+        assert added == []
+
+    def test_an_education_honor_restated_as_a_bullet_is_not_flagged_as_added(self):
+        profile = _profile(
+            ["Built internal tools"],
+            education=[EducationEntry(
+                degree="BS", field="Business", institution="State University", year=2024,
+                notes=["Dean's List x5 Semesters | Full Merit Scholar | GPA: 3.92/4.0"],
+            )],
+        )
+        tailored_text = "- Built internal tools\n- Dean's List x5 Semesters | Full Merit Scholar | GPA: 3.92/4.0\n"
+
+        report = DiffGenerator().generate_diff(profile, tailored_text)
+
+        added = [c for c in report.changes if c.change_type == "added"]
+        assert added == []
+
+    def test_a_responsibility_restated_as_a_bullet_is_not_flagged_as_added(self):
+        profile = _profile([], responsibilities=["Consulted clients on brand growth strategy"])
+        tailored_text = "- Consulted clients on brand growth strategy\n"
+
+        report = DiffGenerator().generate_diff(profile, tailored_text)
+
+        added = [c for c in report.changes if c.change_type == "added"]
+        assert added == []
+
+    def test_a_genuinely_new_bullet_with_no_match_anywhere_is_still_caught(self):
+        """The fix must not swallow real fabrication detection. A bullet
+        with no counterpart in accomplishments, responsibilities,
+        education notes, skills, tools, or certifications must never end
+        up silently accepted.
+
+        With exactly one other profile-only item ("Python") in play, this
+        can get SequenceMatcher-paired against the new bullet as "modified"
+        (low similarity) rather than a clean "added" -- broadening
+        original_bullets makes list lengths line up in this specific
+        edge case. That's an acceptable trade: build_freeform_changes'
+        AMBIGUOUS_PAIRING_THRESHOLD (0.45) still catches the low-similarity
+        pairing and REJECTs it, so the end-to-end guarantee (never silently
+        accepted) holds regardless of which path flags it -- verified via
+        build_freeform_changes, the function actually used in production,
+        not the raw DiffGenerator output alone."""
+        from resume_tailorer.artifacts.changes import build_freeform_changes
+        from resume_tailorer.analyzers.gap_analyzer import GapReport
+
+        profile = _profile(["Built internal tools"], skills=["Python"])
+        tailored_text = "- Built internal tools\n- Led a team of 50 engineers\n"
+
+        changes = build_freeform_changes(profile, tailored_text, GapReport(items=[], summary=""))
+        fabricated = [c for c in changes if "Led a team of 50 engineers" in c.proposed_text]
+
+        assert fabricated, "the fabricated bullet must appear as a reviewable change"
+        assert fabricated[0].disposition.value != "accepted"
+        assert fabricated[0].validation_status.value != "pass"

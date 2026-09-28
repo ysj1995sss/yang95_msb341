@@ -124,12 +124,38 @@ class DiffGenerator:
         )
 
     def _extract_bullets_from_profile(self, profile: CareerTruthProfile) -> List[str]:
-        """Extract all accomplishment bullets from Career Truth Profile."""
+        """Extract every already-true, bullet-comparable line from the
+        Career Truth Profile -- not just work-experience accomplishments.
+
+        Previously only read job.accomplishments. job.responsibilities,
+        education notes, skills/tools/certifications, and summary were
+        invisible to this pairing step, so ANY tailored bullet built from
+        those (100% truthful) categories had no possible match in
+        original_bullets and was always misclassified as a fabricated
+        "added" bullet by _compute_changes below -- found live (2026-09-28),
+        first real end-to-end test with a live LLM: a real resume's
+        education honors/scholarships and skills list both got flagged as
+        fabricated. This is the exact gap _profile_blob (the
+        fabrication-risk check's trusted vocabulary, see its own
+        docstring) was already fixed for once before -- just never
+        mirrored here, in the step that decides change_type in the first
+        place.
+        """
         bullets = []
 
         for job in profile.work_experience:
-            for accomplishment in job.accomplishments:
-                bullets.append(accomplishment)
+            bullets.extend(job.accomplishments)
+            bullets.extend(job.responsibilities)
+
+        for edu in profile.education:
+            bullets.extend(edu.notes)
+
+        bullets.extend(profile.skills)
+        bullets.extend(profile.tools)
+        bullets.extend(profile.certifications)
+
+        if profile.summary:
+            bullets.append(profile.summary)
 
         return bullets
 
