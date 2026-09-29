@@ -123,6 +123,43 @@ def test_metric_in_a_legitimately_condensed_bullet_is_not_flagged_missing():
     assert "METRIC_MISSING" not in {finding.code for finding in findings}
 
 
+def test_auto_rejected_ambiguous_pairing_does_not_require_original_to_reappear():
+    """Found live (2026-09-28): a condensed skill weakly leftover-paired
+    against an unrelated new bullet (category REJECTED = auto-rejected
+    AMBIGUOUS pairing, not a user rejecting a confident rewrite) has no
+    real substitution relationship -- its original_text was never
+    actually replaced by the tailored text, so it must not be required
+    to reappear once the pairing itself gets auto-rejected."""
+    ambiguous_change = ResumeChange(
+        change_id="paragraph:3", section="work_experience", source_index=3,
+        original_text="Market Research", proposed_text="Relevant Coursework: Something Unrelated",
+        category=ChangeCategory.REJECTED, reason="Ambiguous bullet pairing (23% similarity)",
+        job_requirement="", evidence_source="original_resume",
+        evidence_text="Market Research", validation_status=ValidationStatus.FAIL,
+        disposition=ChangeDisposition.REJECTED,
+    )
+    text = "Test Candidate candidate@example.test Example Corp Manager 2022-2024 Example University MBA 2027"
+    findings = validate_pdf_content(text, _profile(), [ambiguous_change])
+    assert "ACCEPTED_CHANGE_MISSING" not in {finding.code for finding in findings}
+
+
+def test_user_rejected_confident_change_still_requires_original_to_reappear():
+    """The fix above must not weaken a real user rejection -- only the
+    auto-rejected AMBIGUOUS-pairing category is exempted."""
+    rejected_change = ResumeChange(
+        change_id="paragraph:4", section="work_experience", source_index=4,
+        original_text="Improved retention by 20%", proposed_text="Improved customer retention by 20%",
+        category=ChangeCategory.REPHRASED, reason="Verified wording",
+        job_requirement="customer retention", evidence_source="original_resume",
+        evidence_text="Improved retention by 20%", validation_status=ValidationStatus.PASS,
+        disposition=ChangeDisposition.REJECTED,
+    )
+    text = "Test Candidate candidate@example.test Example University MBA 2027 Manager 2022-2024"
+    findings = validate_pdf_content(text, _profile(), [rejected_change])
+    codes = {finding.code for finding in findings}
+    assert "ACCEPTED_CHANGE_MISSING" in codes
+
+
 def test_metric_missing_still_fires_when_not_explained_by_a_reviewed_change():
     """The fix above must not silently swallow a genuinely missing
     metric -- only a CONDENSED-category change explains its absence."""

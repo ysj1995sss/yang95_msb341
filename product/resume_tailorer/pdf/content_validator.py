@@ -106,6 +106,20 @@ def validate_pdf_content(
                                  missing=missing_metrics))
 
     for change in accepted_changes:
+        # category CATEGORY.REJECTED (distinct from a user setting
+        # disposition=REJECTED on an otherwise-confident change) marks an
+        # auto-rejected AMBIGUOUS pairing (see artifacts/changes.py's
+        # AMBIGUOUS_PAIRING_THRESHOLD) -- original_text there is only the
+        # bullet that happened to be left over in the same matching pool,
+        # not something the tailored text actually substituted. Found
+        # live (2026-09-28): a condensed skill ("Market Research") got
+        # weakly leftover-paired against an unrelated new bullet; once
+        # auto-rejected, expecting "Market Research" to still be present
+        # verbatim failed validation even though it was legitimately
+        # condensed away independently, with no real substitution
+        # relationship to revert.
+        if change.category is ChangeCategory.REJECTED:
+            continue
         if change.disposition in (ChangeDisposition.REJECTED, ChangeDisposition.RESTORED):
             expected = change.original_text
         else:

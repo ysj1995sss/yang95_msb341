@@ -114,7 +114,9 @@ with only the expected, benign `VISUAL_CHECK_SKIPPED` remaining.
   tests in `test_pdf_content_validator.py` cover the `METRIC_MISSING`/`CONDENSED` fix in both
   directions (legitimately condensed metric not flagged; a genuinely unexplained missing metric
   still is).
-- Full product suite: 693 passed (was 685 before this whole investigation), no regressions. One
+- Full product suite: 695 passed (was 685 before this whole investigation), no regressions. Two new
+  tests in `test_pdf_content_validator.py` cover the `ACCEPTED_CHANGE_MISSING`/category-`REJECTED`
+  fix in both directions. One
   pre-existing test (`test_reorder_plus_reword_plus_new_bullet_not_scrambled`) was updated: it had
   been pinning down the OLD, worse behavior (a pure bullet move showing as two spurious unpaired
   remove/add entries) as if it were a deliberate design choice, rather than the strictly-better
@@ -122,14 +124,61 @@ with only the expected, benign `VISUAL_CHECK_SKIPPED` remaining.
 - Live reproduction: real profile structure → tailored text shaped like the real resume that
   surfaced this → real PDF generation → real validation, confirmed FAIL → clean WARNING.
 
+## Second update (same day): the reconciliation-pass patch itself ran out of headroom — replaced with global matching
+
+The reconciliation-pass fix above ("What would change our mind" predicted this) was itself hit by
+a third live retry the same day: the same education-honor bullets it had just fixed broke again,
+because the patch only rescued pairings that were EITHER a clean removed+added split OR already
+below a 0.4 "weak" threshold — a bullet whose block-local greedy pairing grabbed a WRONG but
+MEDIUM-confidence match (between 0.4 and 0.75) was never eligible for rescue at all, permanently
+losing its true 100%-match partner elsewhere in the list.
+
+**Root cause, properly diagnosed this time:** `_compute_changes`'s `"replace"` opcode branch was
+NEVER globally aware -- it greedily claims the best pairing available WITHIN each opcode block's
+own local slice, so a block can claim a mediocre local match before ever learning a much better
+match for the same bullet exists in a DIFFERENT block. No amount of patching after the fact fixes
+this reliably, because the wrong claim already happened and can look "confident enough" (>0.4) to
+never trigger a rescue.
+
+**Fix:** rewrote `_compute_changes` to match GLOBALLY from the start. `difflib.SequenceMatcher`'s
+opcodes are still used to find `"equal"` runs (a cheap exact-match fast path) and to collect every
+bullet touched by a `"replace"`/`"delete"`/`"insert"` opcode into two flat pools (everything
+removed-side, everything added-side) -- but pairing itself is ONE greedy highest-similarity-first
+pass over the WHOLE pool, not block by block. This cannot make the original mistake: a true 100%
+match is always considered before any worse option gets the chance to claim either side. Both
+`_reconcile_cross_block_matches` and `_unstick_low_confidence_pairs` (the two prior patches) were
+deleted -- the global algorithm makes them unnecessary.
+
+A new floor, `_MIN_PAIR_SIMILARITY = 0.2`, replaces the old two-threshold patch system: below it, a
+pairing is never proposed at all (even as the last remaining option on both sides), so e.g. a
+one-word condensed skill ("Python") never gets nonsense-paired against an unrelated new sentence
+just because nothing else was left in the pool. Calibrated against two real opposing cases: a
+legitimate but heavily-embellished single-item rephrase (ratio ~0.30, MUST pair so its
+semantic-drift/length checks still run) vs. a genuinely unrelated leftover pair (ratio ~0.11, must
+NOT pair).
+
+**A third bug found in the same final round:** a pairing that DOES clear the 0.2 floor but is still
+genuinely coincidental (two leftover items with no real substitution relationship, e.g. a condensed
+skill weakly paired against an unrelated new bullet at ~0.23 similarity) gets correctly
+auto-rejected by `artifacts/changes.py`'s `AMBIGUOUS_PAIRING_THRESHOLD` (category `REJECTED`) --
+but `validate_pdf_content`'s `ACCEPTED_CHANGE_MISSING` check then demanded the "original" text
+still appear verbatim, even though it was never actually replaced by anything (the two texts just
+coincidentally ended up as each other's least-bad remaining option). Fixed by exempting category
+`REJECTED` changes (the auto-rejected-ambiguous-pairing case specifically, never a user's own
+rejection of a confident rewrite) from that check.
+
+Re-verified against the exact failure shape from the second live retry, with the real fabricated
+bullet ("Relevant Coursework: Marketing Communications...") still present in the input: **clean
+WARNING**, the fabricated bullet is still correctly caught and blocked for review (category
+`REJECTED`, disposition `REJECTED`), and nothing fabricated is silently accepted.
+
 ## What would change our mind
 
-If a future live test still finds a cross-category pairing that neither the reconciliation pass's
-0.75 rescue threshold nor the 0.4 trust floor catches correctly, the next step is section-aware
-diffing — comparing tailored SKILLS-section bullets only against profile skills/tools/
-certifications, EDUCATION-section bullets only against education notes, and WORK EXPERIENCE
-bullets only against accomplishments/responsibilities — rather than one flat list fed to a single
-`SequenceMatcher` pass. That would need real section-header detection in the tailored text (the
+If a future live test still finds a pairing problem despite global matching, the next step is
+genuine section-aware diffing — comparing tailored SKILLS-section bullets only against profile
+skills/tools/certifications, EDUCATION-section bullets only against education notes, and WORK
+EXPERIENCE bullets only against accomplishments/responsibilities — rather than one flat pool fed to
+a single global match. That would need real section-header detection in the tailored text (the
 DOCX path's anchor-detection logic is the closest existing precedent) and is a larger, riskier
-refactor than this pass; only worth it if the cheaper reconciliation-pass fix proves insufficient
-against further real-world testing.
+refactor than anything in this decision so far; only worth it if global matching itself proves
+insufficient against further real-world testing.

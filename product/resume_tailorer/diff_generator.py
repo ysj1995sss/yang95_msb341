@@ -33,6 +33,20 @@ class ResumeDiffReport:
 class DiffGenerator:
     """Generate a detailed diff report comparing original vs. tailored resumes."""
 
+    # Floor for _compute_changes's global greedy pairing: below this, two
+    # bullets are never paired even if they're each other's only remaining
+    # option -- e.g. a one-word skill ("Python", ratio ~0.11 against an
+    # unrelated new sentence) must fall through to separate removed/added
+    # entries, not get merged into one nonsensical "modified" pair just
+    # because nothing else was left in the pool to match against. Kept
+    # BELOW artifacts.changes' AMBIGUOUS_PAIRING_THRESHOLD (0.45) --
+    # that threshold still separately flags anything accepted here as
+    # genuinely uncertain (e.g. a heavily embellished but legitimate
+    # rephrase, ratio ~0.30) for human review; this floor only decides
+    # whether a pairing is proposed as a pairing AT ALL, not whether it's
+    # confident enough to accept without review.
+    _MIN_PAIR_SIMILARITY = 0.2
+
     def __init__(self):
         pass
 
@@ -178,13 +192,39 @@ class DiffGenerator:
     def _compute_changes(
         self, original: List[str], tailored: List[str], profile: CareerTruthProfile
     ) -> List[BulletChange]:
-        """Compute which bullets changed and how."""
-        changes = []
+        """Compute which bullets changed and how.
 
-        # Use SequenceMatcher to find best matches
-        matcher = difflib.SequenceMatcher(None, original, tailored)
+        Matches GLOBALLY across the whole original/tailored lists, not
+        block-by-block. An earlier version paired bullets only WITHIN each
+        difflib opcode's own local slice (`original[i1:i2]` against
+        `tailored[j1:j2]`) -- opcode boundaries are position-sensitive, so
+        when the tailored document's section order (e.g. Education, then
+        Experience, then Skills) differed from the Career Truth Profile's
+        internal storage order (job-by-job, then education, then skills),
+        a bullet's original and reworded versions could land in DIFFERENT
+        opcode blocks and never get compared to each other at all -- one
+        block reporting it "removed", a different one reporting the
+        reworded version "added", even though they're the same bullet.
+        Patching this after the fact (rescuing near-exact matches, then
+        also unsticking and re-rescuing low-confidence local pairs) fixed
+        two real live failures but was still one block-local greedy
+        assignment away from a third (found live 2026-09-28, same day):
+        a bullet's true 100%-match partner sat unclaimed while its block's
+        local pairing greedily claimed a worse same-block option first,
+        because the local pairing had no way to know a better option
+        existed elsewhere. A single global greedy match (highest
+        similarity claimed first, across EVERY replace/delete/insert
+        bullet in the whole resume at once) cannot make that mistake --
+        the true 100% match is always considered before any worse option
+        gets the chance to claim either side.
+        """
+        changes: List[BulletChange] = []
 
-        # Detect reordering: same set of bullets, different order
+        # Detect reordering: same set of bullets, different order. Cheap
+        # fast path for the common "same content, moved" case; skipped
+        # entirely (falls through to global matching) whenever anything
+        # ELSE also changed, since the multiset check below requires an
+        # EXACT set match.
         if (
             len(original) == len(tailored)
             and sorted(original) == sorted(tailored)
@@ -204,236 +244,86 @@ class DiffGenerator:
                     )
             return changes
 
+        matcher = difflib.SequenceMatcher(None, original, tailored)
+
+        # "equal" opcode runs are already exact matches in their existing
+        # relative order -- no comparison work needed, and excluding them
+        # from the global pool below keeps that pool (and its O(n*m)
+        # pairwise scoring) limited to what actually changed.
+        orig_pool: List[str] = []
+        tail_pool: List[str] = []
         for tag, i1, i2, j1, j2 in matcher.get_opcodes():
-            if tag == "replace":
-                # Pair bullets by SIMILARITY, not by index position. Index-based
-                # pairing scrambles a reorder with an unrelated reword, and hides
-                # genuinely new bullets behind whatever original shares their index.
-                orig_slice = list(original[i1:i2])
-                tail_slice = list(tailored[j1:j2])
+            if tag == "equal":
+                continue
+            if tag in ("replace", "delete"):
+                orig_pool.extend(original[i1:i2])
+            if tag in ("replace", "insert"):
+                tail_pool.extend(tailored[j1:j2])
 
-                # Score every (orig, tail) pair in this replace block.
-                pairs = []
-                for oi, orig_bullet in enumerate(orig_slice):
-                    for ti, tail_bullet in enumerate(tail_slice):
-                        ratio = difflib.SequenceMatcher(
-                            None, orig_bullet, tail_bullet
-                        ).ratio()
-                        pairs.append((ratio, oi, ti))
-
-                # Greedily match highest-similarity pairs first; each used once.
-                pairs.sort(key=lambda p: p[0], reverse=True)
-                matched_orig = set()
-                matched_tail = set()
-                matches = []  # (similarity, oi, ti)
-                for ratio, oi, ti in pairs:
-                    if oi in matched_orig or ti in matched_tail:
-                        continue
-                    matched_orig.add(oi)
-                    matched_tail.add(ti)
-                    matches.append((ratio, oi, ti))
-
-                for ratio, oi, ti in matches:
-                    orig_bullet = orig_slice[oi]
-                    tail_bullet = tail_slice[ti]
-                    if self._is_rephrased(orig_bullet, tail_bullet):
-                        change_type = "rephrased"
-                        reasoning = "Same fact, different wording to match job keywords"
-                    else:
-                        change_type = "modified"
-                        reasoning = "Content changed"
-
-                    changes.append(
-                        BulletChange(
-                            original=orig_bullet,
-                            tailored=tail_bullet,
-                            change_type=change_type,
-                            reasoning=reasoning,
-                            similarity=ratio,
-                        )
-                    )
-
-                # Unmatched originals were dropped, not rephrased into anything.
-                for oi, orig_bullet in enumerate(orig_slice):
-                    if oi not in matched_orig:
-                        changes.append(
-                            BulletChange(
-                                original=orig_bullet,
-                                tailored="",
-                                change_type="removed",
-                                reasoning="Deprioritized for space; not directly relevant to this job",
-                                similarity=0.0,
-                            )
-                        )
-
-                # Unmatched tailored bullets are genuinely new content.
-                for ti, tail_bullet in enumerate(tail_slice):
-                    if ti not in matched_tail:
-                        changes.append(
-                            BulletChange(
-                                original="",
-                                tailored=tail_bullet,
-                                change_type="added",
-                                reasoning="NEW BULLET - should not occur if tailoring is truthful",
-                                similarity=0.0,
-                            )
-                        )
-
-            elif tag == "delete":
-                # Bullets removed (only if not reordered)
-                for idx in range(i1, i2):
-                    changes.append(
-                        BulletChange(
-                            original=original[idx],
-                            tailored="",
-                            change_type="removed",
-                            reasoning="Deprioritized for space; not directly relevant to this job",
-                            similarity=0.0,
-                        )
-                    )
-
-            elif tag == "insert":
-                # New bullets added (should never happen from Career Truth Profile)
-                for idx in range(j1, j2):
-                    changes.append(
-                        BulletChange(
-                            original="",
-                            tailored=tailored[idx],
-                            change_type="added",
-                            reasoning="NEW BULLET - should not occur if tailoring is truthful",
-                            similarity=0.0,
-                        )
-                    )
-
-        return self._reconcile_cross_block_matches(changes)
-
-    # A "replace" opcode block's greedy pairing (see that branch above)
-    # accepts whatever the BEST available match within its own slice is,
-    # even if that match is terrible -- there is no minimum-quality floor.
-    # When a block mixes unrelated categories (e.g. skills and work-
-    # experience bullets landed in the same block because of how the
-    # surrounding content lined up), this forces confident-looking but
-    # nonsensical pairings like "Product Marketing" -> "Increased brand
-    # awareness by 50%..." (13-25% similarity) instead of correctly
-    # recognizing each as unmatched. A pairing this weak is worth
-    # double-checking against the WHOLE pool (see below) -- but only
-    # REPLACED if something clearly better turns up; a resume with just
-    # one bullet on each side has no better option available, and the
-    # original (if imperfect) pairing must be kept so downstream semantic-
-    # drift/length checks still run on it (see the single-item length-
-    # delta test this guards).
-    _MIN_TRUSTED_PAIR_SIMILARITY = 0.4
-
-    # A rescue match must be a near-certain match, not a fuzzy one -- this
-    # is deliberately much stricter than AMBIGUOUS_PAIRING_THRESHOLD (0.45),
-    # which exists to flag genuinely uncertain pairings for human review.
-    # This threshold instead exists to undo a wrong SPLIT/pairing of one
-    # true match; a low threshold here would instead wrongly MERGE two
-    # unrelated bullets, hiding a real fabrication behind a coincidental
-    # partial match.
-    _RESCUE_SIMILARITY_THRESHOLD = 0.75
-
-    def _reconcile_cross_block_matches(self, changes: List[BulletChange]) -> List[BulletChange]:
-        """Fix two related mispairings caused by SequenceMatcher's opcode
-        blocks being position-local (_compute_changes's "replace" tag only
-        pairs bullets WITHIN its own slice -- see that branch above):
-
-        1. A false "added" + "removed" SPLIT of one true match: the
-           tailored document's section order (e.g. Education, then
-           Experience, then Skills) differs from the Career Truth
-           Profile's internal storage order (job-by-job, then education,
-           then skills) closely enough that a lightly-reworded bullet's
-           original and tailored versions land in DIFFERENT opcode
-           blocks -- one block reports the original as "removed"
-           (unmatched in ITS slice), a different block reports the
-           reworded version as "added" (unmatched in ITS slice) -- even
-           though they're obviously the same bullet with one clause
-           appended.
-        2. A nonsensical low-similarity "modified"/"rephrased" pairing:
-           within one block that happens to mix unrelated categories
-           (e.g. skills and work-experience bullets), the greedy
-           within-slice pairing has no minimum-quality floor and will
-           confidently pair e.g. a skill against an unrelated new
-           sentence.
-
-        Both found live (2026-09-28) on a real resume with an Education
-        and Skills section, producing false "should not occur if
-        tailoring is truthful" fabrication flags on entirely truthful
-        content.
-
-        Runs as a global second pass: pools every "removed"/"added" entry
-        PLUS the two halves of every low-confidence "modified"/"rephrased"
-        pair, and looks for a near-certain (>=0.75) match for each,
-        regardless of which opcode block originally produced it. A
-        low-confidence pair is only overridden when a clearly better
-        match is found elsewhere -- otherwise its original (imperfect)
-        pairing is kept, so a resume with nothing better available to
-        compare against doesn't lose its only signal.
-        """
-        removed_pool: list[tuple[int, str]] = []  # (source change index, text)
-        added_pool: list[tuple[int, str]] = []
-        for i, c in enumerate(changes):
-            if c.change_type == "removed":
-                removed_pool.append((i, c.original))
-            elif c.change_type == "added":
-                added_pool.append((i, c.tailored))
-            elif c.change_type in ("modified", "rephrased") and (c.similarity or 0) < self._MIN_TRUSTED_PAIR_SIMILARITY:
-                removed_pool.append((i, c.original))
-                added_pool.append((i, c.tailored))
-
-        if not removed_pool or not added_pool:
+        if not orig_pool and not tail_pool:
             return changes
 
-        candidates = []
-        for ri, (r_idx, r_text) in enumerate(removed_pool):
-            for ai, (a_idx, a_text) in enumerate(added_pool):
-                if r_idx == a_idx:
-                    continue  # never "rescue" a weak pair by matching it to itself
-                ratio = difflib.SequenceMatcher(None, r_text, a_text).ratio()
-                if ratio >= self._RESCUE_SIMILARITY_THRESHOLD:
-                    candidates.append((ratio, ri, ai))
-        if not candidates:
-            return changes
-        candidates.sort(key=lambda c: c[0], reverse=True)
+        # Score every (orig, tail) pair across the WHOLE changed pool at
+        # once -- not block by block -- then greedily claim the
+        # highest-similarity pairs first, each bullet used at most once.
+        # This is the same greedy strategy the old block-local "replace"
+        # handling used, just no longer artificially scoped to one
+        # opcode's slice.
+        pairs = []
+        for oi, orig_bullet in enumerate(orig_pool):
+            for ti, tail_bullet in enumerate(tail_pool):
+                ratio = difflib.SequenceMatcher(None, orig_bullet, tail_bullet).ratio()
+                pairs.append((ratio, oi, ti))
+        pairs.sort(key=lambda p: p[0], reverse=True)
 
-        matched_pool_removed: set = set()
-        matched_pool_added: set = set()
-        claimed_change_indices: set = set()
-        # source change index -> replacement BulletChange, or None to drop
-        replacements: dict = {}
-        for ratio, ri, ai in candidates:
-            if ri in matched_pool_removed or ai in matched_pool_added:
+        matched_orig: set = set()
+        matched_tail: set = set()
+        for ratio, oi, ti in pairs:
+            if ratio < self._MIN_PAIR_SIMILARITY:
+                # Below this floor, don't force a pairing at all -- even as
+                # the last remaining leftover on both sides. Two genuinely
+                # unrelated bullets (e.g. a condensed skill and an unrelated
+                # new sentence) must fall through to separate removed/added
+                # entries, not get merged into one nonsensical "modified"
+                # pair just because nothing else was left to match against.
+                break  # pairs is sorted descending -- nothing after this is any better
+            if oi in matched_orig or ti in matched_tail:
                 continue
-            r_idx, r_text = removed_pool[ri]
-            a_idx, a_text = added_pool[ai]
-            if r_idx in claimed_change_indices or a_idx in claimed_change_indices:
-                continue
-            matched_pool_removed.add(ri)
-            matched_pool_added.add(ai)
-            claimed_change_indices.add(r_idx)
-            claimed_change_indices.add(a_idx)
-            if r_text.strip() == a_text.strip():
+            matched_orig.add(oi)
+            matched_tail.add(ti)
+            orig_bullet = orig_pool[oi]
+            tail_bullet = tail_pool[ti]
+            if orig_bullet.strip() == tail_bullet.strip():
                 change_type, reasoning = "unchanged", "No change"
-            elif self._is_rephrased(r_text, a_text):
+            elif self._is_rephrased(orig_bullet, tail_bullet):
                 change_type = "rephrased"
                 reasoning = "Same fact, different wording to match job keywords"
             else:
                 change_type, reasoning = "modified", "Content changed"
-            replacements[r_idx] = BulletChange(
-                original=r_text, tailored=a_text,
+            changes.append(BulletChange(
+                original=orig_bullet, tailored=tail_bullet,
                 change_type=change_type, reasoning=reasoning, similarity=ratio,
-            )
-            replacements[a_idx] = None
+            ))
 
-        result = []
-        for i, change in enumerate(changes):
-            if i in replacements:
-                replacement = replacements[i]
-                if replacement is not None:
-                    result.append(replacement)
-            else:
-                result.append(change)
-        return result
+        # Anything left unmatched genuinely has no counterpart anywhere in
+        # the other list -- a real removal or a real (possibly fabricated)
+        # addition, not a pairing artifact.
+        for oi, orig_bullet in enumerate(orig_pool):
+            if oi not in matched_orig:
+                changes.append(BulletChange(
+                    original=orig_bullet, tailored="", change_type="removed",
+                    reasoning="Deprioritized for space; not directly relevant to this job",
+                    similarity=0.0,
+                ))
+        for ti, tail_bullet in enumerate(tail_pool):
+            if ti not in matched_tail:
+                changes.append(BulletChange(
+                    original="", tailored=tail_bullet, change_type="added",
+                    reasoning="NEW BULLET - should not occur if tailoring is truthful",
+                    similarity=0.0,
+                ))
+
+        return changes
 
     def _is_rephrased(self, original: str, tailored: str) -> bool:
         """Check if tailored is a rephrase of original (same facts, different wording)."""
