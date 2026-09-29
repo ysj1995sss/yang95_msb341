@@ -97,9 +97,16 @@ class JobDatabase:
                 exclude_companies TEXT,
                 employment_type TEXT,
                 relocation_willing BOOLEAN,
+                goal_name TEXT,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         """)
+
+        # Migration guard: add goal_name column if it doesn't exist
+        cursor.execute("PRAGMA table_info(search_goals)")
+        existing_columns = {row[1] for row in cursor.fetchall()}
+        if "goal_name" not in existing_columns:
+            cursor.execute("ALTER TABLE search_goals ADD COLUMN goal_name TEXT")
 
         self.connection.commit()
 
@@ -376,6 +383,128 @@ class JobDatabase:
             raw_json=raw_json,
             alternative_sources=alternative_sources
         )
+
+    def save_search_goal(self, goal: SearchGoals, goal_name: str = None) -> int:
+        """Save a search goal to the database.
+
+        Args:
+            goal: SearchGoals object to save
+            goal_name: Optional name/label for the goal
+
+        Returns:
+            ID of the saved goal
+        """
+        cursor = self.connection.cursor()
+        cursor.execute("""
+            INSERT INTO search_goals
+            (job_title, industries, location, min_salary, max_salary,
+             remote_preference, sponsorship_required, experience_level,
+             company_size, target_companies, exclude_companies,
+             employment_type, relocation_willing, goal_name)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, (
+            goal.job_title,
+            goal.industries,
+            goal.location,
+            goal.min_salary,
+            goal.max_salary,
+            goal.remote_preference,
+            goal.sponsorship_required,
+            goal.experience_level,
+            goal.company_size,
+            goal.target_companies,
+            goal.exclude_companies,
+            goal.employment_type,
+            goal.relocation_willing,
+            goal_name or goal.job_title
+        ))
+        self.connection.commit()
+        return cursor.lastrowid
+
+    def get_search_goal(self, goal_id: int) -> Optional[dict]:
+        """Retrieve a search goal by ID.
+
+        Args:
+            goal_id: ID of the search goal
+
+        Returns:
+            Dict with goal data or None if not found
+        """
+        cursor = self.connection.cursor()
+        cursor.execute("SELECT * FROM search_goals WHERE id = ?", (goal_id,))
+        row = cursor.fetchone()
+        return dict(row) if row else None
+
+    def get_all_search_goals(self) -> List[dict]:
+        """Retrieve all saved search goals.
+
+        Returns:
+            List of dicts with goal data, ordered by created_at DESC
+        """
+        cursor = self.connection.cursor()
+        cursor.execute("SELECT * FROM search_goals ORDER BY created_at DESC")
+        rows = cursor.fetchall()
+        return [dict(row) for row in rows]
+
+    def update_search_goal(self, goal_id: int, goal: SearchGoals, goal_name: str = None) -> bool:
+        """Update an existing search goal.
+
+        Args:
+            goal_id: ID of the goal to update
+            goal: Updated SearchGoals object
+            goal_name: Optional updated name/label
+
+        Returns:
+            True on success, False on error
+        """
+        try:
+            cursor = self.connection.cursor()
+            cursor.execute("""
+                UPDATE search_goals
+                SET job_title = ?, industries = ?, location = ?, min_salary = ?,
+                    max_salary = ?, remote_preference = ?, sponsorship_required = ?,
+                    experience_level = ?, company_size = ?, target_companies = ?,
+                    exclude_companies = ?, employment_type = ?, relocation_willing = ?,
+                    goal_name = ?
+                WHERE id = ?
+            """, (
+                goal.job_title,
+                goal.industries,
+                goal.location,
+                goal.min_salary,
+                goal.max_salary,
+                goal.remote_preference,
+                goal.sponsorship_required,
+                goal.experience_level,
+                goal.company_size,
+                goal.target_companies,
+                goal.exclude_companies,
+                goal.employment_type,
+                goal.relocation_willing,
+                goal_name or goal.job_title,
+                goal_id
+            ))
+            self.connection.commit()
+            return True
+        except Exception:
+            return False
+
+    def delete_search_goal(self, goal_id: int) -> bool:
+        """Delete a search goal.
+
+        Args:
+            goal_id: ID of the goal to delete
+
+        Returns:
+            True on success, False on error
+        """
+        try:
+            cursor = self.connection.cursor()
+            cursor.execute("DELETE FROM search_goals WHERE id = ?", (goal_id,))
+            self.connection.commit()
+            return True
+        except Exception:
+            return False
 
     def close(self) -> None:
         """Close the database connection."""
