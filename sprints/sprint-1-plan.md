@@ -7,3 +7,9 @@
 **Done looks like:** A working MVP that achieves 80% keyword and qualification alignment on 8 out of 10 real job postings, reduces the resume-tailoring process to under 5 minutes per application, and can be tested by at least 3 other job seekers who successfully generate a tailored resume without my help.
 
 **Predicted difficulty:** 4
+
+**Actual difficulty:** 4
+
+**Why it differed:** The difficulty remained the same because while I shipped more than planned, there are still many things I don't fully understand.
+
+**Retro:** Yes, I hit my MVP goal and my definition of done. Next sprint I'm going to have different AI review my project for me, and I'm going to be more involved in the process instead of having AI do everything for me.
