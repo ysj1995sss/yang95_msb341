@@ -26,7 +26,8 @@ def render_app_shell(active: str, workflow_state: Iterable[WorkflowStep]) -> Non
         st.caption("Your facts stay separate from job requirements.")
 
     steps = "".join(
-        f'<div class="jc-step {escape(step.state)}">{escape(step.label)}</div>'
+        f'<div class="jc-step {escape(step.state)}">{escape(step.label)}'
+        f'<span class="jc-sr-only"> — {escape(step.state)}</span></div>'
         for step in workflow_state
     )
     st.markdown(f'<div class="jc-ribbon" aria-label="Application progress">{steps}</div>', unsafe_allow_html=True)

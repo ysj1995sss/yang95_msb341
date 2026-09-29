@@ -85,7 +85,11 @@ from resume_tailorer.artifacts.regeneration import (
 from resume_tailorer.artifacts.report import build_final_report
 from resume_tailorer.ui.artifact_review import visible_changes
 from resume_tailorer.ui import build_workflow_state, render_app_shell, render_page_header
-from resume_tailorer.ui.tailoring_view import build_tailoring_summary, group_changes
+from resume_tailorer.ui.tailoring_view import (
+    build_tailoring_summary,
+    group_changes,
+    safe_default_dispositions,
+)
 
 
 st.set_page_config(page_title="Resume Tailorer", page_icon="\U0001F4C4", layout="wide")
@@ -211,6 +215,13 @@ def _regenerate_from_current_dispositions() -> None:
 def _render_review_controls() -> None:
     state = st.session_state[_STATE_KEY]
     report = state["report"]
+    safe_defaults = safe_default_dispositions(state["changes"], report.true_gaps)
+    if safe_defaults and not state.get("gap_blocks_applied"):
+        state["dispositions"].update(safe_defaults)
+        state["gap_blocks_applied"] = True
+        _regenerate_from_current_dispositions()
+        state["reviewed"] = False
+        st.rerun()
     summary = build_tailoring_summary(state)
     metrics = st.columns(3)
     metrics[0].metric(summary.candidate_fit.label, summary.candidate_fit.value)
@@ -243,6 +254,11 @@ def _render_review_controls() -> None:
             st.markdown('<div class="jc-status blocked"><strong>Missing, never added</strong></div>', unsafe_allow_html=True)
             for gap in groups.true_gaps:
                 st.write(f"- {gap}")
+        for change in groups.blocked:
+            st.warning(
+                f"Blocked proposal kept the original: {change.proposed_text} "
+                f"(unsupported requirement: {change.job_requirement or 'true gap'})."
+            )
         if not groups.reviewable:
             st.info("No evidence-backed edits remain to review.")
         for change in groups.reviewable:
@@ -252,7 +268,10 @@ def _render_review_controls() -> None:
                 st.write(f"**Proposed** · {change.proposed_text}")
                 if change.job_requirement:
                     st.markdown(f"**Requirement** · {change.job_requirement}")
-                st.markdown(f"**Evidence** · {change.evidence_text or 'No evidence recorded'}")
+                st.markdown(
+                    f"**Evidence** · {change.evidence_text or 'No evidence recorded'}  \n"
+                    f"Source: {change.evidence_source or 'Not recorded'} · Validation: {change.validation_status.value}"
+                )
                 current = state["dispositions"].get(change.change_id, "ACCEPTED")
                 labels = {"ACCEPTED": "Accept edit", "MANUALLY_EDITED": "Edit manually", "REJECTED": "Keep original"}
                 chosen_label = st.radio(

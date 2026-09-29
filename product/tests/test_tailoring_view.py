@@ -7,7 +7,11 @@ from resume_tailorer.artifacts.models import (
     ResumeChange,
     ValidationStatus,
 )
-from resume_tailorer.ui.tailoring_view import build_tailoring_summary, group_changes
+from resume_tailorer.ui.tailoring_view import (
+    build_tailoring_summary,
+    group_changes,
+    safe_default_dispositions,
+)
 
 
 def _change(proposed: str = "Built reliable GraphQL APIs") -> ResumeChange:
@@ -64,3 +68,13 @@ def test_missing_requirements_never_enter_change_deck():
     groups = group_changes([_change()], true_gaps=("GraphQL",))
     assert groups.true_gaps == ("GraphQL",)
     assert groups.reviewable == ()
+    assert groups.blocked == (_change(),)
+
+
+def test_gap_containing_proposal_is_rejected_before_regeneration():
+    assert safe_default_dispositions([_change()], ("GraphQL",)) == {"c1": "REJECTED"}
+
+
+def test_short_gap_does_not_reject_a_substring_inside_a_real_word():
+    assert safe_default_dispositions([_change("Built reliable APIs")], ("R",)) == {}
+    assert safe_default_dispositions([_change("Led governance reviews")], ("Go",)) == {}

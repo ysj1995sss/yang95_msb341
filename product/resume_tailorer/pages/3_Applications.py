@@ -131,8 +131,15 @@ def _render_submit_tab(service: JobService) -> None:
         disabled=not real_submit_possible,
     )
     preview_done = bool(st.session_state.get("apply_preview_done"))
-    submit_clicked = st.button(
-        launchpad.primary_action,
+    if job_lookup and job_lookup.url:
+        st.link_button(
+            launchpad.primary_action,
+            job_lookup.url,
+            type="primary",
+            use_container_width=True,
+        )
+    stage_clicked = st.button(
+        launchpad.tracker_action,
         disabled=not (real_submit_possible and confirm_understanding and preview_done),
     )
     if mode != ApplicationMode.MANUAL and not capability.final_submission:
@@ -146,12 +153,12 @@ def _render_submit_tab(service: JobService) -> None:
 
     profile = st.session_state.get(CAREER_PROFILE_SESSION_KEY)
 
-    if (preview_clicked or submit_clicked) and not profile:
+    if (preview_clicked or stage_clicked) and not profile:
         st.error("No resume profile found. Upload and parse a resume on the main page first.")
-    elif (preview_clicked or submit_clicked) and not job_id_input:
+    elif (preview_clicked or stage_clicked) and not job_id_input:
         st.error("Job ID is required.")
-    elif preview_clicked or submit_clicked:
-        dry_run = not submit_clicked
+    elif preview_clicked or stage_clicked:
+        dry_run = not stage_clicked
         try:
             result = service.apply_for_job(
                 job_id=job_id_input,
@@ -165,10 +172,7 @@ def _render_submit_tab(service: JobService) -> None:
                 st.session_state["apply_preview_done"] = True
                 st.success(f"Preview generated. Application ID: {result.application_id}")
             else:
-                st.success(
-                    f"Application submitted. Application ID: {result.application_id}"
-                    + (f", Confirmation: {result.confirmation_number}" if result.confirmation_number else "")
-                )
+                st.success(f"{launchpad.success_message} Application ID: {result.application_id}")
             st.write(f"**Application link:** {result.form_url}")
             st.write("**Fields that would be / were submitted:**")
             st.json(result.form_fields_submitted)

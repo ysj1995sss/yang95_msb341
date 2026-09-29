@@ -29,10 +29,13 @@ def test_empty_session_starts_at_fact_vault():
 def test_completed_stages_follow_real_session_evidence():
     state = build_workflow_state(
         {
-            "profile_data": {"skills": ["Python"]},
+            "career_profile": object(),
             "job_description_text": "Build reliable systems",
-            "artifact_run_state": {"final_report": object()},
-            "application_ready": True,
+            "artifact_run_state": {
+                "reviewed": True,
+                "validation": "PASS",
+                "pdf_bytes": b"pdf",
+            },
         }
     )
     assert [step.state for step in state] == [
@@ -41,6 +44,28 @@ def test_completed_stages_follow_real_session_evidence():
         "complete",
         "complete",
     ]
+
+
+def test_unreviewed_artifact_does_not_complete_review_or_ready_stages():
+    state = build_workflow_state(
+        {
+            "career_profile": object(),
+            "job_description_text": "Build reliable systems",
+            "artifact_run_state": {"reviewed": False, "validation": "PASS", "pdf_bytes": b"pdf"},
+        }
+    )
+    assert [step.state for step in state] == ["complete", "complete", "current", "pending"]
+
+
+def test_failed_artifact_never_completes_application_ready_stage():
+    state = build_workflow_state(
+        {
+            "career_profile": object(),
+            "job_description_text": "Build reliable systems",
+            "artifact_run_state": {"reviewed": True, "validation": "FAIL", "pdf_bytes": b"pdf"},
+        }
+    )
+    assert [step.state for step in state][-1] == "current"
 
 
 def test_warning_is_review_not_ready():

@@ -5,6 +5,12 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Iterable, Mapping
 
+from resume_tailorer.analyzers.gap_analyzer import (
+    GapCategory,
+    GapItem,
+    GapReport,
+    find_unsupported_claims,
+)
 from resume_tailorer.artifacts.models import ResumeChange
 from resume_tailorer.ui.design_system import SemanticStatus, display_optional, semantic_status
 
@@ -27,6 +33,7 @@ class TailoringSummary:
 @dataclass(frozen=True)
 class ChangeGroups:
     reviewable: tuple[ResumeChange, ...]
+    blocked: tuple[ResumeChange, ...]
     true_gaps: tuple[str, ...]
 
 
@@ -53,10 +60,25 @@ def group_changes(
 ) -> ChangeGroups:
     """Keep unsupported requirements out of the proposed-change deck."""
     gaps = tuple(str(gap) for gap in true_gaps if display_optional(gap, "") != "")
-    lowered = tuple(gap.casefold() for gap in gaps)
-    reviewable = tuple(
+    gap_report = GapReport(
+        items=[GapItem(requirement=gap, category=GapCategory.E, reason="UI safety gate") for gap in gaps],
+        summary="UI safety gate",
+    )
+    blocked = tuple(
         change
         for change in changes
-        if not any(gap in change.proposed_text.casefold() for gap in lowered)
+        if find_unsupported_claims(gap_report, change.proposed_text)
     )
-    return ChangeGroups(reviewable=reviewable, true_gaps=gaps)
+    blocked_ids = {change.change_id for change in blocked}
+    reviewable = tuple(change for change in changes if change.change_id not in blocked_ids)
+    return ChangeGroups(reviewable=reviewable, blocked=blocked, true_gaps=gaps)
+
+
+def safe_default_dispositions(
+    changes: Iterable[ResumeChange], true_gaps: Iterable[str] = ()
+) -> dict[str, str]:
+    """Default any proposal that introduces a true gap to keeping the original."""
+    return {
+        change.change_id: "REJECTED"
+        for change in group_changes(changes, true_gaps).blocked
+    }

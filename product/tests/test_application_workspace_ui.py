@@ -23,3 +23,5 @@ def test_manual_mode_never_claims_automated_submission():
     assert state.real_submit_enabled is False
     assert state.primary_action == "Open application"
     assert "reliable" in state.disclosure.lower()
+    assert state.tracker_action == "Stage in tracker"
+    assert state.success_message == "Application staged as Ready to apply."

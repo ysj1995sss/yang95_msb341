@@ -41,11 +41,12 @@ During the final critique, the combined Applications tabs and repeated numbered 
 
 ## Verification
 
-- Product suite: **711 passed**.
+- Product suite: **715 passed**.
 - API suite: **60 passed** (existing dependency deprecation warnings remain).
 - Browser-verified Tailoring Studio, Fact Vault, Job Discovery, Apply Launchpad, and Application Tracker at desktop width.
 - Browser-verified the empty Tailoring Studio at a 390×844 viewport: content remains readable, the navigation uses Streamlit's drawer, the evidence ribbon remains a single scrollable sequence, and actions use the available width.
 - Verified the Tailoring Studio navigation link from a secondary page returns to the main app.
+- Independent whole-branch review found and drove fixes for hidden gap proposals, misleading Manual-mode actions, evidence-ribbon state, and lost tracker context; the re-review approved with no Critical or Important findings.
 - No real resume or personal data was used during visual verification.
 
 ## Honest limitations

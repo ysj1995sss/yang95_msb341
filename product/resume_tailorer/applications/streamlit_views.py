@@ -24,6 +24,8 @@ class LaunchpadState:
     recommended_mode: ApplicationMode
     real_submit_enabled: bool
     primary_action: str
+    tracker_action: str
+    success_message: str
     disclosure: str
 
 
@@ -33,6 +35,12 @@ def build_launchpad_state(mode: ApplicationMode, capability: ATSCapability) -> L
         recommended_mode=(mode if automated_ready else ApplicationMode.MANUAL),
         real_submit_enabled=automated_ready,
         primary_action="Submit application" if automated_ready else "Open application",
+        tracker_action="Submit application" if automated_ready else "Stage in tracker",
+        success_message=(
+            "Application submitted with verified confirmation."
+            if automated_ready
+            else "Application staged as Ready to apply."
+        ),
         disclosure=(
             "Verified automated submission is available for this platform."
             if automated_ready
@@ -90,17 +98,22 @@ def render_application_tracker(service) -> None:
         )
         next_action = st.text_input("Next action", value=submission.next_action, key="tracker_next_action")
         due = st.text_input("Due date (YYYY-MM-DD, optional)", value=submission.next_action_due or "", key="tracker_due")
+        next_action_notes = st.text_area(
+            "Next-action notes", value=submission.next_action_notes, key="tracker_next_action_notes"
+        )
         if st.button("Save next action"):
-            service.applications_db.update_next_action(application_id, next_action, due or None, submission.next_action_notes)
+            service.applications_db.update_next_action(application_id, next_action, due or None, next_action_notes)
             st.success("Next action saved.")
             st.rerun()
 
     with st.expander("Status provenance and history", expanded=True):
         for event in status_tracker.get_status_history(application_id):
             provenance = event.source.value.replace("_", " ").title()
+            confidence = f" · {event.confidence} confidence" if event.confidence else ""
+            note = f" · {event.notes}" if event.notes else ""
             st.write(
                 f"{event.status_updated:%Y-%m-%d %H:%M} · "
-                f"{event.status.value.replace('_', ' ').title()} · {provenance}"
+                f"{event.status.value.replace('_', ' ').title()} · {provenance}{confidence}{note}"
             )
 
     status_labels = {status.value.replace("_", " ").title(): status for status in ApplicationStatus}

@@ -67,7 +67,7 @@ python -m pip install -e ".[dev]"
 uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 ```
 
-Health check: `http://localhost:8000/health`. Verified test baseline on 2026-09-28: 711 product tests and 60 API tests.
+Health check: `http://localhost:8000/health`. Verified redesign baseline on 2026-09-29: 715 product tests and 60 API tests.
 
 Key endpoints: `POST /profile/upload` (parses a real PDF/DOCX into a full career profile), `POST /jobs/upsert` (dedupe + candidate-fit scoring), `POST /tailor/preview` (job analysis → gap report → LLM tailoring → optimization loop → PDF, requires `LLM_MODEL`/`LLM_API_KEY` in `apps/api/.env`).
 

@@ -72,11 +72,19 @@ def _has_value(session: Mapping[str, Any], *keys: str) -> bool:
 
 def build_workflow_state(session: Mapping[str, Any]) -> tuple[WorkflowStep, ...]:
     """Build the four-stage evidence ribbon from persisted session evidence."""
+    artifact = session.get("artifact_run_state") or {}
+    validation = artifact.get("validation") if isinstance(artifact, Mapping) else None
+    validation_value = getattr(getattr(validation, "status", validation), "value", getattr(validation, "status", validation))
+    reviewed = bool(isinstance(artifact, Mapping) and artifact.get("reviewed"))
+    has_artifact = bool(
+        isinstance(artifact, Mapping)
+        and (artifact.get("pdf_bytes") or artifact.get("docx_bytes"))
+    )
     completed = (
-        _has_value(session, "profile_data", "profile", "candidate_profile"),
+        _has_value(session, "career_profile", "profile_data", "profile", "candidate_profile"),
         _has_value(session, "job_description_text", "selected_job", "pending_tailor_job"),
-        _has_value(session, "artifact_run_state", "approved_artifact", "final_report"),
-        _has_value(session, "application_ready", "staged_application"),
+        reviewed,
+        reviewed and has_artifact and str(validation_value).upper() == "PASS",
     )
     first_open = next((index for index, done in enumerate(completed) if not done), len(completed) - 1)
     return tuple(
@@ -122,6 +130,7 @@ p { line-height: 1.55; }
 .jc-status.verified { border-color: var(--jc-verified); }
 .jc-status.review { border-color: var(--jc-review); }
 .jc-status.blocked { border-color: var(--jc-blocked); }
+.jc-sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
 div.stButton > button[kind="primary"] { background: var(--jc-action); border-color: var(--jc-action); border-radius: 4px; font-weight: 700; }
 div.stButton > button:not([kind="primary"]) { border-radius: 4px; border-color: #AAB4C0; }
 a:focus-visible, button:focus-visible, input:focus-visible, textarea:focus-visible, [tabindex]:focus-visible { outline: 3px solid #FFBF47 !important; outline-offset: 2px !important; }
