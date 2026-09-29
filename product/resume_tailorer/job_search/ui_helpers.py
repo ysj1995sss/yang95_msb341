@@ -107,8 +107,6 @@ def build_search_goals_from_form(form_data: Dict[str, Any]) -> SearchGoals:
         raise ValueError("job_title is required")
 
     location = (form_data.get("location") or "").strip()
-    if not location:
-        raise ValueError("location is required")
 
     min_salary = form_data.get("min_salary") or 0
     max_salary = form_data.get("max_salary") or 0
