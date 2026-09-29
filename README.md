@@ -1,8 +1,8 @@
-# [Your product, or your part of it]
+# Job Copilot
 
-> One sentence: what this is and who it is for.
+Job Copilot helps job seekers find relevant roles, tailor truthful resumes, and finish applications with less repetitive work.
 
-**Where to see it:** [URL, or where the work lives: a live app, a published page, a model in this repo]
+**Where to see it:** Run `product/resume_tailorer/app.py` locally with Streamlit. A public deployment URL is not recorded until one is verified.
 **Built by:** yang95, MSB 341 Product Management, BYU
 
 ## Context
@@ -39,6 +39,24 @@ whether a change to a prompt helped or hurt.
 
 ## Running it
 
+The Streamlit product is organized into five evidence-first workspaces:
+
+- **Fact Vault** — upload a resume and distinguish resume-extracted facts from user edits.
+- **Job Discovery** — search permitted sources and inspect strong matches, partial evidence, and true gaps.
+- **Tailoring Studio** — review each supported resume edit beside validation and download evidence.
+- **Apply Launchpad** — stage the job link, resume, and profile; Manual mode is the reliable path today.
+- **Application Tracker** — review immutable submission snapshots, provenance, status, and next actions.
+
+Start the local interface:
+
+```powershell
+cd product
+python -m venv .venv
+.\.venv\Scripts\python.exe -m pip install -r requirements.txt
+$env:PYTHONPATH=(Resolve-Path '.').Path
+.\.venv\Scripts\python.exe -m streamlit run resume_tailorer\app.py
+```
+
 `apps/api/` is a multi-user FastAPI backend around the existing `product/resume_tailorer` engine — auth, persistent per-user profiles/jobs, and HTTP endpoints, modeled on the job-copilot course project's backend architecture but built on top of this repo's more complete tailoring pipeline (full resume parsing, weighted candidate-fit scoring, PDF generation with the validation hard gate).
 
 ```powershell
@@ -49,13 +67,11 @@ python -m pip install -e ".[dev]"
 uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 ```
 
-Health check: `http://localhost:8000/health`. Tests: `cd apps/api && python -m pytest -q` (11 passing — auth, real PDF resume parsing, candidate-fit scoring, and `/tailor/preview` including real PDF generation).
+Health check: `http://localhost:8000/health`. Verified test baseline on 2026-09-28: 711 product tests and 60 API tests.
 
 Key endpoints: `POST /profile/upload` (parses a real PDF/DOCX into a full career profile), `POST /jobs/upsert` (dedupe + candidate-fit scoring), `POST /tailor/preview` (job analysis → gap report → LLM tailoring → optimization loop → PDF, requires `LLM_MODEL`/`LLM_API_KEY` in `apps/api/.env`).
 
-**Not yet ported from job-copilot:** the React web dashboard (`apps/web`) and the Chrome extension for capturing jobs off LinkedIn/Handshake pages (`apps/extension`). Today, `product/resume_tailorer`'s own scrapers (`job_search/scrapers/`) hit those sites directly, which is more ToS-fragile than job-copilot's extension-based capture — porting the extension is the next highest-value piece.
-
-The original Streamlit app (`product/resume_tailorer/app.py`) still works standalone and is unaffected by `apps/api/`.
+The Streamlit interface and FastAPI adapter share product-layer scoring, tailoring, validation, and safety behavior; the UI does not duplicate those systems.
 
 ## Sprints
 
