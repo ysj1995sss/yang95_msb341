@@ -84,6 +84,8 @@ from resume_tailorer.artifacts.regeneration import (
 )
 from resume_tailorer.artifacts.report import build_final_report
 from resume_tailorer.ui.artifact_review import visible_changes
+from resume_tailorer.ui import build_workflow_state, render_app_shell, render_page_header
+from resume_tailorer.ui.tailoring_view import build_tailoring_summary, group_changes
 
 
 st.set_page_config(page_title="Resume Tailorer", page_icon="\U0001F4C4", layout="wide")
@@ -209,21 +211,16 @@ def _regenerate_from_current_dispositions() -> None:
 def _render_review_controls() -> None:
     state = st.session_state[_STATE_KEY]
     report = state["report"]
-
-    st.header("Results")
-
-    col1, col2 = st.columns(2)
-    col1.metric("Original resume alignment", f"{report.original_alignment:.0%}")
-    col2.metric("Tailored resume alignment", f"{report.tailored_alignment:.0%}")
-    st.caption(
-        "Candidate Fit (how well your actual background matches this job) is a separate "
-        "measure from Resume Alignment (how well THIS resume communicates it) -- Candidate "
-        "Fit isn't computed in this view yet; see the Job Search page for fit scoring."
-    )
+    summary = build_tailoring_summary(state)
+    metrics = st.columns(3)
+    metrics[0].metric(summary.candidate_fit.label, summary.candidate_fit.value)
+    metrics[1].metric(summary.resume_alignment.label, summary.resume_alignment.value)
+    metrics[2].metric("Edits to review", summary.review_count)
+    st.caption("Candidate fit measures your background. Resume alignment measures how clearly this resume presents it.")
 
     status = report.validation.status
     if status is ValidationStatus.PASS:
-        st.success("Validation PASSED -- this artifact is application-ready.")
+        st.success("Validation passed. This artifact is application-ready.")
     elif status is ValidationStatus.WARNING:
         st.warning("Validation passed with WARNINGS -- review before submitting:")
         for finding in report.validation.findings:
@@ -233,47 +230,52 @@ def _render_review_controls() -> None:
         for finding in report.validation.findings:
             st.write(f"- **{finding.code}**: {finding.message}")
 
-    fidelity_label = "preserved exactly" if report.fidelity_mode is FidelityMode.PRESERVED else "reconstructed (not an exact visual match to your original)"
+    fidelity_label = "Preserved exactly" if report.fidelity_mode is FidelityMode.PRESERVED else "Reconstructed; visual details may differ"
     st.caption(f"Document fidelity: {fidelity_label}.")
 
-    st.subheader("Tailored resume text")
-    st.text_area("Tailored resume", state["tailored_text"], height=300)
-
-    st.subheader("Review changes")
-    advanced = st.checkbox("Show all changes (advanced view)", value=False)
-    shown = visible_changes(state["changes"], advanced=advanced)
-    if not shown:
-        st.caption("No meaningful changes to review.")
-
-    for change in shown:
-        with st.container(border=True):
-            st.markdown(f"**{change.category}** — {change.reason}")
-            st.write(f"Original: {change.original_text}")
-            st.write(f"Proposed: {change.proposed_text}")
-            if change.job_requirement:
-                st.caption(f"Addresses: {change.job_requirement} (evidence: {change.evidence_text})")
-
-            current = state["dispositions"].get(change.change_id, "ACCEPTED")
-            choice = st.radio(
-                "Disposition", _DISPOSITION_OPTIONS,
-                index=_DISPOSITION_OPTIONS.index(current) if current in _DISPOSITION_OPTIONS else 0,
-                key=f"disposition_{change.change_id}", horizontal=True,
-            )
-            state["dispositions"][change.change_id] = choice
-            if choice == "MANUALLY_EDITED":
-                manual_text = st.text_area(
-                    "Your edit", value=state["manual_texts"].get(change.change_id, change.proposed_text),
-                    key=f"manual_{change.change_id}",
+    review, artifact = st.columns([1.1, .9], gap="large")
+    with review:
+        st.subheader("Review proposed edits")
+        advanced = st.checkbox("Show all audited changes", value=False)
+        shown = visible_changes(state["changes"], advanced=advanced)
+        groups = group_changes(shown, report.true_gaps)
+        if groups.true_gaps:
+            st.markdown('<div class="jc-status blocked"><strong>Missing, never added</strong></div>', unsafe_allow_html=True)
+            for gap in groups.true_gaps:
+                st.write(f"- {gap}")
+        if not groups.reviewable:
+            st.info("No evidence-backed edits remain to review.")
+        for change in groups.reviewable:
+            with st.container(border=True):
+                st.markdown(f"**{change.category.value.replace('_', ' ').title()}** · {change.reason}")
+                st.caption(f"Original · {change.original_text}")
+                st.write(f"**Proposed** · {change.proposed_text}")
+                if change.job_requirement:
+                    st.markdown(f"**Requirement** · {change.job_requirement}")
+                st.markdown(f"**Evidence** · {change.evidence_text or 'No evidence recorded'}")
+                current = state["dispositions"].get(change.change_id, "ACCEPTED")
+                labels = {"ACCEPTED": "Accept edit", "MANUALLY_EDITED": "Edit manually", "REJECTED": "Keep original"}
+                chosen_label = st.radio(
+                    "Decision",
+                    list(labels.values()),
+                    index=list(labels).index(current) if current in labels else 0,
+                    key=f"disposition_{change.change_id}",
+                    horizontal=True,
                 )
-                state["manual_texts"][change.change_id] = manual_text
+                choice = next(key for key, label in labels.items() if label == chosen_label)
+                state["dispositions"][change.change_id] = choice
+                if choice == "MANUALLY_EDITED":
+                    state["manual_texts"][change.change_id] = st.text_area(
+                        "Your edit", value=state["manual_texts"].get(change.change_id, change.proposed_text), key=f"manual_{change.change_id}"
+                    )
+        if st.button("Apply decisions and rebuild", type="primary", use_container_width=True):
+            _regenerate_from_current_dispositions()
+            st.rerun()
 
-    if st.button("Apply review and regenerate", type="primary"):
-        _regenerate_from_current_dispositions()
-        st.rerun()
-
-    if state.get("reviewed"):
-        st.subheader("Resume Changes (after review)")
-    _render_diagnostics_and_download(state)
+    with artifact:
+        st.subheader("Resume and validation")
+        st.text_area("Tailored resume", state["tailored_text"], height=460)
+        _render_diagnostics_and_download(state)
 
 
 def _render_diagnostics_and_download(state: dict) -> None:
@@ -317,11 +319,10 @@ def _render_diagnostics_and_download(state: dict) -> None:
 
 
 def main():
-    st.title("Resume Tailorer")
-    st.caption(
-        "Upload your resume and a job description. The pipeline tailors your "
-        "resume to the role using ONLY facts already in your resume — it never "
-        "fabricates experience, skills, or credentials."
+    render_app_shell("Tailoring Studio", build_workflow_state(st.session_state))
+    render_page_header(
+        "Tailoring Studio",
+        "Shape a job-specific resume from verified evidence. Review every meaningful edit before it becomes an application artifact.",
     )
 
     pending = st.session_state.get(PENDING_TAILOR_JOB_KEY)
@@ -337,17 +338,17 @@ def main():
             st.session_state[_JD_SESSION_KEY] = pending["description"]
 
     with st.sidebar:
-        st.header("1. Upload your resume")
+        st.subheader("Resume evidence")
         resume_file = st.file_uploader(
             "Resume file (PDF or DOCX)", type=["pdf", "docx", "doc"]
         )
 
-        st.header("2. Paste the job description")
+        st.subheader("Target role")
         job_description = st.text_area(
             "Job description text", height=250, key=_JD_SESSION_KEY
         )
 
-        st.header("3. Choose the target resume length")
+        st.subheader("Artifact settings")
         length_choice_ui = st.selectbox(
             "Target resume length",
             options=["1 page", "2 pages", "Preserve original length"],
@@ -370,30 +371,14 @@ def main():
             ),
         )
 
-        st.header("4. Model provider")
-        st.caption(
-            "Optional: leave blank to use LLM_MODEL / LLM_API_KEY / LLM_API_BASE "
-            "from the environment."
-        )
-        model_choice = st.selectbox(
-            "Common models (helper)",
-            options=["(custom / env)"] + COMMON_MODELS,
-        )
-        model_input = st.text_input(
-            "Model id",
-            value="" if model_choice.startswith("(") else model_choice,
-            help=(
-                "Examples: openai/gpt-4o, anthropic/claude-3-5-sonnet-20241022, "
-                "gemini/gemini-1.5-pro"
-            ),
-        )
-        api_key_input = st.text_input("API key", type="password")
-        api_base_input = st.text_input(
-            "Base URL (optional)",
-            help="Azure / Ollama / proxy / OpenRouter-compatible endpoints",
-        )
+        with st.expander("Model settings"):
+            st.caption("Leave blank to use the configured environment.")
+            model_choice = st.selectbox("Common models", options=["(custom / env)"] + COMMON_MODELS)
+            model_input = st.text_input("Model id", value="" if model_choice.startswith("(") else model_choice)
+            api_key_input = st.text_input("API key", type="password")
+            api_base_input = st.text_input("Base URL (optional)")
 
-        run_clicked = st.button("Tailor my resume", type="primary")
+        run_clicked = st.button("Build tailored resume", type="primary", use_container_width=True)
 
     if run_clicked:
         _reset_review_state()
@@ -403,7 +388,10 @@ def main():
         return
 
     if not run_clicked:
-        st.info("Upload a resume, paste a job description, and click **Tailor my resume**.")
+        st.markdown(
+            '<div class="jc-panel"><h3>Start with two sources</h3><p>Upload your resume and paste the target job description. Job Copilot will propose only edits supported by your existing evidence.</p></div>',
+            unsafe_allow_html=True,
+        )
         return
 
     if not resume_file:
