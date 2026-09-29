@@ -1,13 +1,12 @@
 # Handoff to Codex — Job Copilot
 
 **Date:** 2026-09-28
-**From:** Claude Code (Steps 21-24 revision, then a same-day live-testing bug hunt on the
-freeform tailoring diff logic, on top of the Steps 16-20 handoff)
+**From:** Claude Code (Steps 21-24 revision, on top of the Steps 16-20 handoff)
 **Repo:** `ysj1995sss/yang95_msb341`
 **Audience:** A fresh Codex session continuing this product.
 
 Read this file first, then `AGENTS.md`, then the decisions listed below. Do not re-litigate
-decisions 001, 006, 009, 012, 014, 015, 016, 017, or 018 unless new evidence forces it.
+decisions 001, 006, 009, 012, 014, 015, 016, or 017 unless new evidence forces it.
 
 ---
 
@@ -56,24 +55,17 @@ logic lives in `product/`; API must not fork a second scorer, fingerprint, or ta
 
 ## 3. Git status (as of handoff)
 
-Steps 21-24 (spec 003, decisions 016/017) were revised directly on `main` in this session, followed
-by a same-day live-testing investigation (decision 018) that found and fixed three real bugs in the
-freeform tailoring diff logic — no feature branch either time, committed incrementally, all on top
-of Steps 16-20 (spec 002, decisions 014/015), which were themselves built on
-`codex/validated-artifacts-steps-16-20` and integrated into `main` in a prior session. `main` should
-be fully up to date with everything below by the time you read this — no open PRs, no uncommitted
-work, nothing to merge first. Confirm with `git status` / `git log origin/main..main` whether this
-session's commits have been pushed; `git pull` before starting is still good practice in case
-something landed after this doc was written.
+Steps 21-24 (spec 003, decisions 016/017) were revised directly on `main` in this session — no
+feature branch, committed incrementally phase by phase, all on top of Steps 16-20 (spec 002,
+decisions 014/015), which were themselves built on `codex/validated-artifacts-steps-16-20` and
+integrated into `main` in the prior session. `main` should be fully up to date with everything
+below by the time you read this — no open PRs, no uncommitted work, nothing to merge first.
+`main` was 18 commits ahead of `origin/main` as of the Steps 16-20 handoff and was pushed at the
+user's request; confirm with `git status` / `git log origin/main..main` whether this session's
+Steps 21-24 commits have been pushed too. `git pull` before starting is still good practice in
+case something landed after this doc was written.
 
-Latest commits on `main`, newest first (decision 018 slice — same-day live bug hunt):
-- `fix: replace block-local bullet matching with global matching` — third and final round; see
-  decision 018's second update for the full story
-- `fix: reconcile cross-block bullet matches and stop over-flagging condensed metrics` — second
-  round, later found insufficient (see above)
-- `fix: recognize education/skills/responsibilities in freeform diff pairing` — first round
-
-Before that slice, latest commits on `main`, newest first (Steps 21-24 slice):
+Latest commits on `main`, newest first (Steps 21-24 slice):
 - `docs: complete apply_for_job's docstring for the new snapshot/safety params`
 - `test: guard against auto-filling sensitive/legally significant fields` (Phase F — security)
 - `feat: rebuild the Applications dashboard` (Phase E — spec 003 Step 24)
@@ -125,27 +117,6 @@ tailoring path brought to parity with the DOCX path's semantic-drift and fabrica
 (Step 13); a bounded resume-wide optimization pass for the DOCX path (Step 14); bullet-length
 warnings wired into the freeform path (Step 15, `bullet_length_delta` had zero callers before
 this).
-
-### Freeform tailoring diff/matching — rebuilt same-day, live-testing bug hunt — decision 018
-`DiffGenerator._compute_changes` (`product/resume_tailorer/diff_generator.py`), the function that
-decides whether a tailored bullet is a truthful rephrase of something real or a fabricated "new"
-bullet, was found live to be seriously broken for realistic resumes (anything with an Education
-and Skills section — i.e. most real resumes): truthful content kept getting flagged as fabrication.
-Three rounds of real bugs, found via actually running the pipeline against a real resume through a
-live LLM and iterating with the user in real time:
-1. `_extract_bullets_from_profile` only ever read `job.accomplishments` — never
-   `job.responsibilities`, education notes, skills/tools/certifications, or summary — so anything
-   built from those categories had no possible match and was always misclassified as fabricated.
-2. Two patches (rescue matching, then unstick-and-rescue) on top of the ORIGINAL block-local
-   `SequenceMatcher` opcode matching, which only ever compared bullets within one local opcode
-   slice. Both patches ran out of headroom on a third live retry the same day.
-3. The underlying matching was rewritten to be GLOBAL from the start (one greedy
-   highest-similarity-first pass over every changed bullet in the whole resume, not block by
-   block) — this is now the real fix, not another patch; the two patches were deleted. A
-   `validate_pdf_content` bug found in the same investigation (`METRIC_MISSING` and
-   `ACCEPTED_CHANGE_MISSING` both over-firing for legitimately reviewed content) was fixed
-   alongside it. See decision 018's full timeline — genuinely useful reading before touching this
-   file again, since two of the three rounds looked like a complete fix at the time and weren't.
 
 ### Steps 16-20 — Validated resume artifact pipeline, built this session — decisions 014, 015
 One shared pipeline (`product/resume_tailorer/artifacts/`) both `apps/api` and Streamlit now go
@@ -265,7 +236,6 @@ decisions/014-use-one-validated-artifact-pipeline-for-steps-16-20.md
 decisions/015-steps-16-20-build-summary.md
 decisions/016-ats-capability-model-and-hard-submission-safety-gate.md
 decisions/017-steps-21-24-revision-summary.md
-decisions/018-freeform-diff-bullet-extraction-was-too-narrow.md
 specs/001-job-application-copilot.md
 specs/002-steps-16-20-validated-artifact-pipeline.md
 specs/003-steps-21-24-application-tracking-revision.md
@@ -273,8 +243,6 @@ product/resume_tailorer/analyzers/job_analyzer.py       # Step 10
 product/resume_tailorer/analyzers/gap_analyzer.py        # Steps 11-12
 product/resume_tailorer/tailorer/docx_bullet_tailorer.py # Step 13 (DOCX path)
 product/resume_tailorer/tailorer/resume_tailorer.py      # Step 13 (freeform path)
-product/resume_tailorer/diff_generator.py                 # freeform bullet matching (decision 018 -- read this file's docstrings before touching _compute_changes)
-product/resume_tailorer/pdf/content_validator.py           # decision 018's METRIC_MISSING/ACCEPTED_CHANGE_MISSING fixes
 product/resume_tailorer/docx_export/pipeline.py          # Step 14 + Steps 16-20 (finalize_docx_edits)
 product/resume_tailorer/artifacts/                        # Steps 16-20 domain models/pipeline/regeneration
 product/resume_tailorer/ui/artifact_review.py             # Steps 16-20 Streamlit review helpers
@@ -309,7 +277,7 @@ apps/api/app/tailor/storage.py                             # Steps 16-20 immutab
 ## 8. Verification commands
 
 ```bash
-cd product && ./.venv/Scripts/python.exe -m pytest -q          # expect 695 passed
+cd product && ./.venv/Scripts/python.exe -m pytest -q          # expect 685 passed
 cd apps/api && ./.venv/Scripts/python.exe -m pytest -q          # expect 60 passed
 ```
 
@@ -371,18 +339,6 @@ cd apps/api
 - `ApplicationSubmission`/`SubmissionAttempt`/status-history columns are additive-only in
   `applications.db`, same pattern as `apps/api/app/migrations.py` — never rename or drop a
   column; add a new one guarded by an existence check in `_apply_additive_migrations`.
-- `DiffGenerator._compute_changes` matches GLOBALLY (one pass over the whole resume) — do NOT
-  reintroduce block-local `SequenceMatcher` opcode-scoped pairing; that's the exact bug decision
-  018 spent three rounds fixing. If you touch this function, re-run the live reproduction steps in
-  decision 018 (build a profile shaped like a real MBA-style resume with an Education and Skills
-  section, run it through `build_freeform_changes` + `PDFValidator`, confirm `WARNING` not `FAIL`)
-  before trusting the unit tests alone — two of the three rounds passed their own unit tests and
-  were still broken on the next real resume.
-- `ChangeCategory.REJECTED` means "auto-rejected ambiguous pairing" (from
-  `AMBIGUOUS_PAIRING_THRESHOLD`), NOT "a user rejected this change" — `disposition=REJECTED` is the
-  user-facing signal; `category=REJECTED` is a distinct, unrelated field. `validate_pdf_content`
-  correctly treats these differently (see decision 018) — don't conflate them if you touch that
-  file.
 
 ---
 

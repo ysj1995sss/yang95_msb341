@@ -28,15 +28,7 @@ a brand new session act like a colleague who already knows what you are working 
   a full dashboard rebuild). Assist/Auto mode still doesn't work against real ATS forms — see
   `decisions/012-assist-auto-mode-does-not-work-against-real-ats-forms.md` — but the code now says
   so honestly and refuses instead of silently pretending otherwise. Manual mode is the one
-  reliable application-submission path today. Separately, the same day, a live-testing session
-  (actually uploading a real resume through a real LLM, not just unit tests) found the freeform
-  tailoring path's bullet-matching logic (`DiffGenerator._compute_changes`) was seriously broken
-  for realistic resumes — truthful content from Education/Skills sections kept getting flagged as
-  fabrication, blocking the download. Took three rounds to actually fix (two patches ran out of
-  headroom before a proper global-matching rewrite held) — see
-  `decisions/018-freeform-diff-bullet-extraction-was-too-narrow.md`, genuinely worth reading in
-  full before touching `diff_generator.py` again, since two of the three rounds looked complete
-  and weren't.
+  reliable application-submission path today.
 - **Next build:** (a) wire up the Steps 16-20 correction/condensation loop (decision 015), (b)
   close the freeform/PDF tailoring path's remaining gaps (no repair loop, no hard length gate —
   decision 013), (c) custom/job-specific application question answering (decision 017), (d)
@@ -49,8 +41,8 @@ a brand new session act like a colleague who already knows what you are working 
   and discovery pipelines are verified live against real postings, but the full search → triage →
   tailor → apply loop hasn't been used by anyone else yet.
 - **Handoff doc:** `HANDOFF-TO-CODEX.md` — read this when starting a new Codex session, along
-  with `decisions/001`, `009`, `012`, `013`, `014`, `015`, `016`, `017`, and `018` for the
-  architecture and the most recent work.
+  with `decisions/001`, `009`, `012`, `013`, `014`, `015`, `016`, and `017` for the architecture
+  and the most recent work.
 
 ## How this repo works
 
@@ -65,7 +57,7 @@ a brand new session act like a colleague who already knows what you are working 
 - **Stack:** Python (resume_tailorer package), Streamlit for UI, an LLM API for tailoring (see `product/resume_tailorer/llm/`), pytest for testing, reportlab for PDF generation, python-docx + docx2pdf for the DOCX splice pipeline, multiple job board scrapers (Greenhouse live; LinkedIn/Indeed/Handshake limited/demo).
 - **Two separate venvs:** `product/.venv` (core engine + Streamlit) and `apps/api/.venv` (FastAPI backend). Set `PYTHONPATH` to include `product/` when running Streamlit or product tests directly.
 - **How work ships:** Streamlit app + FastAPI backend run locally; eventual deployment TBD.
-- **Testing and style:** pytest for unit and integration tests; extensive fixture-based testing with real job descriptions. Run the full suite (`product/`: currently 695 tests; `apps/api/`: currently 60) before claiming anything is done.
+- **Testing and style:** pytest for unit and integration tests; extensive fixture-based testing with real job descriptions. Run the full suite (`product/`: currently 685 tests; `apps/api/`: currently 60) before claiming anything is done.
 
 ## Working with me
 
