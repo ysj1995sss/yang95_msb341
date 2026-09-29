@@ -5,6 +5,7 @@ so the form-building, display-formatting, and filtering logic used by the
 Job Search UI can be unit tested without a browser or a running Streamlit app.
 """
 
+from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, Tuple
 
 from resume_tailorer.job_search.job_quality import evaluate_job_quality, quality_label
@@ -34,6 +35,58 @@ _KNOWN_ACTIONS = {
     "skipped",
     "applied",
 }
+
+
+@dataclass(frozen=True)
+class JobCardView:
+    company: str
+    title: str
+    location: str
+    compensation: str
+    sponsorship: str
+    fit: str
+    quality: str
+    action: str
+    strong_matches: tuple[str, ...]
+    partial_matches: tuple[str, ...]
+    true_gaps: tuple[str, ...]
+
+
+def build_job_card_view(
+    job: JobPosting,
+    fit: Optional[FitResult],
+    quality: Optional[JobQualityStatus],
+    action: Optional[str],
+) -> JobCardView:
+    """Build one honest, display-ready job record without inventing zeroes."""
+    action_labels = {
+        TriageAction.SAVE: "Saved",
+        TriageAction.APPLY: "Selected to tailor",
+        TriageAction.PASS: "Passed",
+        TriageAction.UNREVIEWED: "Not reviewed",
+    }
+    normalized_action = canonicalize_triage_action(action)
+    return JobCardView(
+        company=job.company or "Unknown company",
+        title=job.title or "Untitled role",
+        location=job.location or "Not stated",
+        compensation=(
+            "Not stated"
+            if job.salary_min is None and job.salary_max is None
+            else _format_salary(job.salary_min, job.salary_max)
+        ),
+        sponsorship=(
+            "Not stated"
+            if job.sponsorship_available is None
+            else _format_sponsorship(job.sponsorship_available)
+        ),
+        fit="Not assessed" if fit is None or fit.overall_fit is None else f"{round(fit.overall_fit)}%",
+        quality=quality_label(quality or evaluate_job_quality(job)),
+        action=action_labels.get(normalized_action, "Not reviewed"),
+        strong_matches=tuple(fit.strong_matches) if fit else (),
+        partial_matches=tuple(fit.partial_matches) if fit else (),
+        true_gaps=tuple(fit.true_gaps) if fit else (),
+    )
 
 
 def _parse_comma_separated(value: Any) -> List[str]:

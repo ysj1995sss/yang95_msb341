@@ -21,9 +21,11 @@ from resume_tailorer.job_search.models import (
     UserSelection,
 )
 from resume_tailorer.job_search.ui_helpers import (
+    build_job_card_view,
     build_search_goals_from_form,
     format_job_for_display,
 )
+from resume_tailorer.ui import build_workflow_state, render_app_shell, render_page_header
 
 CAREER_PROFILE_SESSION_KEY = "career_profile"
 
@@ -70,7 +72,7 @@ def _get_job_service() -> JobService:
 
 
 def _render_search_goals_form() -> dict:
-    st.header("1. Search Goals")
+    st.subheader("Search criteria")
 
     col1, col2 = st.columns(2)
     with col1:
@@ -124,7 +126,7 @@ def _render_search_goals_form() -> dict:
 
 
 def _render_source_selection() -> list:
-    st.header("2. Job Sources")
+    st.subheader("Sources")
     st.caption(
         "Greenhouse can return live public board listings. LinkedIn, Indeed, and "
         "Handshake are demo/limited until a permitted connector is available."
@@ -174,9 +176,7 @@ def _render_search_run_summary(summary) -> None:
 
 
 def _render_search_button(form_data: dict, sources: list) -> None:
-    st.header("3. Run Search")
-
-    if st.button("Search for jobs", type="primary"):
+    if st.button("Search roles", type="primary", use_container_width=True):
         if not sources:
             st.error("Please select at least one job source.")
             return
@@ -270,7 +270,7 @@ def _render_dashboard_filters() -> DashboardFilters:
 
 
 def _render_job_dashboard() -> None:
-    st.header("4. Job Dashboard")
+    st.subheader("Role evidence feed")
 
     goals = st.session_state.get("last_search_goals")
     if goals is None:
@@ -329,32 +329,25 @@ def _render_job_dashboard() -> None:
         fit_result = fit_results.get(job_id)
         quality = quality_by_id.get(job_id)
         display = format_job_for_display(job, fit_score, fit_result, quality)
+        card = build_job_card_view(job, fit_result, quality, actions.get(job_id))
 
         with st.expander(
-            f"{display['Title']} — {display['Company']} "
-            f"({display['Location']}) [{display['Quality']}]"
+            f"{card.title} · {card.company} · {card.location} · Fit {card.fit}"
         ):
-            st.write(f"**Salary:** {display['Salary']}")
-            st.write(f"**Work mode:** {display['Work Mode']}")
-            st.write(f"**Sponsorship:** {display['Sponsorship']}")
-            st.write(f"**Posted:** {display['Posted Date']}")
-            st.write(f"**Deadline:** {display['Deadline']}")
-            st.write(f"**Source:** {display['Source']}")
-            st.write(f"**Quality:** {display['Quality']}")
-            st.write(f"**Fit Score:** {display['Fit Score']}")
+            facts = st.columns(4)
+            facts[0].metric("Candidate fit", card.fit)
+            facts[1].metric("Compensation", card.compensation)
+            facts[2].metric("Sponsorship", card.sponsorship)
+            facts[3].metric("Posting quality", card.quality)
+            st.caption(
+                f"{display['Work Mode']} · Posted {display['Posted Date']} · "
+                f"Deadline {display['Deadline']} · Source {display['Source']} · {card.action}"
+            )
             if fit_result is not None:
-                st.write(
-                    f"**Fit breakdown:** eligibility {display.get('Fit Eligibility', 'N/A')}, "
-                    f"core {display.get('Fit Core', 'N/A')}, "
-                    f"preferred {display.get('Fit Preferred', 'N/A')}, "
-                    f"evidence {display.get('Fit Evidence Confidence', 'N/A')}"
-                )
-                if display.get("Fit Strong") and display["Fit Strong"] != "—":
-                    st.caption(f"Strong: {display['Fit Strong']}")
-                if display.get("Fit Partial") and display["Fit Partial"] != "—":
-                    st.caption(f"Partial: {display['Fit Partial']}")
-                if display.get("Fit Gaps") and display["Fit Gaps"] != "—":
-                    st.caption(f"Gaps: {display['Fit Gaps']}")
+                match_cols = st.columns(3)
+                match_cols[0].markdown("**Strong evidence**\n\n" + ("\n".join(f"- {item}" for item in card.strong_matches[:5]) or "Not assessed"))
+                match_cols[1].markdown("**Partial evidence**\n\n" + ("\n".join(f"- {item}" for item in card.partial_matches[:5]) or "None identified"))
+                match_cols[2].markdown("**True gaps**\n\n" + ("\n".join(f"- {item}" for item in card.true_gaps[:5]) or "None identified"))
             if display["URL"]:
                 st.write(f"[View posting]({display['URL']})")
             if job.alternative_sources:
@@ -364,7 +357,7 @@ def _render_job_dashboard() -> None:
             triage_actions = [
                 (TriageAction.SAVE.value, "Save"),
                 (TriageAction.PASS.value, "Pass"),
-                (TriageAction.APPLY.value, "Apply"),
+                (TriageAction.APPLY.value, "Tailor resume"),
             ]
             for col, (action, label) in zip(action_cols, triage_actions):
                 if col.button(label, key=f"{job_id}_{action}"):
@@ -401,14 +394,16 @@ def _render_job_dashboard() -> None:
 
 
 def main():
-    st.title("Job Search")
-    st.caption(
-        "Set your search goals, choose which sources to scrape, and triage "
-        "the results below."
+    render_app_shell("Job Discovery", build_workflow_state(st.session_state))
+    render_page_header(
+        "Job Discovery",
+        "Search permitted sources, inspect why each role matches, and send one evidence snapshot into tailoring.",
     )
-    form_data = _render_search_goals_form()
-    sources = _render_source_selection()
-    _render_search_button(form_data, sources)
+    st.info("Greenhouse is live. LinkedIn, Indeed, and Handshake are limited demo sources until permitted connectors are available.")
+    with st.sidebar:
+        form_data = _render_search_goals_form()
+        sources = _render_source_selection()
+        _render_search_button(form_data, sources)
     _render_job_dashboard()
 
 
