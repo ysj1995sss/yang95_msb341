@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Mapping, Optional
+from typing import Mapping, MutableMapping, Optional
 import os
 
 MISSING_CONFIG_MESSAGE = (
@@ -14,6 +14,18 @@ class LLMSettings:
     model: str
     api_key: str
     api_base: Optional[str] = None
+
+
+def apply_secret_settings(
+    secrets: Mapping[str, object],
+    env: Optional[MutableMapping[str, str]] = None,
+) -> None:
+    """Fill missing LLM environment values from a deployment secret store."""
+    target = env if env is not None else os.environ
+    for key in ("LLM_MODEL", "LLM_API_KEY", "LLM_API_BASE"):
+        value = secrets.get(key)
+        if key not in target and value is not None and str(value).strip():
+            target[key] = str(value).strip()
 
 
 def _pick(override: Optional[str], env_value: Optional[str]) -> Optional[str]:

@@ -20,10 +20,27 @@ of its own to route through.
 """
 
 import os
+import sys
 import tempfile
+from pathlib import Path
+
+# Streamlit Community Cloud runs `streamlit run <main file path>` and adds
+# only that FILE's own directory to sys.path (like `python script.py`
+# always has) -- never the repo layout this app actually needs, which is
+# product/ (the parent of resume_tailorer/) on the path so `import
+# resume_tailorer.xxx` resolves. Locally this is normally handled by
+# setting PYTHONPATH by hand before running Streamlit; Cloud has no
+# equivalent setting, so the app does it itself, once, before any
+# resume_tailorer import below. Safe to run twice (inserting the same
+# path again is a no-op check).
+_PRODUCT_DIR = str(Path(__file__).resolve().parent.parent)
+if _PRODUCT_DIR not in sys.path:
+    sys.path.insert(0, _PRODUCT_DIR)
 
 from dotenv import load_dotenv
 import streamlit as st
+
+from resume_tailorer.llm.settings import apply_secret_settings
 
 # Loads LLM_MODEL/LLM_API_KEY/LLM_API_BASE from a local .env file (gitignored)
 # if one exists, so a real key never has to be pasted into the sidebar or
@@ -31,6 +48,18 @@ import streamlit as st
 # or the values are already set in the real environment (load_dotenv never
 # overrides an existing env var by default).
 load_dotenv()
+
+# On Streamlit Community Cloud there is no .env file at all -- secrets are
+# configured through the app's own Settings -> Secrets page instead, and
+# surfaced to the running app as st.secrets. Filling any STILL-missing
+# LLM_MODEL/LLM_API_KEY/LLM_API_BASE from there (never overriding a value
+# already set locally) means the exact same app.py runs unchanged in both
+# places. st.secrets raises if no secrets.toml exists at all (the normal
+# case for local development), so this is deliberately best-effort.
+try:
+    apply_secret_settings(st.secrets)
+except Exception:
+    pass
 
 from resume_tailorer.parsers import ResumeParser
 from resume_tailorer.analyzers import JobAnalyzer, ResumeBenchmarker, GapAnalyzer

@@ -1,5 +1,25 @@
 import pytest
-from resume_tailorer.llm.settings import resolve_settings, LLMSettings
+from resume_tailorer.llm.settings import apply_secret_settings, resolve_settings, LLMSettings
+
+
+def test_streamlit_secrets_fill_missing_environment_without_overriding_local_values():
+    env = {"LLM_MODEL": "local/model"}
+
+    apply_secret_settings(
+        {
+            "LLM_MODEL": "cloud/model",
+            "LLM_API_KEY": "cloud-key",
+            "LLM_API_BASE": "https://cloud.example.test",
+            "UNRELATED": "ignored",
+        },
+        env,
+    )
+
+    assert env == {
+        "LLM_MODEL": "local/model",
+        "LLM_API_KEY": "cloud-key",
+        "LLM_API_BASE": "https://cloud.example.test",
+    }
 
 
 def test_resolve_from_env_only():
