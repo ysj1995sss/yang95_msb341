@@ -172,11 +172,9 @@ def test_scrape_real_excludes_partially_matching_titles():
     with patch.object(scraper, "_make_get_request", return_value=partial_match_response):
         results = scraper.scrape(goals)
 
-    # Since the real API path returns zero true matches (the only real job doesn't
-    # fully match), scrape() should fall back to mock data (data_source == "mock"),
-    # NOT return the partially-matching real job.
-    assert scraper.data_source == "mock"
-    assert not any(job.title == "Engineering Manager, Guest Experience" for job in results)
+    # Zero true matches means an honest empty result: no partial match, no placeholders.
+    assert scraper.data_source == "real"
+    assert results == []
 
 
 def test_filter_by_goals_returns_all_when_no_job_title():
@@ -219,29 +217,26 @@ def test_scrape_handles_missing_optional_fields_as_unknown():
     assert job.education_required == "Unknown"
 
 
-def test_scrape_falls_back_to_mock_when_api_unavailable():
-    """When the real API call fails (returns None), scrape() falls back to mock data and flags data_source='mock'."""
+def test_scrape_reports_unavailable_when_api_down():
+    """When no board answers, scrape() returns nothing and flags the source unavailable."""
     scraper = GreenhouseScraper()
-    goals = _make_goals()
 
     with patch.object(scraper, "_make_get_request", return_value=None):
-        results = scraper.scrape(goals)
+        results = scraper.scrape(_make_goals())
 
-    assert len(results) >= 1
-    assert scraper.data_source == "mock"
-    assert all(job.source == JobSource.GREENHOUSE for job in results)
+    assert results == []
+    assert scraper.data_source == "unavailable"
 
 
-def test_scrape_falls_back_to_mock_on_empty_real_response():
-    """When the real API returns zero jobs across all board tokens, scrape() falls back to mock (better demo experience than empty results)."""
+def test_scrape_never_invents_jobs_on_empty_real_response():
+    """An empty real response stays empty -- no placeholder postings."""
     scraper = GreenhouseScraper()
-    goals = _make_goals()
 
     with patch.object(scraper, "_make_get_request", return_value={"jobs": []}):
-        results = scraper.scrape(goals)
+        results = scraper.scrape(_make_goals())
 
-    assert len(results) >= 1
-    assert scraper.data_source == "mock"
+    assert results == []
+    assert scraper.data_source == "real"
 
 
 def test_scrape_queries_multiple_board_tokens():

@@ -3,6 +3,7 @@
 Coordinates: user goals → scraper selection → scraping → deduplication → database storage.
 """
 
+from dataclasses import replace
 from datetime import datetime
 from typing import Any, Dict, List, Optional, Tuple
 from resume_tailorer.job_search.models import (
@@ -16,9 +17,9 @@ from resume_tailorer.job_search.models import (
     SearchRunSummary,
 )
 from resume_tailorer.job_search.database import JobDatabase
+from resume_tailorer.job_search.job_attributes import apply_goal_filters
 from resume_tailorer.job_search.deduplicator import JobDeduplicator
 from resume_tailorer.job_search.candidate_fit import CandidateFitScorer
-from resume_tailorer.job_search.url_validator import URLValidator
 from resume_tailorer.job_search.scrapers import (
     LinkedInScraper,
     IndeedScraper,
@@ -81,7 +82,6 @@ class JobService:
         self.db.create_tables()
         self.deduplicator = JobDeduplicator()
         self.fit_scorer = CandidateFitScorer()
-        self.url_validator = URLValidator()
 
         self.applications_db = ApplicationDatabase(db_path=applications_db_path)
         self.applications_db.create_tables()
@@ -117,7 +117,6 @@ class JobService:
            - Call scraper.scrape(goals) to get postings
            - Record ProviderRunResult (ok / failed / skipped)
         3. Deduplicate all collected postings via JobDeduplicator
-        3b. Filter out confirmed-closed postings via URLValidator
         4. For each remaining posting:
            - Call database.save_job_posting()
            - Increment stored count
@@ -135,7 +134,6 @@ class JobService:
 
         all_postings: List[JobPosting] = []
         provider_results: List[ProviderRunResult] = []
-        greenhouse_data_source = None
 
         for source in sources:
             scraper = self._get_scraper(source)
@@ -151,6 +149,8 @@ class JobService:
                 continue
             try:
                 postings = scraper.scrape(goals)
+                if getattr(scraper, "data_source", None) == "unavailable":
+                    raise ConnectionError("Source could not be reached")
                 batch = list(postings or [])
                 all_postings.extend(batch)
                 provider_results.append(
@@ -160,8 +160,6 @@ class JobService:
                         scraped=len(batch),
                     )
                 )
-                if source == JobSource.GREENHOUSE:
-                    greenhouse_data_source = getattr(scraper, "data_source", None)
             except Exception as exc:
                 provider_results.append(
                     ProviderRunResult(
@@ -174,20 +172,6 @@ class JobService:
 
         deduplicated_postings = self.deduplicator.deduplicate(all_postings)
         total_after_dedupe = len(deduplicated_postings)
-        closed_filtered = 0
-
-        # URL validation only for live Greenhouse results (mock URLs are fabricated).
-        if greenhouse_data_source == "real":
-            greenhouse_postings = [
-                p for p in deduplicated_postings if p.source == JobSource.GREENHOUSE
-            ]
-            other_postings = [
-                p for p in deduplicated_postings if p.source != JobSource.GREENHOUSE
-            ]
-            before = len(greenhouse_postings)
-            filtered_greenhouse = self.url_validator.filter_active_jobs(greenhouse_postings)
-            closed_filtered = before - len(filtered_greenhouse)
-            deduplicated_postings = other_postings + filtered_greenhouse
 
         stored_count = 0
         for posting in deduplicated_postings:
@@ -215,7 +199,6 @@ class JobService:
             providers=provider_results,
             total_scraped=len(all_postings),
             total_after_dedupe=total_after_dedupe,
-            closed_filtered=closed_filtered,
             total_stored=stored_count,
             status=run_status,
         )
@@ -233,7 +216,9 @@ class JobService:
         Returns:
             List of JobPosting objects matching the goals
         """
-        jobs = self.db.search_jobs(goals)
+        # Title matching happens in apply_goal_filters (word-based, same rule
+        # the scraper uses), not as a SQL substring match.
+        jobs = apply_goal_filters(self.db.search_jobs(replace(goals, job_title="")), goals)
 
         # Sort by posted_date descending (most recent first)
         jobs.sort(

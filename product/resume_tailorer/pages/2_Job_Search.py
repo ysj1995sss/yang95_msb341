@@ -8,6 +8,14 @@ APPLY hands the job description + fit snapshot to Resume Tailorer (Step 10).
 import streamlit as st
 
 from resume_tailorer.job_search.dashboard import SORT_OPTIONS, filter_and_sort_jobs
+from resume_tailorer.job_search.job_attributes import (
+    EMPLOYMENT_TYPE_OPTIONS,
+    EXPERIENCE_LEVEL_OPTIONS,
+    INDUSTRY_OPTIONS,
+    employment_type_for,
+    experience_level_for,
+    industry_for,
+)
 from resume_tailorer.job_search.job_quality import evaluate_job_quality
 from resume_tailorer.job_search.job_service import (
     PENDING_TAILOR_JOB_KEY,
@@ -34,21 +42,6 @@ st.set_page_config(page_title="Job Search", page_icon="\U0001F50D", layout="wide
 DB_PATH = "job_search.db"
 
 REMOTE_PREFERENCE_OPTIONS = ["any", "remote", "hybrid", "onsite"]
-EXPERIENCE_LEVEL_OPTIONS = ["entry", "mid", "senior", "lead", "executive"]
-COMPANY_SIZE_OPTIONS = ["any", "startup", "small", "medium", "large", "enterprise"]
-EMPLOYMENT_TYPE_OPTIONS = ["full-time", "part-time", "contract", "internship"]
-INDUSTRY_OPTIONS = [
-    "Technology",
-    "Finance",
-    "Healthcare",
-    "Retail",
-    "Manufacturing",
-    "Education",
-    "Government",
-    "Nonprofit",
-    "Media",
-    "Consulting",
-]
 SOURCE_OPTIONS = [JobSource.LINKEDIN, JobSource.INDEED, JobSource.HANDSHAKE, JobSource.GREENHOUSE]
 SOURCE_LABELS = {
     JobSource.GREENHOUSE: "greenhouse — available (live ATS boards)",
@@ -73,6 +66,7 @@ def _get_job_service() -> JobService:
 
 def _render_search_goals_form() -> dict:
     st.subheader("Search criteria")
+    st.caption("Only a job title is required. Leave anything else blank for no preference.")
 
     col1, col2 = st.columns(2)
     with col1:
@@ -82,7 +76,7 @@ def _render_search_goals_form() -> dict:
         remote_preference = st.selectbox(
             "Remote preference", REMOTE_PREFERENCE_OPTIONS, key="remote_preference"
         )
-        experience_level = st.selectbox(
+        experience_level = st.multiselect(
             "Experience level", EXPERIENCE_LEVEL_OPTIONS, key="experience_level"
         )
 
@@ -93,8 +87,7 @@ def _render_search_goals_form() -> dict:
         max_salary = st.number_input(
             "Maximum salary", min_value=0, step=5000, value=200000, key="max_salary"
         )
-        company_size = st.selectbox("Company size", COMPANY_SIZE_OPTIONS, key="company_size")
-        employment_type = st.selectbox(
+        employment_type = st.multiselect(
             "Employment type", EMPLOYMENT_TYPE_OPTIONS, key="employment_type"
         )
 
@@ -116,7 +109,6 @@ def _render_search_goals_form() -> dict:
         "max_salary": max_salary,
         "remote_preference": remote_preference,
         "experience_level": experience_level,
-        "company_size": company_size,
         "employment_type": employment_type,
         "sponsorship_required": sponsorship_required,
         "relocation_willing": relocation_willing,
@@ -159,11 +151,6 @@ def _render_search_run_summary(summary) -> None:
             f"(stored {summary.total_stored}). See per-source details below."
         )
 
-    if summary.closed_filtered:
-        st.caption(
-            f"Filtered out {summary.closed_filtered} confirmed-closed posting URL(s)."
-        )
-
     lines = []
     for provider in summary.providers:
         err = f" — {provider.error}" if provider.error else ""
@@ -195,22 +182,14 @@ def _render_search_button(form_data: dict, sources: list) -> None:
             st.session_state.last_search_goals = goals
             _render_search_run_summary(summary)
 
-            greenhouse_scraper = (
-                service._get_scraper(JobSource.GREENHOUSE)
-                if JobSource.GREENHOUSE in sources
-                else None
-            )
-            used_real_data = getattr(greenhouse_scraper, "data_source", None) == "real"
-
-            if used_real_data:
-                st.success(
-                    "Live Data: Greenhouse results include real, currently-posted "
-                    "jobs from public company boards."
+            if summary.total_stored == 0 and summary.status.value == "ok":
+                st.info(
+                    "No open postings matched this job title. Try fewer or broader words."
                 )
-            else:
+            if any(source != JobSource.GREENHOUSE for source in sources):
                 st.warning(
-                    "Demo Mode: listings may be simulated placeholder data. "
-                    "LinkedIn/Indeed/Handshake remain limited."
+                    "LinkedIn, Indeed, and Handshake results are simulated demo "
+                    "listings, not real jobs."
                 )
         except Exception as exc:
             st.error(f"Search failed: {exc}")
@@ -342,6 +321,10 @@ def _render_job_dashboard() -> None:
             st.caption(
                 f"{display['Work Mode']} · Posted {display['Posted Date']} · "
                 f"Deadline {display['Deadline']} · Source {display['Source']} · {card.action}"
+            )
+            st.caption(
+                f"Industry: {industry_for(job)} · Level: {experience_level_for(job)} · "
+                f"Job type: {employment_type_for(job)}"
             )
             if fit_result is not None:
                 match_cols = st.columns(3)

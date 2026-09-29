@@ -128,11 +128,11 @@ def build_search_goals_from_form(form_data: Dict[str, Any]) -> SearchGoals:
         location=location,
         remote_preference=form_data.get("remote_preference") or "any",
         sponsorship_required=bool(form_data.get("sponsorship_required", False)),
-        experience_level=form_data.get("experience_level") or "",
+        experience_level=",".join(_parse_comma_separated(form_data.get("experience_level"))),
         company_size=form_data.get("company_size") or "",
         target_companies=_parse_comma_separated(form_data.get("target_companies")),
         exclude_companies=_parse_comma_separated(form_data.get("exclude_companies")),
-        employment_type=form_data.get("employment_type") or "full-time",
+        employment_type=",".join(_parse_comma_separated(form_data.get("employment_type"))),
         relocation_willing=bool(form_data.get("relocation_willing", False)),
     )
 

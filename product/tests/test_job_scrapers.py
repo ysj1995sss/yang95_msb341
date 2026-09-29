@@ -354,7 +354,8 @@ class TestScraperErrorHandling:
         )
 
         for scraper in scrapers:
-            with mock.patch.object(scraper, '_generate_mock_jobs' if 'LinkedIn' in str(type(scraper)) or 'Indeed' in str(type(scraper)) or 'Handshake' in str(type(scraper)) or 'Greenhouse' in str(type(scraper)) else 'scrape', side_effect=Exception("Test error")):
+            failing = '_scrape_real' if isinstance(scraper, GreenhouseScraper) else '_generate_mock_jobs'
+            with mock.patch.object(scraper, failing, side_effect=Exception("Test error")):
                 # Even with an error, should return empty list
                 jobs = scraper.scrape(goals)
                 assert isinstance(jobs, list)
