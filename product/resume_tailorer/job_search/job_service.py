@@ -364,9 +364,6 @@ class JobService:
         if not goals.job_title or not goals.job_title.strip():
             raise ValueError("job_title is required")
 
-        if not goals.location or not goals.location.strip():
-            raise ValueError("location is required")
-
     def _get_scraper(self, source: JobSource):
         """Get scraper instance for the given source.
 
