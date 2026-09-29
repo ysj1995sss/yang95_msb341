@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from urllib.parse import urlparse, urlunparse
+from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
 
 from resume_tailorer.job_search.models import JobPosting
 from resume_tailorer.job_search.normalize import (
@@ -12,23 +12,38 @@ from resume_tailorer.job_search.normalize import (
 )
 
 
+_TRACKING_PARAMS = {"gclid", "fbclid", "ref", "referrer", "source", "src", "gh_src", "lever-source", "trk", "mc_cid", "mc_eid"}
+
+
+def _is_tracking_param(name: str) -> bool:
+    name = name.lower()
+    return name.startswith("utm") or name in _TRACKING_PARAMS
+
+
 def normalize_url(url: str | None) -> str:
-    """Strip tracking query/fragment and trailing slash; lowercase host+path."""
+    """Drop tracking params, fragment, and trailing slash; lowercase host+path.
+
+    Identifying params are kept: many career sites address each job only by a
+    query param (e.g. ?gh_jid=123), so stripping every param merges different jobs.
+    """
     if not url or not str(url).strip():
         return ""
-    raw = str(url).strip()
-    parsed = urlparse(raw)
-    cleaned = urlunparse(
+    parsed = urlparse(str(url).strip())
+    kept = sorted(
+        (key, value)
+        for key, value in parse_qsl(parsed.query, keep_blank_values=True)
+        if not _is_tracking_param(key)
+    )
+    return urlunparse(
         (
             parsed.scheme.lower(),
             parsed.netloc.lower(),
             parsed.path.rstrip("/"),
             "",
-            "",
+            urlencode(kept),
             "",
         )
     )
-    return cleaned
 
 
 def job_fingerprint(posting: JobPosting) -> str:

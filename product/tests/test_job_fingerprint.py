@@ -25,6 +25,15 @@ def test_same_url_same_fingerprint_strips_tracking_params():
     assert job_fingerprint(a) == job_fingerprint(b)
 
 
+def test_job_id_query_param_keeps_distinct_jobs_apart():
+    a = _posting(source_id="1", url="https://www.example.com/careers/job/?gh_jid=111&utm_source=x")
+    b = _posting(source_id="2", url="https://www.example.com/careers/job/?gh_jid=222")
+    c = _posting(source_id="1", url="https://www.example.com/careers/job?gh_jid=111")
+    assert job_fingerprint(a) != job_fingerprint(b)
+    assert job_fingerprint(a) == job_fingerprint(c)
+    assert len(JobDeduplicator().deduplicate([a, b])) == 2
+
+
 def test_distinct_source_ids_not_same_fingerprint():
     a = _posting(source_id="req-1", url="", description="Role A focusing on analytics")
     b = _posting(source_id="req-2", url="", description="Role B focusing on sales ops")

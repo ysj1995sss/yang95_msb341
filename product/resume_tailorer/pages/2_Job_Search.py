@@ -163,7 +163,8 @@ def _render_search_run_summary(summary) -> None:
 
 
 def _render_search_button(form_data: dict, sources: list) -> None:
-    if st.button("Search roles", type="primary", use_container_width=True):
+    searched = st.button("Search roles", type="primary", use_container_width=True)
+    if searched:
         if not sources:
             st.error("Please select at least one job source.")
             return
@@ -195,8 +196,7 @@ def _render_search_button(form_data: dict, sources: list) -> None:
             st.error(f"Search failed: {exc}")
 
     prior = st.session_state.get("last_search_run")
-    if prior is not None and not st.session_state.get("_search_just_ran"):
-        # Keep last run visible when re-rendering without a new click.
+    if prior is not None and not searched:
         with st.expander("Last search run", expanded=False):
             _render_search_run_summary(prior)
 

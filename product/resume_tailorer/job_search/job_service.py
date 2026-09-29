@@ -17,6 +17,7 @@ from resume_tailorer.job_search.models import (
     SearchRunSummary,
 )
 from resume_tailorer.job_search.database import JobDatabase
+from resume_tailorer.job_search.dashboard import sort_jobs
 from resume_tailorer.job_search.job_attributes import apply_goal_filters
 from resume_tailorer.job_search.deduplicator import JobDeduplicator
 from resume_tailorer.job_search.candidate_fit import CandidateFitScorer
@@ -221,10 +222,7 @@ class JobService:
         jobs = apply_goal_filters(self.db.search_jobs(replace(goals, job_title="")), goals)
 
         # Sort by posted_date descending (most recent first)
-        jobs.sort(
-            key=lambda j: j.posted_date if j.posted_date else datetime.min,
-            reverse=True
-        )
+        jobs = sort_jobs(jobs, sort_by="posted_date", sort_dir="desc")
 
         return jobs
 

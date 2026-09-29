@@ -75,3 +75,24 @@ def test_internship_search_requires_an_internship_title():
 def test_full_time_search_keeps_unlabeled_and_drops_contract():
     contract, plain = _job("Product Manager (Contract)"), _job("Product Manager")
     assert apply_goal_filters([contract, plain], _goals(job_type="full-time")) == [plain]
+
+
+def test_sort_puts_missing_values_last_in_both_directions():
+    from resume_tailorer.job_search.dashboard import sort_jobs
+
+    jobs = [_job("A"), _job("B"), _job("C")]
+    scores = {"greenhouse_A": 90, "greenhouse_B": None, "greenhouse_C": 40}
+    desc = sort_jobs(jobs, sort_by="fit_score", sort_dir="desc", fit_scores=scores)
+    asc = sort_jobs(jobs, sort_by="fit_score", sort_dir="asc", fit_scores=scores)
+    assert [j.title for j in desc] == ["A", "C", "B"]
+    assert [j.title for j in asc] == ["C", "A", "B"]
+
+
+def test_sort_handles_dates_with_and_without_timezone():
+    from datetime import datetime, timezone
+    from resume_tailorer.job_search.dashboard import sort_jobs
+
+    aware, naive = _job("aware"), _job("naive")
+    aware.posted_date = datetime(2026, 9, 20, tzinfo=timezone.utc)
+    naive.posted_date = datetime(2026, 9, 25)
+    assert [j.title for j in sort_jobs([aware, naive])] == ["naive", "aware"]

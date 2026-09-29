@@ -7,8 +7,8 @@ router so filter/sort behavior stays in parity.
 from __future__ import annotations
 
 import re
-from datetime import datetime
-from typing import Any, Dict, List, Optional, Sequence, Tuple
+from datetime import datetime, timezone
+from typing import Any, Dict, List, Optional, Sequence
 
 from resume_tailorer.job_search.job_quality import evaluate_job_quality
 from resume_tailorer.job_search.models import (
@@ -186,29 +186,30 @@ def sort_jobs(
     def _jid(job: JobPosting) -> str:
         return f"{job.source.value}_{job.source_id}"
 
-    def _sort_key(job: JobPosting) -> Tuple:
+    def _value(job: JobPosting) -> Any:
         if key == "fit_score":
-            score = fit_scores.get(_jid(job))
-            return (score is None, score if score is not None else 0.0)
+            return fit_scores.get(_jid(job))
         if key == "salary":
-            floor = _job_salary_floor(job)
-            return (floor is None, floor if floor is not None else 0)
+            return _job_salary_floor(job)
         if key == "company":
-            return ((job.company or "").casefold(),)
+            return (job.company or "").casefold()
         if key == "title":
-            return ((job.title or "").casefold(),)
+            return (job.title or "").casefold()
         if key == "deadline":
-            return (
-                job.application_deadline is None,
-                job.application_deadline or datetime.min,
-            )
-        # default: posted_date
-        return (
-            job.posted_date is None,
-            job.posted_date or datetime.min,
-        )
+            return comparable_datetime(job.application_deadline)
+        return comparable_datetime(job.posted_date)
 
-    return sorted(jobs, key=_sort_key, reverse=reverse)
+    # Jobs missing the sort value always go last, whichever direction is chosen.
+    known = [job for job in jobs if _value(job) is not None]
+    missing = [job for job in jobs if _value(job) is None]
+    return sorted(known, key=_value, reverse=reverse) + missing
+
+
+def comparable_datetime(value: Optional[datetime]) -> Optional[datetime]:
+    """Naive UTC, so dates from sources with and without timezones can be compared."""
+    if value is None or value.tzinfo is None:
+        return value
+    return value.astimezone(timezone.utc).replace(tzinfo=None)
 
 
 def filter_api_job_dicts(
@@ -288,22 +289,20 @@ def filter_api_job_dicts(
     key = (sort_by or "fit_score").strip().lower()
     reverse = (sort_dir or "desc").strip().lower() != "asc"
 
-    def _api_sort_key(item: Dict[str, Any]) -> Tuple:
+    def _api_value(item: Dict[str, Any]) -> Any:
         if key == "posted_date" or key == "posted_at":
-            val = item.get("posted_at") or ""
-            return (not val, val)
+            return item.get("posted_at") or None
         if key == "salary":
-            floor = parse_salary_min(item.get("salary"))
-            return (floor is None, floor if floor is not None else 0)
+            return parse_salary_min(item.get("salary"))
         if key == "company":
-            return ((item.get("company") or "").casefold(),)
+            return (item.get("company") or "").casefold()
         if key == "title":
-            return ((item.get("title") or "").casefold(),)
+            return (item.get("title") or "").casefold()
         if key == "deadline":
-            val = item.get("deadline") or ""
-            return (not val or val == "unknown", val)
-        # default fit_score
-        score = item.get("fit_score")
-        return (score is None, score if score is not None else 0.0)
+            val = item.get("deadline")
+            return None if not val or val == "unknown" else val
+        return item.get("fit_score")
 
-    return sorted(filtered, key=_api_sort_key, reverse=reverse)
+    known = [item for item in filtered if _api_value(item) is not None]
+    missing = [item for item in filtered if _api_value(item) is None]
+    return sorted(known, key=_api_value, reverse=reverse) + missing
