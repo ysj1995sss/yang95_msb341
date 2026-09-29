@@ -21,8 +21,7 @@ def render_app_shell(active: str, workflow_state: Iterable[WorkflowStep]) -> Non
         for workspace in WORKSPACES:
             st.page_link(
                 workspace.path,
-                label=workspace.name,
-                icon="●" if workspace.name == active else "○",
+                label=(f"→ {workspace.name}" if workspace.name == active else workspace.name),
             )
         st.caption("Your facts stay separate from job requirements.")
 

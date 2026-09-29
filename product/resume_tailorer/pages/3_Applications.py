@@ -22,6 +22,7 @@ of the real-submission path.
 import streamlit as st
 
 from resume_tailorer.applications.capabilities import get_capability
+from resume_tailorer.applications.streamlit_views import build_launchpad_state
 from resume_tailorer.applications.models import ApplicationMode, ApplicationStatus, StatusSource
 from resume_tailorer.applications.status_tracker import StatusTracker
 from resume_tailorer.applications.ui_helpers import (
@@ -31,6 +32,7 @@ from resume_tailorer.applications.ui_helpers import (
     sort_applications,
 )
 from resume_tailorer.job_search.job_service import JobService, PENDING_TAILOR_JOB_KEY
+from resume_tailorer.ui import build_workflow_state, render_app_shell, render_page_header
 
 # Session-state key used to look up the user's CareerTruthProfile, if one has
 # been built elsewhere in the app (e.g. via the resume tailorer flow).
@@ -61,23 +63,14 @@ def _get_job_service() -> JobService:
 
 
 def _render_disclosure_banner() -> None:
-    st.warning(
-        "⚠️ Assist and Auto modes attempt a real submission to the employer's ATS only when you "
-        "click Confirm & Submit below — nothing is ever submitted automatically. That said: "
-        "verified live against a real Greenhouse posting, Assist/Auto mode does not currently "
-        "work — real application forms are rendered by JavaScript, and almost none of their "
-        "fields exist in the plain HTML this tool reads (see decisions/012 for the full finding). "
-        "It also does not yet attach your resume PDF to a real submission. **Manual mode is the "
-        "only mode that reliably works today** — it gives you the application link to complete "
-        "yourself and tracks it on the dashboard below. Preview (dry run) is always safe and "
-        "never contacts the real form, and will honestly report when a posting's form can't be "
-        "read automatically."
+    st.info(
+        "Manual mode is the reliable path today. Preview is always a dry run; Assist and Auto remain disabled for real submission unless a platform capability explicitly proves otherwise."
     )
 
 
 def _render_submit_tab(service: JobService) -> None:
     """Render the application submission form and handle Preview/Confirm & Submit."""
-    st.subheader("Submit an Application")
+    st.subheader("Stage this application")
 
     # Pre-filled from the Job Search page's "Apply" handoff when available
     # (same pending_tailor_job snapshot used to prefill the Resume Tailorer),
@@ -123,16 +116,23 @@ def _render_submit_tab(service: JobService) -> None:
     job_lookup = service.db.get_job_posting(job_id_input) if job_id_input else None
     ats_platform = (job_lookup.ats_platform if job_lookup else "") or ""
     capability = get_capability(ats_platform)
+    launchpad = build_launchpad_state(mode, capability)
     real_submit_possible = mode == ApplicationMode.MANUAL or capability.final_submission
+
+    checklist = st.columns(3)
+    checklist[0].metric("Job", "Ready" if job_lookup else "Missing")
+    checklist[1].metric("Resume", "Ready" if resume_pdf_path else "Missing")
+    checklist[2].metric("Profile", "Ready" if st.session_state.get(CAREER_PROFILE_SESSION_KEY) else "Missing")
+    st.markdown(f'<div class="jc-status review">{launchpad.disclosure}</div>', unsafe_allow_html=True)
 
     preview_clicked = st.button("Preview (dry run — never submits)")
     confirm_understanding = st.checkbox(
-        "I understand this may attempt a real submission to the employer's ATS.",
+        "I reviewed the staged application and want to continue.",
         disabled=not real_submit_possible,
     )
     preview_done = bool(st.session_state.get("apply_preview_done"))
     submit_clicked = st.button(
-        "Confirm & Submit (real submission for Assist/Auto)",
+        launchpad.primary_action,
         disabled=not (real_submit_possible and confirm_understanding and preview_done),
     )
     if mode != ApplicationMode.MANUAL and not capability.final_submission:
@@ -343,16 +343,15 @@ def _render_dashboard_tab(service: JobService) -> None:
 
 
 def main():
-    st.title("Applications")
+    render_app_shell("Apply Launchpad", build_workflow_state(st.session_state))
+    render_page_header(
+        "Apply Launchpad",
+        "Stage the verified job link, tailored resume, and reusable facts before you finish on the employer site.",
+    )
     _render_disclosure_banner()
 
     service = _get_job_service()
-
-    tab_submit, tab_dashboard = st.tabs(["Submit Application", "Status Dashboard"])
-    with tab_submit:
-        _render_submit_tab(service)
-    with tab_dashboard:
-        _render_dashboard_tab(service)
+    _render_submit_tab(service)
 
 
 if __name__ == "__main__":
