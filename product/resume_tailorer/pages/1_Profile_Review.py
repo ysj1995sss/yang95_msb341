@@ -31,6 +31,7 @@ from resume_tailorer.profile_review.api_client import (
     put_profile,
     upload_resume,
 )
+from resume_tailorer.session_profile import FACT_VAULT, set_career_profile
 from resume_tailorer.ui import build_workflow_state, render_app_shell, render_page_header
 from resume_tailorer.ui.fact_vault import build_fact_vault_summary
 
@@ -107,7 +108,7 @@ def _review_section(session):
         st.warning("Your Fact Vault is empty. Upload a resume above to begin.")
         return
 
-    st.session_state["profile_data"] = profile
+    set_career_profile(st.session_state, profile, FACT_VAULT)
     summary = build_fact_vault_summary(profile, verification)
     metrics = st.columns(4)
     metrics[0].metric("Reusable facts", summary.resume_fact_count)

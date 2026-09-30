@@ -21,8 +21,11 @@ of the real-submission path.
 
 import streamlit as st
 
+from resume_tailorer.session_profile import get_career_profile
+from resume_tailorer.tailoring_session import handoff_for_job
+
 from resume_tailorer.applications.capabilities import get_capability
-from resume_tailorer.applications.streamlit_views import build_launchpad_state
+from resume_tailorer.applications.streamlit_views import build_launchpad_state, preview_token
 from resume_tailorer.applications.models import ApplicationMode, ApplicationStatus, StatusSource
 from resume_tailorer.applications.status_tracker import StatusTracker
 from resume_tailorer.applications.ui_helpers import (
@@ -36,7 +39,6 @@ from resume_tailorer.ui import build_workflow_state, render_app_shell, render_pa
 
 # Session-state key used to look up the user's CareerTruthProfile, if one has
 # been built elsewhere in the app (e.g. via the resume tailorer flow).
-CAREER_PROFILE_SESSION_KEY = "career_profile"
 
 st.set_page_config(page_title="Applications", page_icon="\U0001F4E8", layout="wide")
 
@@ -89,24 +91,34 @@ def _render_submit_tab(service: JobService) -> None:
     )
     mode = MODE_OPTIONS[mode_choice_ui]
 
+    # Tailoring Studio hands over the validated artifact for this job; a newer
+    # version replaces whatever was filled in for an older one.
+    handoff = handoff_for_job(st.session_state, job_id_input)
+    if handoff and st.session_state.get("apply_handoff_sha") != handoff["sha256"]:
+        st.session_state["apply_handoff_sha"] = handoff["sha256"]
+        st.session_state["apply_resume_pdf_path"] = handoff["pdf_path"]
+        score = handoff.get("resume_match_score")
+        st.session_state["apply_resume_match_score"] = (
+            min(float(score) * 100, 100.0) if isinstance(score, (int, float)) else 0.0
+        )
     resume_pdf_path = st.text_input(
         "Tailored resume PDF path",
-        value=st.session_state.get("last_pdf_path", ""),
-        help="Path to the tailored resume PDF you generated for this job on the main page.",
+        help="Filled in from Tailoring Studio when a validated resume exists for this job.",
         key="apply_resume_pdf_path",
     )
-    stored_match = st.session_state.get("last_resume_match_score")
-    default_match = float(stored_match) * 100 if isinstance(stored_match, float) and stored_match <= 1 else float(stored_match or 0.0)
     resume_match_score = st.number_input(
-        "Resume Match score for this job (from the main page's report)",
+        "Resume Match score for this job",
         min_value=0.0,
         max_value=100.0,
-        value=min(default_match, 100.0),
         key="apply_resume_match_score",
     )
-    st.caption(
-        "Pre-filled from the last tailoring run when available. 0 means unknown, not a real 0% match."
-    )
+    if handoff:
+        st.caption(
+            f"Using tailored resume version {handoff['version']} "
+            f"(validation: {handoff['validation_status']})."
+        )
+    else:
+        st.caption("No validated tailored resume for this job yet. 0 means unknown, not a real 0% match.")
 
     # Look up the platform's declared capability BEFORE rendering the submit
     # button, so a platform that can't complete a real submission (every
@@ -122,7 +134,7 @@ def _render_submit_tab(service: JobService) -> None:
     checklist = st.columns(3)
     checklist[0].metric("Job", "Ready" if job_lookup else "Missing")
     checklist[1].metric("Resume", "Ready" if resume_pdf_path else "Missing")
-    checklist[2].metric("Profile", "Ready" if st.session_state.get(CAREER_PROFILE_SESSION_KEY) else "Missing")
+    checklist[2].metric("Profile", "Ready" if get_career_profile(st.session_state) else "Missing")
     st.markdown(f'<div class="jc-status review">{launchpad.disclosure}</div>', unsafe_allow_html=True)
 
     preview_clicked = st.button("Preview (dry run — never submits)")
@@ -130,7 +142,9 @@ def _render_submit_tab(service: JobService) -> None:
         "I reviewed the staged application and want to continue.",
         disabled=not real_submit_possible,
     )
-    preview_done = bool(st.session_state.get("apply_preview_done"))
+    profile = get_career_profile(st.session_state)
+    current_token = preview_token(job_id_input, resume_pdf_path, profile, mode)
+    preview_done = st.session_state.get("apply_preview_token") == current_token
     if job_lookup and job_lookup.url:
         st.link_button(
             launchpad.primary_action,
@@ -149,9 +163,9 @@ def _render_submit_tab(service: JobService) -> None:
             f"Use Preview to see what would be attempted, or switch to Manual mode to apply yourself."
         )
     if not preview_done:
-        st.caption("Run Preview first. Confirm & Submit stays disabled until a preview succeeds.")
-
-    profile = st.session_state.get(CAREER_PROFILE_SESSION_KEY)
+        st.caption(
+            "Run Preview first. Staying enabled requires the same job, resume, profile and mode you previewed."
+        )
 
     if (preview_clicked or stage_clicked) and not profile:
         st.error("No resume profile found. Upload and parse a resume on the main page first.")
@@ -169,8 +183,8 @@ def _render_submit_tab(service: JobService) -> None:
                 dry_run=dry_run,
             )
             if dry_run:
-                st.session_state["apply_preview_done"] = True
-                st.success(f"Preview generated. Application ID: {result.application_id}")
+                st.session_state["apply_preview_token"] = current_token
+                st.success("Preview ready. Nothing was saved; stage it when you're ready.")
             else:
                 st.success(f"{launchpad.success_message} Application ID: {result.application_id}")
             st.write(f"**Application link:** {result.form_url}")
@@ -179,9 +193,8 @@ def _render_submit_tab(service: JobService) -> None:
         except ValueError as exc:
             if "Unknown ATS platform" in str(exc) or "not supported" in str(exc):
                 st.error(
-                    "This job wasn't sourced from a supported ATS (Greenhouse, Lever, or Ashby), "
-                    "so it can't be auto-filled or auto-submitted here. Apply directly on the "
-                    "job's own site instead."
+                    "This job's application site can't be auto-filled here. Switch to "
+                    "**Manual mode** to stage it and apply on the employer's site yourself."
                 )
             elif "could not parse any application fields" in str(exc):
                 # Found live (2026-09-27): real Greenhouse application forms are

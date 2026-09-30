@@ -70,9 +70,10 @@ def test_dry_run_defaults_to_true_and_never_calls_submit(temp_db):
                 mode=ApplicationMode.ASSIST,
             )
     mock_submit.assert_not_called()
-    assert result.application_id  # still recorded
-    # A preview is not a submission: no status may be claimed.
-    assert temp_db.get_current_status(result.application_id) is None
+    # A preview is not a submission: nothing is recorded at all.
+    assert not result.application_id
+    assert temp_db.get_submissions_by_job("greenhouse_1") == []
+    assert result.form_fields_submitted.get("email") == "jane@example.com"
 
 
 def test_dry_run_false_is_blocked_for_a_platform_without_final_submission_capability(temp_db):
@@ -160,6 +161,7 @@ def test_manual_mode_gets_ready_to_apply_status_immediately(temp_db):
             candidate_fit_score=85.0,
             resume_match_score=90.0,
             mode=ApplicationMode.MANUAL,
+            dry_run=False,
         )
     status = temp_db.get_current_status(result.application_id)
     assert status == ApplicationStatus.READY_TO_APPLY
@@ -313,7 +315,8 @@ def test_snapshots_are_persisted_on_the_submission(temp_db):
             resume_pdf_path="/tmp/resume.pdf",
             candidate_fit_score=85.0,
             resume_match_score=90.0,
-            mode=ApplicationMode.ASSIST,
+            mode=ApplicationMode.MANUAL,
+            dry_run=False,
             job_snapshot={"company": "Acme", "title": "Engineer"},
             candidate_fit_snapshot={"overall_fit": 85.0},
             career_profile_version="hash-abc",
@@ -382,7 +385,8 @@ class TestIdempotencyInEngine:
                     resume_match_score=90.0,
                     mode=ApplicationMode.ASSIST,
                 )
-                assert result.application_id
+                assert not result.application_id
+                assert result.form_fields_submitted
 
 
 class TestSubmissionAttemptTracking:
@@ -453,3 +457,63 @@ class TestSubmissionAttemptTracking:
         assert attempts[0].result == SubmissionResult.FAILED
         assert attempts[0].error_code == "SUBMIT_REQUEST_FAILED"
         assert "network error" in attempts[0].error_message
+
+
+
+def _manual(engine, job_id="workday_1", url="https://acme.wd5.myworkdayjobs.com/job/1", platform="workday", dry_run=False):
+    return engine.apply_for_job(
+        job_posting_id=job_id, form_url=url, ats_platform=platform, profile=_make_profile(),
+        resume_pdf_path="/tmp/resume.pdf", candidate_fit_score=80.0, resume_match_score=70.0,
+        mode=ApplicationMode.MANUAL, dry_run=dry_run,
+    )
+
+
+class TestManualModeNeedsNoAtsParsing:
+    def test_workday_and_unknown_platforms_can_be_staged_without_fetching(self, temp_db):
+        engine = SubmissionEngine(temp_db)
+        with patch.object(engine, "_fetch_form_html", side_effect=AssertionError("must not fetch")):
+            workday = _manual(engine)
+            unknown = _manual(engine, job_id="site_1", url="https://careers.acme.com/1", platform="")
+        assert temp_db.get_current_status(workday.application_id) == ApplicationStatus.READY_TO_APPLY
+        assert temp_db.get_current_status(unknown.application_id) == ApplicationStatus.READY_TO_APPLY
+
+    def test_manual_mode_rejects_an_invalid_link(self, temp_db):
+        with pytest.raises(ValueError, match="valid http"):
+            _manual(SubmissionEngine(temp_db), url="not a link")
+
+    def test_preview_then_stage_creates_exactly_one_application(self, temp_db):
+        engine = SubmissionEngine(temp_db)
+        preview = _manual(engine, dry_run=True)
+        assert not preview.application_id
+        staged = _manual(engine)
+        again = _manual(engine)
+        assert again.application_id == staged.application_id
+        assert len(temp_db.get_submissions_by_job("workday_1")) == 1
+        assert len(temp_db.get_status_history(staged.application_id)) == 1
+
+
+class TestEveryRealSubmitFailureIsAudited:
+    @pytest.mark.parametrize(
+        "platform, fetch, code",
+        [
+            ("nosuchats", None, "UNKNOWN_PLATFORM"),
+            ("workday", None, "UNSUPPORTED_PLATFORM"),
+            ("greenhouse", Exception("503"), "FORM_FETCH_FAILED"),
+            ("greenhouse", "<p>no form</p>", "FORM_EMPTY"),
+        ],
+    )
+    def test_refusal_before_any_post_records_a_failed_attempt(self, temp_db, platform, fetch, code):
+        engine = SubmissionEngine(temp_db)
+        kwargs = {"side_effect": fetch} if isinstance(fetch, Exception) else {"return_value": fetch}
+        with patch.object(engine, "_fetch_form_html", **kwargs):
+            with pytest.raises(ValueError):
+                engine.apply_for_job(
+                    job_posting_id="job_1", form_url="https://example.com/job/1", ats_platform=platform,
+                    profile=_make_profile(), resume_pdf_path="/tmp/r.pdf", candidate_fit_score=1.0,
+                    resume_match_score=1.0, mode=ApplicationMode.AUTO, dry_run=False,
+                )
+        (record,) = temp_db.get_submissions_by_job("job_1")
+        (attempt,) = temp_db.get_attempts_by_application(record.application_id)
+        assert attempt.result == SubmissionResult.FAILED
+        assert attempt.error_code == code
+        assert temp_db.get_current_status(record.application_id) is None

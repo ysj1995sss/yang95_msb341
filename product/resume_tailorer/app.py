@@ -62,6 +62,8 @@ except Exception:
     pass
 
 from resume_tailorer.parsers import ResumeParser
+from resume_tailorer.session_profile import RESUME_UPLOAD, has_verified_profile, set_career_profile
+from resume_tailorer.tailoring_session import publish_artifact_handoff, sync_pending_job
 from resume_tailorer.analyzers import JobAnalyzer, ResumeBenchmarker, GapAnalyzer
 from resume_tailorer.tailorer import ResumeTailorer, ResumeTailoringOptimizer
 from resume_tailorer.tailorer.docx_bullet_tailorer import DocxBulletTailorer
@@ -212,6 +214,11 @@ def _regenerate_from_current_dispositions() -> None:
         pdf_bytes=pdf_bytes,
         report=report,
         reviewed=True,
+        version=state.get("version", 1) + 1,
+    )
+    publish_artifact_handoff(
+        st.session_state, pdf_bytes=pdf_bytes, validation_status=validation.status.value,
+        tailored_alignment=tailored_alignment, version=state["version"],
     )
 
 
@@ -356,8 +363,7 @@ def main():
             f"Continuing from Job Search: **{pending.get('title', 'Job')}** @ "
             f"**{pending.get('company', '')}** — Candidate Fit {fit_label}."
         )
-        if _JD_SESSION_KEY not in st.session_state and pending.get("description"):
-            st.session_state[_JD_SESSION_KEY] = pending["description"]
+        sync_pending_job(st.session_state, pending, _JD_SESSION_KEY, _STATE_KEY)
 
     with st.sidebar:
         st.subheader("Resume evidence")
@@ -452,14 +458,16 @@ def main():
         with st.spinner("Parsing resume..."):
             resume_path = _save_uploaded_file(resume_file)
             parser = ResumeParser()
-            profile = parser.parse(resume_path)
+            profile = set_career_profile(st.session_state, parser.parse(resume_path), RESUME_UPLOAD)
             try:
                 raw_resume_text = parser.get_raw_text(resume_path)
             except ValueError:
                 raw_resume_text = ""
             style_hints = parser.extract_style_hints(raw_resume_text, file_path=resume_path)
-        st.session_state["career_profile"] = profile
-        st.success(f"Resume parsed for {profile.name}.")
+        if has_verified_profile(st.session_state):
+            st.success(f"Using your verified Fact Vault facts for {profile.name}.")
+        else:
+            st.success(f"Resume parsed for {profile.name}.")
     except Exception as exc:
         st.error(f"Failed to parse resume: {exc}")
         return
@@ -500,10 +508,6 @@ def main():
     # freeform reconstruction path, which would discard the original's exact
     # formatting (decision 006, decision 014).
     baseline_text = ""
-    # DocxTailoringResult has no re-scored alignment number of its own (it
-    # only ever mutates a fixed set of bullets in place, unlike the
-    # freeform optimizer, which iterates against the benchmark score) --
-    # fall back to the original score for tailored_alignment on that path.
     tailored_alignment = benchmark.original_match_score
     try:
         if is_docx:
@@ -514,6 +518,9 @@ def main():
                     convert_to_pdf=True,
                 )
             tailored_text = docx_result.tailored_scoring_text
+            tailored_alignment, _matched, _missing = ResumeTailoringOptimizer._score_resume(
+                tailored_text, job_analysis, profile
+            )
             changes = list(docx_result.changes)
             validation = docx_result.validation
             docx_bytes = docx_result.docx_bytes
@@ -586,7 +593,12 @@ def main():
         "report": report,
         "candidate_name": profile.name,
         "reviewed": False,
+        "version": 1,
     }
+    publish_artifact_handoff(
+        st.session_state, pdf_bytes=pdf_bytes, validation_status=validation.status.value,
+        tailored_alignment=tailored_alignment, version=1,
+    )
     st.rerun()
 
 

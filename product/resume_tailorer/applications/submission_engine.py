@@ -21,6 +21,7 @@ Safety model (see plan Task 4 for full rationale):
 
 import time
 from typing import Optional
+from urllib.parse import urlparse
 
 import requests
 
@@ -37,6 +38,14 @@ from resume_tailorer.applications.models import (
 from resume_tailorer.models.career_profile import CareerTruthProfile
 
 _MIN_SUBMISSION_INTERVAL_SECONDS = 5.0
+
+
+class _Refusal(ValueError):
+    """A refused real submission, carrying the audit error code."""
+
+    def __init__(self, code: str, message: str):
+        super().__init__(message)
+        self.code = code
 
 
 class SubmissionEngine:
@@ -101,58 +110,13 @@ class SubmissionEngine:
                 or if this job already has a confirmed submission on record
                 (idempotency).
         """
-        parser_class = _PARSER_MAP.get(ats_platform)
-        if parser_class is None:
-            raise ValueError(f"Unknown ATS platform: {ats_platform}")
-
-        parser = parser_class()
-        if not parser.is_supported():
-            raise ValueError(
-                f"{ats_platform} is not supported for automated form parsing "
-                f"(its application forms require a real browser to render)."
-            )
-
-        capability = parser.get_capability()
-        real_submit = (not dry_run) and (mode != ApplicationMode.MANUAL)
-
-        # Idempotency (spec 003 Step 22): never silently submit the same
-        # job twice. Checked before any parsing/network work for a real
-        # submit -- a prior CONFIRMED or MANUALLY_CONFIRMED attempt for
-        # this job_posting_id is a hard stop, not a warning to click past.
-        if real_submit and self.db.has_confirmed_submission(job_posting_id):
-            raise ValueError(
-                f"This job ({job_posting_id}) already has a confirmed submission on record. "
-                f"Refusing to submit again -- check the dashboard if you believe this is wrong."
-            )
-
-        form_html = self._fetch_form_html(form_url)
-        fields = parser.parse_form(form_html)
-        filled_fields = self.form_filler.fill_form(fields, profile)
-
-        if mode != ApplicationMode.MANUAL and not filled_fields:
-            raise ValueError(
-                "could not parse any application fields from the ATS page; "
-                "refusing to submit an empty form."
-            )
-
-        unfilled_required = [f for f in filled_fields if f.required and not f.prefilled]
-
-        if real_submit and unfilled_required:
-            names = ", ".join(f.field_name for f in unfilled_required)
-            raise ValueError(
-                f"Cannot submit: required field(s) [{names}] could not be "
-                f"confidently filled from the candidate profile."
-            )
-
-        form_fields_submitted = {f.field_name: f.value for f in filled_fields if f.prefilled}
-
         submission = ApplicationSubmission(
             job_posting_id=job_posting_id,
             mode=mode,
             resume_used=resume_pdf_path,
             candidate_fit_score=candidate_fit_score,
             resume_match_score=resume_match_score,
-            form_fields_submitted=form_fields_submitted,
+            form_fields_submitted={},
             custom_answers={},  # AI-drafted custom answers are out of scope for this MVP
             ats_platform=ats_platform,
             form_url=form_url,
@@ -162,70 +126,147 @@ class SubmissionEngine:
             answers_version=answers_version,
         )
 
+        if mode == ApplicationMode.MANUAL:
+            return self._stage_manual(submission, dry_run)
+
+        if dry_run:
+            # A preview never persists anything; only a real submit is recorded.
+            submission.form_fields_submitted = self._prepare_fields(
+                submission, profile, real_submit=False
+            )[0]
+            return submission
+
+        try:
+            if self.db.has_confirmed_submission(job_posting_id):
+                raise _Refusal(
+                    "DUPLICATE_SUBMISSION",
+                    f"This job ({job_posting_id}) already has a confirmed submission on record. "
+                    f"Refusing to submit again -- check the dashboard if you believe this is wrong.",
+                )
+            submission.form_fields_submitted, capability = self._prepare_fields(
+                submission, profile, real_submit=True
+            )
+        except Exception as exc:
+            self._record_failed_attempt(submission, exc)
+            raise
+
         # Record the attempt BEFORE any real network call, so a failed
         # submission still leaves an audit trail of what was attempted.
         application_id = self.db.save_submission(submission)
         submission.application_id = application_id
+        attempt_id = self.db.record_attempt(SubmissionAttempt(
+            application_id=application_id, mode=mode, provider=ats_platform,
+            result=SubmissionResult.STARTED,
+        ))
 
-        # Manual mode never goes through the submit branch below, so without an
-        # explicit status here it would never appear in the dashboard at all
-        # (the dashboard is driven by the status_history table). READY_TO_APPLY
-        # is honest: the user has not applied yet, but the application is now
-        # trackable and can be advanced to APPLIED from the dashboard.
-        if mode == ApplicationMode.MANUAL:
-            self.db.update_status(
-                application_id,
-                ApplicationStatus.READY_TO_APPLY,
-                notes="Manual mode: apply via the provided link, then update status here once submitted.",
+        # Hard safety gate (spec 003, decision 016): a real submission is
+        # never attempted against a platform that has not proven it can
+        # actually complete one -- checked as the LAST gate before any
+        # real network POST.
+        if not capability.final_submission:
+            self.db.complete_attempt(
+                attempt_id, SubmissionResult.FAILED,
+                error_code="UNSUPPORTED_PLATFORM",
+                error_message=f"{ats_platform} does not declare final_submission capability",
+            )
+            raise ValueError(
+                f"Cannot submit for real: {ats_platform} does not currently support "
+                f"final_submission ({capability.notes or 'not yet verified working against a real form'}). "
+                f"Use Manual mode, or Preview (dry run) to see what would be attempted."
             )
 
-        if real_submit:
-            attempt_id = self.db.record_attempt(SubmissionAttempt(
-                application_id=application_id, mode=mode, provider=ats_platform,
-                result=SubmissionResult.STARTED,
-            ))
-
-            # Hard safety gate (spec 003, decision 016): a real submission is
-            # never attempted against a platform that hasn't proven it can
-            # actually complete one -- checked as the LAST gate before any
-            # real network POST, so Assist mode's preview/validation value
-            # (parsing, prefilling, flagging unfilled required fields)
-            # still works even when real submission isn't supported yet.
-            # Failing loudly here instead of silently POSTing to a URL that
-            # was never a real form-submission endpoint, and treating any
-            # 2xx response as success, is the actual bug this gate fixes.
-            if not capability.final_submission:
-                self.db.complete_attempt(
-                    attempt_id, SubmissionResult.FAILED,
-                    error_code="UNSUPPORTED_PLATFORM",
-                    error_message=f"{ats_platform} does not declare final_submission capability",
-                )
-                raise ValueError(
-                    f"Cannot submit for real: {ats_platform} does not currently support "
-                    f"final_submission ({capability.notes or 'not yet verified working against a real form'}). "
-                    f"Use Manual mode, or Preview (dry run) to see what would be attempted."
-                )
-
-            self._respect_rate_limit()
-            try:
-                confirmation_number = self._submit_to_platform(form_url, form_fields_submitted)
-            except Exception as exc:
-                self.db.complete_attempt(
-                    attempt_id, SubmissionResult.FAILED,
-                    error_code="SUBMIT_REQUEST_FAILED", error_message=str(exc),
-                )
-                raise
-
-            submission.confirmation_number = confirmation_number
-            self.db.update_confirmation_number(application_id, confirmation_number)
-            self.db.complete_attempt(attempt_id, SubmissionResult.CONFIRMED, confirmation_number=confirmation_number)
-            self.db.update_status(
-                application_id,
-                ApplicationStatus.APPLIED,
-                notes=f"Submitted via {mode.value} mode" + (f", confirmation: {confirmation_number}" if confirmation_number else ""),
+        self._respect_rate_limit()
+        try:
+            confirmation_number = self._submit_to_platform(form_url, submission.form_fields_submitted)
+        except Exception as exc:
+            self.db.complete_attempt(
+                attempt_id, SubmissionResult.FAILED,
+                error_code="SUBMIT_REQUEST_FAILED", error_message=str(exc),
             )
+            raise
 
+        submission.confirmation_number = confirmation_number
+        self.db.update_confirmation_number(application_id, confirmation_number)
+        self.db.complete_attempt(attempt_id, SubmissionResult.CONFIRMED, confirmation_number=confirmation_number)
+        self.db.update_status(
+            application_id,
+            ApplicationStatus.APPLIED,
+            notes=f"Submitted via {mode.value} mode" + (f", confirmation: {confirmation_number}" if confirmation_number else ""),
+        )
         return submission
+
+    def _stage_manual(self, submission: ApplicationSubmission, dry_run: bool) -> ApplicationSubmission:
+        """Manual mode needs only a real employer link: the user applies on
+        the site themselves, so the ATS page is never fetched or parsed."""
+        parsed = urlparse(submission.form_url or "")
+        if parsed.scheme not in ("http", "https") or not parsed.netloc:
+            raise ValueError("A valid http(s) application link is required for Manual mode.")
+        if dry_run:
+            return submission
+
+        for existing in self.db.get_submissions_by_job(submission.job_posting_id):
+            if (
+                existing.mode == ApplicationMode.MANUAL
+                and self.db.get_current_status(existing.application_id) == ApplicationStatus.READY_TO_APPLY
+            ):
+                return existing
+
+        submission.application_id = self.db.save_submission(submission)
+        # READY_TO_APPLY is honest: the user has not applied yet, but the
+        # application is now trackable and can be advanced to APPLIED later.
+        self.db.update_status(
+            submission.application_id,
+            ApplicationStatus.READY_TO_APPLY,
+            notes="Manual mode: apply via the provided link, then update status here once submitted.",
+        )
+        return submission
+
+    def _prepare_fields(self, submission: ApplicationSubmission, profile: CareerTruthProfile, real_submit: bool):
+        """Parse and fill the ATS form. Returns (prefilled fields, capability)."""
+        parser_class = _PARSER_MAP.get(submission.ats_platform)
+        if parser_class is None:
+            raise _Refusal("UNKNOWN_PLATFORM", f"Unknown ATS platform: {submission.ats_platform}")
+        parser = parser_class()
+        if not parser.is_supported():
+            raise _Refusal(
+                "UNSUPPORTED_PLATFORM",
+                f"{submission.ats_platform} is not supported for automated form parsing "
+                f"(its application forms require a real browser to render).",
+            )
+        try:
+            form_html = self._fetch_form_html(submission.form_url)
+        except Exception as exc:
+            raise _Refusal("FORM_FETCH_FAILED", str(exc) or exc.__class__.__name__) from exc
+        filled_fields = self.form_filler.fill_form(parser.parse_form(form_html), profile)
+        if not filled_fields:
+            raise _Refusal(
+                "FORM_EMPTY",
+                "could not parse any application fields from the ATS page; "
+                "refusing to submit an empty form.",
+            )
+        unfilled_required = [f for f in filled_fields if f.required and not f.prefilled]
+        if real_submit and unfilled_required:
+            names = ", ".join(f.field_name for f in unfilled_required)
+            raise _Refusal(
+                "REQUIRED_FIELDS_UNFILLED",
+                f"Cannot submit: required field(s) [{names}] could not be "
+                f"confidently filled from the candidate profile.",
+            )
+        return {f.field_name: f.value for f in filled_fields if f.prefilled}, parser.get_capability()
+
+    def _record_failed_attempt(self, submission: ApplicationSubmission, exc: Exception) -> None:
+        """Audit a real-submit request that was refused or failed before any POST.
+        The record has no status, so it never appears as an application."""
+        submission.application_id = self.db.save_submission(submission)
+        attempt_id = self.db.record_attempt(SubmissionAttempt(
+            application_id=submission.application_id, mode=submission.mode,
+            provider=submission.ats_platform, result=SubmissionResult.STARTED,
+        ))
+        self.db.complete_attempt(
+            attempt_id, SubmissionResult.FAILED,
+            error_code=getattr(exc, "code", "SUBMIT_PREPARATION_FAILED"),
+            error_message=str(exc),
+        )
 
     def _fetch_form_html(self, form_url: str) -> str:
         """Fetch the raw HTML of the application form page."""

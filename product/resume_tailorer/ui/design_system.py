@@ -81,7 +81,7 @@ def build_workflow_state(session: Mapping[str, Any]) -> tuple[WorkflowStep, ...]
         and (artifact.get("pdf_bytes") or artifact.get("docx_bytes"))
     )
     completed = (
-        _has_value(session, "career_profile", "profile_data", "profile", "candidate_profile"),
+        _has_value(session, "career_profile"),
         _has_value(session, "job_description_text", "selected_job", "pending_tailor_job"),
         reviewed,
         reviewed and has_artifact and str(validation_value).upper() == "PASS",

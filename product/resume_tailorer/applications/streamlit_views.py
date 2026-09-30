@@ -123,3 +123,20 @@ def render_application_tracker(service) -> None:
         status_tracker.update_status(application_id, status_labels[selected], notes, source=StatusSource.USER)
         st.success("Status saved with user provenance.")
         st.rerun()
+
+
+def preview_token(job_id: str, resume_pdf_path: str, profile, mode: ApplicationMode) -> str:
+    """Identifies exactly what a preview approved: the job, the resume file's
+    bytes, the profile version and the mode. Any change requires a new preview."""
+    import hashlib
+    import json
+    import os
+
+    from resume_tailorer.job_search.job_service import _profile_hash
+
+    resume_id = resume_pdf_path or ""
+    if resume_pdf_path and os.path.isfile(resume_pdf_path):
+        with open(resume_pdf_path, "rb") as f:
+            resume_id = hashlib.sha256(f.read()).hexdigest()
+    parts = [job_id or "", resume_id, _profile_hash(profile) if profile else "", mode.value]
+    return hashlib.sha256(json.dumps(parts).encode("utf-8")).hexdigest()

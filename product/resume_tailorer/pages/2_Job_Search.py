@@ -7,6 +7,8 @@ APPLY hands the job description + fit snapshot to Resume Tailorer (Step 10).
 
 import streamlit as st
 
+from resume_tailorer.session_profile import get_career_profile
+
 from resume_tailorer.job_search.dashboard import SORT_OPTIONS, filter_and_sort_jobs
 from resume_tailorer.job_search.job_attributes import (
     EMPLOYMENT_TYPE_OPTIONS,
@@ -35,7 +37,6 @@ from resume_tailorer.job_search.ui_helpers import (
 )
 from resume_tailorer.ui import build_workflow_state, render_app_shell, render_page_header
 
-CAREER_PROFILE_SESSION_KEY = "career_profile"
 
 st.set_page_config(page_title="Job Search", page_icon="\U0001F50D", layout="wide")
 
@@ -278,7 +279,7 @@ def _render_job_dashboard() -> None:
 
     filters = _render_dashboard_filters()
 
-    career_profile = st.session_state.get(CAREER_PROFILE_SESSION_KEY)
+    career_profile = get_career_profile(st.session_state)
     fit_scores: dict = {}
     fit_results: dict = {}
     quality_by_id: dict = {}

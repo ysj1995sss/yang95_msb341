@@ -56,7 +56,8 @@ def test_apply_for_job_records_submission(job_service):
             job_id=job_id,
             profile=_make_profile(),
             resume_pdf_path="/tmp/resume.pdf",
-            mode=ApplicationMode.ASSIST,
+            mode=ApplicationMode.MANUAL,
+            dry_run=False,
             resume_match_score=88.0,
         )
 
@@ -124,7 +125,8 @@ def test_apply_for_job_persists_job_and_fit_snapshots(job_service):
             job_id=job_id,
             profile=_make_profile(),
             resume_pdf_path="/tmp/resume.pdf",
-            mode=ApplicationMode.ASSIST,
+            mode=ApplicationMode.MANUAL,
+            dry_run=False,
             resume_match_score=88.0,
         )
 
