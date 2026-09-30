@@ -86,3 +86,12 @@ Until steps 1–2 are done, the live link is for supervised demos only.
 Fact Vault still signs in to the API with its own email and password, separate from the Google
 identity. Linking the two (sending the Google identity to the API) is the next step once the
 API is deployed.
+
+## Review after the first real-resume run (2026-09-30)
+
+- **Per-user storage works as designed.** Jobs, applications, the answer bank and the tailored
+  PDF all landed under `~/.job_copilot/users/local/`; nothing was written to the working
+  directory.
+- **Still untested live:** Google sign-in and a second account. Neither is configured, so the
+  "two accounts cannot see each other's data" check in the deployment checklist has not been
+  run. Only the unit tests cover it.

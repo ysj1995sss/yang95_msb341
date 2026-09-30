@@ -94,3 +94,21 @@ product capabilities, and engineering efficiency) are not addressed here.
 - Freeform length gate and repair loop, the correction loop, custom application answers, and
   status sync.
 - LLM timeouts, swallowed persistence errors, fit-score caching, and CI.
+
+## Review after the first real-resume run (2026-09-30)
+
+Run on a real DOCX resume, a live SoFi posting and the configured free model.
+
+- **The truth gate held.** The model proposed adding "segmentation" to two bullets. The DOCX
+  path rejected both because the word is not in the profile. The accepted edit, "SQL, Tableau",
+  is in the verified skills list. The accept-downgrade rule (a user-accepted flagged claim
+  becomes a warning) was not needed on the DOCX path; it applies to the freeform path only.
+- **Keep the rule.** No evidence argues for making acceptance stricter.
+- **Gap found:** the review screen's "Evidence" line for the accepted edit showed the bullet
+  itself, not the skills-list entry that actually supports "SQL, Tableau". The claim is honest,
+  but the explanation is misleading. Follow-up: show the real supporting fact.
+- **Regeneration works as specified:** the rebuilt PDF stayed application-ready, and the match
+  score was recomputed from the final text (100% before the rebuild, 92% after).
+- **A dev-only hazard:** Streamlit's hot-reload can leave two copies of the same enum in a
+  long-running dev server, which made Manual mode fail once after files changed. A clean server
+  had no issue. It cannot happen on a normal deployment, where nothing reloads files.

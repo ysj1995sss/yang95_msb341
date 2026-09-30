@@ -63,3 +63,14 @@ CI's first run showed that `product/requirements.txt` pinned older versions than
 actually pass with (pypdf 4.0.0 vs 6.19.0, reportlab 4.0.8 vs 5.0.1). Under the old pins,
 original-font detection returned nothing, which likely affected the live app. The pins now
 match the tested versions, and CI runs Python 3.14 like Streamlit Cloud.
+
+## Review after the first real-resume run (2026-09-30)
+
+- **The length pass was not exercised.** The tailored resume stayed at one page, so no bullet
+  needed shortening. It is still covered only by tests, not by a live run.
+- **The answer bank is not useful yet.** The posting's careers page has no readable application
+  form (Assist cannot read JavaScript-built forms, decision 012), and its inputs were unrelated
+  hidden widgets ("reservation-number", "postal-code"). The bank only pays off once Assist can
+  read real forms (spec 006). Not worth more investment before then.
+- **Bug found and fixed:** a form that asks the same question twice crashed the Launchpad page
+  (duplicate widget key). Each question is now listed once.
