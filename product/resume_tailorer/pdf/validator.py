@@ -184,9 +184,10 @@ class PDFValidator:
         accepted_changes: list[ResumeChange],
         original_pdf_path: str | None = None,
         edited_regions: list[tuple[float, float, float, float]] | None = None,
+        target_length: str = "preserve",
     ) -> ArtifactValidation:
         """Run the structured Step 18 gate while preserving legacy validate()."""
-        legacy = self.validate(pdf_path, target_length="preserve")
+        legacy = self.validate(pdf_path, target_length=target_length)
         findings: list[ValidationFinding] = findings_from_pdf_issues(legacy.issues)
 
         if (
@@ -254,6 +255,8 @@ def findings_from_pdf_issues(issues: list[str]) -> list[ValidationFinding]:
             code, category = "PDF_CORRUPT", FindingCategory.STRUCTURE
         elif "no extractable text" in lowered:
             code, category = "TEXT_NOT_EXTRACTABLE", FindingCategory.ATS
+        elif "exceeding the mvp target" in lowered:
+            code, category = "PAGE_LIMIT_EXCEEDED", FindingCategory.VISUAL
         else:
             code, category = "PDF_TECHNICAL_VALIDATION_FAILED", FindingCategory.ATS
         findings.append(ValidationFinding(code, FindingSeverity.FAIL, category, issue))

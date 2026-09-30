@@ -21,7 +21,7 @@ from resume_tailorer.pdf.generator import PDFGenerator
 from resume_tailorer.pdf.validator import PDFValidator
 
 
-_CORRECTABLE_FAILURES = frozenset({"PAGE_COUNT_CHANGED", "TEXT_OVERFLOW", "CLIPPED_TEXT"})
+_CORRECTABLE_FAILURES = frozenset({"PAGE_COUNT_CHANGED", "PAGE_LIMIT_EXCEEDED", "TEXT_OVERFLOW", "CLIPPED_TEXT"})
 
 
 @dataclass(frozen=True)

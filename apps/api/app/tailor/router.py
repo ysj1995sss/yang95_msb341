@@ -1,3 +1,4 @@
+import dataclasses
 import base64
 import json
 import os
@@ -40,12 +41,16 @@ from resume_tailorer.analyzers.job_analyzer import JobAnalyzer
 from resume_tailorer.analyzers.resume_benchmarker import ResumeBenchmarker
 from resume_tailorer.analyzers.gap_analyzer import GapAnalyzer, find_unsupported_claims
 from resume_tailorer.tailorer.optimizer import ResumeTailoringOptimizer, OptimizationResult
-from resume_tailorer.pdf.generator import PDFGenerator
 from resume_tailorer.pdf.validator import PDFValidator
 from resume_tailorer.diff_generator import DiffGenerator
 from resume_tailorer.parsers import ResumeParser
 from resume_tailorer.docx_export import run_docx_tailoring_pipeline
 from resume_tailorer.artifacts.changes import build_freeform_changes
+from resume_tailorer.artifacts.length_control import (
+    build_freeform_artifact,
+    correct_docx_length_once,
+    max_pages_label,
+)
 from resume_tailorer.artifacts.filenames import safe_artifact_filename
 from resume_tailorer.artifacts.models import ChangeDisposition, FidelityMode, ResumeChange
 from resume_tailorer.artifacts.report import build_final_report
@@ -281,6 +286,10 @@ def tailor_preview(
         docx_result = run_docx_tailoring_pipeline(
             resume_file.data, profile, job_analysis, gap_report, convert_to_pdf=body.generate_pdf
         )
+        docx_result = correct_docx_length_once(
+            original_docx_bytes=resume_file.data, docx_result=docx_result, profile=profile,
+            gap_report=gap_report, llm=getattr(optimizer.tailorer, "llm", None),
+        )
         score, matched, missing = optimizer._score_resume(
             docx_result.tailored_scoring_text, job_analysis, profile
         )
@@ -301,29 +310,25 @@ def tailor_preview(
         result = optimizer.optimize(
             profile, job_analysis, initial_tailored, gap_report, conservative=body.conservative
         )
-        baseline_tailored_text = result.tailored_resume
         changes = build_freeform_changes(profile, result.tailored_resume, gap_report)
         fidelity_mode = FidelityMode.RECONSTRUCTED
 
-        # Always generate+validate through the shared Step 16-20 gate (cheap,
-        # reportlab-only -- no external Word dependency) so the new
-        # report/validation/artifact fields are always real, even when the
-        # caller didn't ask for a downloadable pdf_base64 this call. The
-        # LEGACY pdf_base64 field below stays gated on body.generate_pdf so
-        # existing callers see byte-for-byte the same behavior as before.
+        # Always generate+validate through the shared gate (reportlab-only, no
+        # Word dependency) so report/validation/artifact fields are always
+        # real; the legacy pdf_base64 field stays gated on body.generate_pdf.
+        # An over-length result gets one condensation repair.
         style_hints = _extract_style_hints(resume_file)
-        with tempfile.TemporaryDirectory() as temp_dir:
-            output_path = os.path.join(temp_dir, "tailored.pdf")
-            effective_length = PDFGenerator.resolve_target_length(body.target_length, style_hints)
-            PDFGenerator().generate(
-                result.tailored_resume, profile.name, output_path=output_path,
-                target_length=body.target_length, style_hints=style_hints,
+        pdf_artifact_bytes, artifact_validation, repaired_text, changes, _attempts = build_freeform_artifact(
+            tailored_text=result.tailored_resume, changes=changes, profile=profile,
+            target_length=body.target_length, style_hints=style_hints,
+            llm=getattr(optimizer.tailorer, "llm", None),
+        )
+        if repaired_text != result.tailored_resume:
+            score, _matched, missing = optimizer._score_resume(repaired_text, job_analysis, profile)
+            result = dataclasses.replace(
+                result, tailored_resume=repaired_text, final_score=score, missing_qualifications=missing,
             )
-            artifact_validation = PDFValidator().validate_artifact(
-                output_path, profile=profile, expected_page_count=None, accepted_changes=changes,
-            )
-            with open(output_path, "rb") as f:
-                pdf_artifact_bytes = f.read()
+        baseline_tailored_text = result.tailored_resume
 
     diff_report = DiffGenerator().generate_diff(profile, result.tailored_resume)
     unsupported_claims = find_unsupported_claims(gap_report, result.tailored_resume)
@@ -631,6 +636,7 @@ def regenerate(run_id: str, user: User = Depends(get_current_user), db: Session 
         try:
             validation = PDFValidator().validate_artifact(
                 tmp_path, profile=profile, expected_page_count=None, accepted_changes=changes,
+                target_length=max_pages_label(request_options.get("target_length", "preserve"), style_hints),
             )
         finally:
             os.remove(tmp_path)

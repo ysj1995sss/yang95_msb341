@@ -67,7 +67,6 @@ from resume_tailorer.tailoring_session import publish_artifact_handoff, sync_pen
 from resume_tailorer.analyzers import JobAnalyzer, ResumeBenchmarker, GapAnalyzer
 from resume_tailorer.tailorer import ResumeTailorer, ResumeTailoringOptimizer
 from resume_tailorer.tailorer.docx_bullet_tailorer import DocxBulletTailorer
-from resume_tailorer.pdf.generator import PDFGenerator
 from resume_tailorer.pdf.validator import PDFValidator
 from resume_tailorer.diff_generator import DiffGenerator
 from resume_tailorer.llm.settings import resolve_settings
@@ -77,6 +76,11 @@ from resume_tailorer.job_search.job_service import PENDING_TAILOR_JOB_KEY
 from resume_tailorer.docx_export import run_docx_tailoring_pipeline
 from resume_tailorer.analyzers.gap_analyzer import find_unsupported_claims
 from resume_tailorer.artifacts.changes import build_freeform_changes
+from resume_tailorer.artifacts.length_control import (
+    build_freeform_artifact,
+    correct_docx_length_once,
+    max_pages_label,
+)
 from resume_tailorer.artifacts.models import FidelityMode, ValidationStatus
 from resume_tailorer.artifacts.regeneration import (
     apply_dispositions_to_text,
@@ -183,6 +187,7 @@ def _regenerate_from_current_dispositions() -> None:
         try:
             validation = PDFValidator().validate_artifact(
                 tmp_path, profile=profile, expected_page_count=None, accepted_changes=updated_changes,
+                target_length=max_pages_label(state["target_length"], state["style_hints"]),
             )
         finally:
             os.remove(tmp_path)
@@ -517,6 +522,10 @@ def main():
                     bullet_tailorer=DocxBulletTailorer(llm=llm),
                     convert_to_pdf=True,
                 )
+                docx_result = correct_docx_length_once(
+                    original_docx_bytes=original_bytes, docx_result=docx_result,
+                    profile=profile, gap_report=gap_report, llm=llm,
+                )
             tailored_text = docx_result.tailored_scoring_text
             tailored_alignment, _matched, _missing = ResumeTailoringOptimizer._score_resume(
                 tailored_text, job_analysis, profile
@@ -536,18 +545,14 @@ def main():
                     profile, job_analysis, initial_tailored, gap_report, conservative=conservative_mode
                 )
             tailored_text = optimization_result.tailored_resume
-            baseline_text = tailored_text
             tailored_alignment = optimization_result.final_score
             changes = build_freeform_changes(profile, tailored_text, gap_report)
             with st.spinner("Generating and validating PDF..."):
-                pdf_path = PDFGenerator().generate(
-                    tailored_text, profile.name, target_length=target_length, style_hints=style_hints,
+                pdf_bytes, validation, tailored_text, changes, _attempts = build_freeform_artifact(
+                    tailored_text=tailored_text, changes=changes, profile=profile,
+                    target_length=target_length, style_hints=style_hints, llm=llm,
                 )
-                validation = PDFValidator().validate_artifact(
-                    pdf_path, profile=profile, expected_page_count=None, accepted_changes=changes,
-                )
-                with open(pdf_path, "rb") as f:
-                    pdf_bytes = f.read()
+            baseline_text = tailored_text
             docx_bytes = None
             fidelity_mode = FidelityMode.RECONSTRUCTED
     except RuntimeError as exc:
