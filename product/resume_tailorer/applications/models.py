@@ -3,7 +3,7 @@
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
-from typing import Dict, Optional
+from typing import Dict, List, Optional
 
 
 class ApplicationMode(Enum):
@@ -62,6 +62,7 @@ class FormField:
     required: bool = False
     value: str = ""
     prefilled: bool = False
+    label: str = ""  # the question as the applicant sees it, when the form provides one
 
 
 @dataclass(frozen=True)
@@ -116,6 +117,8 @@ class ApplicationSubmission:
     candidate_fit_snapshot: Dict = field(default_factory=dict)
     career_profile_version: str = ""
     answers_version: str = ""
+    # Questions the answer bank could not answer; shown in previews, never persisted.
+    unanswered_questions: List[str] = field(default_factory=list)
     next_action: str = ""
     next_action_due: Optional[str] = None  # ISO date string; only ever user-confirmed, never invented
     next_action_notes: str = ""

@@ -79,6 +79,14 @@ class ApplicationDatabase:
             )
         """)
         cursor.execute("""
+            CREATE TABLE IF NOT EXISTS answer_bank (
+                question_key TEXT PRIMARY KEY,
+                question TEXT NOT NULL,
+                answer TEXT NOT NULL,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        cursor.execute("""
             CREATE TABLE IF NOT EXISTS submission_attempts (
                 attempt_id TEXT PRIMARY KEY,
                 application_id TEXT NOT NULL,
@@ -111,6 +119,24 @@ class ApplicationDatabase:
                 if column not in existing:
                     cursor.execute(f"ALTER TABLE {table} ADD COLUMN {column} {definition}")
         self.conn.commit()
+
+    def save_answer(self, question_key: str, question: str, answer: str) -> None:
+        """Store an answer the user wrote and approved for reuse."""
+        self.conn.execute(
+            """
+            INSERT INTO answer_bank (question_key, question, answer, updated_at)
+            VALUES (?, ?, ?, CURRENT_TIMESTAMP)
+            ON CONFLICT(question_key) DO UPDATE SET
+                question = excluded.question, answer = excluded.answer, updated_at = CURRENT_TIMESTAMP
+            """,
+            (question_key, question, answer),
+        )
+        self.conn.commit()
+
+    def get_answers(self) -> dict:
+        """All approved answers, keyed by question key."""
+        rows = self.conn.execute("SELECT question_key, answer FROM answer_bank").fetchall()
+        return {row["question_key"]: row["answer"] for row in rows}
 
     def save_submission(self, submission: ApplicationSubmission) -> str:
         """Record what was (or would be) submitted.

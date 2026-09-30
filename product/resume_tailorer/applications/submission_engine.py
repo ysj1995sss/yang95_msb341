@@ -27,6 +27,8 @@ import requests
 
 from resume_tailorer.applications.capabilities import _PARSER_MAP
 from resume_tailorer.applications.database import ApplicationDatabase
+from resume_tailorer.applications.answer_bank import answers_version as compute_answers_version
+from resume_tailorer.applications.answer_bank import apply_answer_bank
 from resume_tailorer.applications.form_filler import FormFiller
 from resume_tailorer.applications.models import (
     ApplicationMode,
@@ -97,8 +99,8 @@ class SubmissionEngine:
             career_profile_version: Content hash of the profile used, so a
                 later profile edit is detectable without storing the whole
                 profile twice.
-            answers_version: Reserved for a future custom-answers version
-                pointer; unused today (custom_answers is always {}).
+            answers_version: Ignored; replaced by a hash of the approved
+                answers actually used (empty when none were used).
 
         Returns:
             The recorded ApplicationSubmission (with application_id set).
@@ -117,7 +119,7 @@ class SubmissionEngine:
             candidate_fit_score=candidate_fit_score,
             resume_match_score=resume_match_score,
             form_fields_submitted={},
-            custom_answers={},  # AI-drafted custom answers are out of scope for this MVP
+            custom_answers={},  # filled from the user's approved answer bank, never drafted
             ats_platform=ats_platform,
             form_url=form_url,
             job_snapshot=job_snapshot or {},
@@ -238,6 +240,10 @@ class SubmissionEngine:
         except Exception as exc:
             raise _Refusal("FORM_FETCH_FAILED", str(exc) or exc.__class__.__name__) from exc
         filled_fields = self.form_filler.fill_form(parser.parse_form(form_html), profile)
+        filled_fields, custom, unanswered = apply_answer_bank(filled_fields, self.db.get_answers())
+        submission.custom_answers = custom
+        submission.answers_version = compute_answers_version(custom)
+        submission.unanswered_questions = unanswered
         if not filled_fields:
             raise _Refusal(
                 "FORM_EMPTY",

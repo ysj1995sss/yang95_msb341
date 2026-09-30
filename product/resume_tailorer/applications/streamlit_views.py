@@ -125,9 +125,12 @@ def render_application_tracker(service) -> None:
         st.rerun()
 
 
-def preview_token(job_id: str, resume_pdf_path: str, profile, mode: ApplicationMode) -> str:
+def preview_token(
+    job_id: str, resume_pdf_path: str, profile, mode: ApplicationMode, answers: dict | None = None
+) -> str:
     """Identifies exactly what a preview approved: the job, the resume file's
-    bytes, the profile version and the mode. Any change requires a new preview."""
+    bytes, the profile version, the mode and the approved answers. Any change
+    requires a new preview."""
     import hashlib
     import json
     import os
@@ -138,5 +141,6 @@ def preview_token(job_id: str, resume_pdf_path: str, profile, mode: ApplicationM
     if resume_pdf_path and os.path.isfile(resume_pdf_path):
         with open(resume_pdf_path, "rb") as f:
             resume_id = hashlib.sha256(f.read()).hexdigest()
-    parts = [job_id or "", resume_id, _profile_hash(profile) if profile else "", mode.value]
+    parts = [job_id or "", resume_id, _profile_hash(profile) if profile else "", mode.value,
+             sorted((answers or {}).items())]
     return hashlib.sha256(json.dumps(parts).encode("utf-8")).hexdigest()

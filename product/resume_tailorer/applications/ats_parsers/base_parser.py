@@ -85,6 +85,7 @@ class BaseATSParser(ABC):
                 field_name=name,
                 field_type=field_type,
                 required=input_tag.has_attr("required"),
+                label=_label_for(input_tag, soup),
             ))
 
         for select_tag in soup.find_all("select"):
@@ -95,6 +96,7 @@ class BaseATSParser(ABC):
                 field_name=name,
                 field_type="select",
                 required=select_tag.has_attr("required"),
+                label=_label_for(select_tag, soup),
             ))
 
         for textarea_tag in soup.find_all("textarea"):
@@ -105,6 +107,18 @@ class BaseATSParser(ABC):
                 field_name=name,
                 field_type="textarea",
                 required=textarea_tag.has_attr("required"),
+                label=_label_for(textarea_tag, soup),
             ))
 
         return fields
+
+
+def _label_for(tag, soup) -> str:
+    """The visible question for a form control: its <label>, aria-label, or placeholder."""
+    label = None
+    if tag.get("id"):
+        label = soup.find("label", attrs={"for": tag["id"]})
+    if label is None:
+        label = tag.find_parent("label")
+    text = label.get_text(" ", strip=True) if label is not None else ""
+    return " ".join((text or tag.get("aria-label") or tag.get("placeholder") or "").split())

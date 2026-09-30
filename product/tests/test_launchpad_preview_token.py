@@ -22,3 +22,12 @@ def test_preview_approval_is_bound_to_job_resume_profile_and_mode(tmp_path):
     assert preview_token("job_A", str(resume), _profile("SQL"), ApplicationMode.ASSIST) != base
     resume.write_bytes(b"v2")
     assert preview_token("job_A", str(resume), _profile("SQL"), ApplicationMode.MANUAL) != base
+
+
+def test_changing_an_approved_answer_requires_a_new_preview(tmp_path):
+    resume = tmp_path / "r.pdf"
+    resume.write_bytes(b"v1")
+    profile = _profile("SQL")
+    before = preview_token("job_A", str(resume), profile, ApplicationMode.ASSIST, {"q": "Yes"})
+    assert preview_token("job_A", str(resume), profile, ApplicationMode.ASSIST, {"q": "Yes"}) == before
+    assert preview_token("job_A", str(resume), profile, ApplicationMode.ASSIST, {"q": "No"}) != before

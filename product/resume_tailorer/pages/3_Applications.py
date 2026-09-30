@@ -25,6 +25,7 @@ from resume_tailorer.session_profile import get_career_profile
 from resume_tailorer.tailoring_session import handoff_for_job
 
 from resume_tailorer.applications.capabilities import get_capability
+from resume_tailorer.applications.answer_bank import question_key
 from resume_tailorer.applications.streamlit_views import build_launchpad_state, preview_token
 from resume_tailorer.applications.models import ApplicationMode
 from resume_tailorer.job_search.job_service import JobService, PENDING_TAILOR_JOB_KEY
@@ -130,7 +131,9 @@ def _render_submit_tab(service: JobService) -> None:
         disabled=not real_submit_possible,
     )
     profile = get_career_profile(st.session_state)
-    current_token = preview_token(job_id_input, resume_pdf_path, profile, mode)
+    current_token = preview_token(
+        job_id_input, resume_pdf_path, profile, mode, service.applications_db.get_answers()
+    )
     preview_done = st.session_state.get("apply_preview_token") == current_token
     if job_lookup and job_lookup.url:
         st.link_button(
@@ -177,6 +180,10 @@ def _render_submit_tab(service: JobService) -> None:
             st.write(f"**Application link:** {result.form_url}")
             st.write("**Fields that would be / were submitted:**")
             st.json(result.form_fields_submitted)
+            if result.custom_answers:
+                st.write("**Answers from your approved answer bank:**")
+                st.json(result.custom_answers)
+            st.session_state["apply_unanswered"] = list(result.unanswered_questions)
         except ValueError as exc:
             if "Unknown ATS platform" in str(exc) or "not supported" in str(exc):
                 st.error(
@@ -200,6 +207,33 @@ def _render_submit_tab(service: JobService) -> None:
                 st.error(f"Could not submit: {exc}")
 
 
+def _render_answer_bank(service: JobService) -> None:
+    """Let the user answer questions the last preview could not fill.
+
+    Only answers typed and approved here are ever used; nothing is drafted.
+    """
+    unanswered = st.session_state.get("apply_unanswered") or []
+    if not unanswered:
+        return
+    st.subheader("Questions that need your answer")
+    st.caption(
+        "Job Copilot never guesses answers such as work authorization or sponsorship. "
+        "Answers you approve here are saved and reused for the same question on later applications."
+    )
+    typed = {
+        question: st.text_area(question, key=f"answer_{question_key(question)}", height=80)
+        for question in unanswered
+    }
+    if st.button("Approve and save answers"):
+        saved = 0
+        for question, answer in typed.items():
+            if answer.strip():
+                service.applications_db.save_answer(question_key(question), question, answer.strip())
+                saved += 1
+        st.session_state["apply_unanswered"] = [q for q, a in typed.items() if not a.strip()]
+        st.success(f"Saved {saved} answer(s). Run Preview again to use them.")
+
+
 def main():
     render_app_shell("Apply Launchpad", build_workflow_state(st.session_state))
     render_page_header(
@@ -210,6 +244,7 @@ def main():
 
     service = _get_job_service()
     _render_submit_tab(service)
+    _render_answer_bank(service)
 
 
 if __name__ == "__main__":
