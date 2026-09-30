@@ -38,6 +38,7 @@ class GreenhouseScraper(BaseScraper):
         """
         super().__init__(api_key=api_key)
         self.data_source = None
+        self.coverage_note = None
 
     def get_platform_name(self) -> str:
         """Get platform name.
@@ -50,6 +51,7 @@ class GreenhouseScraper(BaseScraper):
     def scrape(self, goals: SearchGoals) -> List[JobPosting]:
         """Return real Greenhouse postings whose titles match the goal title."""
         self.data_source = None
+        self.coverage_note = None
         try:
             return self._scrape_real(goals)
         except Exception as error:
@@ -79,6 +81,11 @@ class GreenhouseScraper(BaseScraper):
                     all_jobs.append(job)
 
         self.data_source = "real" if boards_answered else "unavailable"
+        missed = len(self.GREENHOUSE_BOARD_TOKENS) - boards_answered
+        if boards_answered and missed:
+            self.coverage_note = (
+                f"{missed} of {len(self.GREENHOUSE_BOARD_TOKENS)} company boards did not respond"
+            )
         return self._filter_by_goals(all_jobs, goals)
 
     def _filter_by_goals(self, jobs: List[JobPosting], goals: SearchGoals) -> List[JobPosting]:

@@ -480,3 +480,31 @@ def test_unreachable_source_is_reported_as_failed(temp_db):
     assert summary.status.value == "failed"
     assert summary.providers[0].error == "Source could not be reached"
     service.close()
+
+
+def test_dashboard_can_be_limited_to_the_latest_search_run(temp_db):
+    """Jobs from earlier runs (possibly closed since) are left out of the latest results."""
+    from datetime import datetime, timedelta
+
+    service = JobService(db_path=temp_db)
+    goals = SearchGoals(
+        job_title="Engineer", industries=[], min_salary=0, max_salary=0,
+        location="", remote_preference="any", sponsorship_required=False,
+        experience_level="", company_size="",
+    )
+    old = JobPosting(source=JobSource.GREENHOUSE, source_id="old", company="A",
+                     title="Engineer", location="Remote", description="d", url="https://a.example/1")
+    new = JobPosting(source=JobSource.GREENHOUSE, source_id="new", company="B",
+                     title="Engineer", location="Remote", description="d", url="https://b.example/2")
+    service.db.save_job_posting(old)
+    service.db.connection.execute(
+        "UPDATE job_postings SET last_seen = ? WHERE source_id = 'old'",
+        ((datetime.now() - timedelta(days=2)).isoformat(),),
+    )
+    run_started = datetime.now() - timedelta(seconds=1)
+    service.db.save_job_posting(new)
+
+    latest = service.get_available_jobs(goals, seen_since=run_started)
+    assert [j.source_id for j in latest] == ["new"]
+    assert len(service.get_available_jobs(goals)) == 2
+    service.close()

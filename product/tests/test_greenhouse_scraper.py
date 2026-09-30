@@ -290,3 +290,19 @@ def test_make_get_request_returns_json_on_success():
         result = scraper._make_get_request("https://boards-api.greenhouse.io/v1/boards/fake/jobs")
 
     assert result == {"jobs": []}
+
+
+def test_partial_board_failure_is_reported():
+    """Boards that fail while others answer are counted, not silently ignored."""
+    scraper = GreenhouseScraper()
+    tokens = GreenhouseScraper.GREENHOUSE_BOARD_TOKENS
+
+    def fake_fetch(token):
+        return None if token in tokens[:3] else _fake_greenhouse_response(job_count=1)
+
+    with patch.object(scraper, "_fetch_board", side_effect=fake_fetch):
+        results = scraper.scrape(_make_goals())
+
+    assert scraper.data_source == "real"
+    assert len(results) == len(tokens) - 3
+    assert scraper.coverage_note == f"3 of {len(tokens)} company boards did not respond"

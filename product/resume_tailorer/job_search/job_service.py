@@ -3,7 +3,6 @@
 Coordinates: user goals → scraper selection → scraping → deduplication → database storage.
 """
 
-from dataclasses import replace
 from datetime import datetime
 from typing import Any, Dict, List, Optional, Tuple
 from resume_tailorer.job_search.models import (
@@ -159,6 +158,7 @@ class JobService:
                         source=source,
                         status=ProviderRunStatus.OK,
                         scraped=len(batch),
+                        error=note if isinstance(note := getattr(scraper, "coverage_note", None), str) else None,
                     )
                 )
             except Exception as exc:
@@ -206,7 +206,9 @@ class JobService:
         self.last_search_run = summary
         return summary
 
-    def get_available_jobs(self, goals: SearchGoals) -> List[JobPosting]:
+    def get_available_jobs(
+        self, goals: SearchGoals, seen_since: Optional[datetime] = None
+    ) -> List[JobPosting]:
         """Retrieve jobs from database matching search goals.
 
         Returns results sorted by posted_date descending.
@@ -217,9 +219,7 @@ class JobService:
         Returns:
             List of JobPosting objects matching the goals
         """
-        # Title matching happens in apply_goal_filters (word-based, same rule
-        # the scraper uses), not as a SQL substring match.
-        jobs = apply_goal_filters(self.db.search_jobs(replace(goals, job_title="")), goals)
+        jobs = apply_goal_filters(self.db.search_jobs(goals, seen_since=seen_since), goals)
 
         # Sort by posted_date descending (most recent first)
         jobs = sort_jobs(jobs, sort_by="posted_date", sort_dir="desc")
@@ -230,7 +230,7 @@ class JobService:
         self,
         job_id: str,
         profile: CareerTruthProfile
-    ) -> Optional[Tuple[JobPosting, float]]:
+    ) -> Optional[Tuple[JobPosting, Optional[float]]]:
         """Retrieve job and calculate fit score.
 
         Args:

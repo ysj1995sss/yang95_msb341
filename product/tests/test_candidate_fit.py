@@ -237,14 +237,9 @@ def test_fit_education_match(sample_profile, sample_job):
 
 
 def test_fit_no_requirements(sample_profile, no_requirements_job):
-    """When job has no requirements specified, score should be neutral (around 80%)."""
+    """When a job states nothing scoreable, there is no score rather than an invented one."""
     scorer = CandidateFitScorer()
-    score = scorer.score_fit(sample_profile, no_requirements_job)
-
-    assert isinstance(score, (int, float))
-    assert 0 <= score <= 100
-    # With no requirements, all components default to 80%
-    assert 70 <= score <= 90, f"Expected neutral score (70-90) for no requirements, got {score}"
+    assert scorer.score_fit(sample_profile, no_requirements_job) is None
 
 
 def test_fit_returns_0_to_100(sample_profile, sample_job, junior_profile, junior_job):

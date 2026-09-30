@@ -258,7 +258,10 @@ def _render_job_dashboard() -> None:
 
     service = _get_job_service()
     try:
-        jobs = service.get_available_jobs(goals)
+        last_run = st.session_state.get("last_search_run")
+        jobs = service.get_available_jobs(
+            goals, seen_since=last_run.started_at if last_run else None
+        )
     except Exception as exc:
         st.error(f"Failed to load jobs: {exc}")
         return

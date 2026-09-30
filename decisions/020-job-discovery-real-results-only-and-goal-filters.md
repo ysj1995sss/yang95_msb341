@@ -55,3 +55,20 @@ A review of Steps 3–9 against live Greenhouse data found four problems:
 - Word-based title matching is broad: "Product Manager" also matches "Product Marketing Manager".
 - LinkedIn, Indeed, and Handshake are still simulated demo sources. They are labeled in the
   picker, and the page warns when one is selected.
+
+## Update (2026-09-29, after code review)
+
+- **The dashboard shows only jobs from the latest search run.** Each saved posting now records
+  `last_seen`, and the page lists only postings seen by the current run. This replaces the
+  removed per-link check as the way closed jobs drop out. Postings that aren't returned are not
+  deleted: a different title search wouldn't return them anyway, so being absent doesn't prove a
+  job is closed. Their triage history is kept.
+- **Title matching uses whole words and ignores only filler words** (of, and, the…). "UX
+  Designer" now requires "UX", and "Product Manager" no longer matches "Production Manager".
+- **Partial outages are reported.** The search summary says, for example, "3 of 36 company
+  boards did not respond".
+- **No invented fit score.** When a posting states nothing that can be scored, the fit score is
+  empty instead of a default 80. The API stores null with the reason "Not enough information".
+- **API jobs keep their history across the key change.** A job whose link now keeps its
+  identifying `?gh_jid=` is matched to its old record and re-keyed on its next upsert, so its
+  triage state carries over.

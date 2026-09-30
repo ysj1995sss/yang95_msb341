@@ -87,12 +87,12 @@ def score_candidate_fit(profile: dict, job: dict) -> FitResult:
     posting = _job_dict_to_posting(job)
     detailed = _scorer.score_fit_detailed(engine_profile, posting)
     score = detailed.overall_fit
-    if score is None:
-        score = _scorer.score_fit(engine_profile, posting)
 
     breakdown = detailed.to_dict()
     breakdown["method"] = "cf-v2 eligibility/core/preferred/evidence"
+    if score is None:
+        breakdown["reason"] = "Not enough information in the posting to score fit"
     return {
-        "score": float(score),
+        "score": None if score is None else float(score),
         "breakdown": breakdown,
     }

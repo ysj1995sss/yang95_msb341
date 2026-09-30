@@ -96,15 +96,24 @@ def employment_type_for(job: JobPosting) -> str:
     return NOT_SPECIFIED
 
 
+_TITLE_STOPWORDS = {"a", "an", "and", "the", "of", "for", "in", "to", "at", "on", "with", "or", "&", "-", "/"}
+
+
 def title_keywords(goal_title: str) -> List[str]:
-    return [word.lower() for word in (goal_title or "").split() if len(word) > 2]
+    return [
+        word
+        for word in re.findall(r"[\w+#.&/-]+", (goal_title or "").lower())
+        if word not in _TITLE_STOPWORDS
+    ]
 
 
 def title_matches(goal_title: str, job_title: str) -> bool:
-    """Every meaningful word of the goal title appears in the job title, in any order."""
-    keywords = title_keywords(goal_title)
+    """Every meaningful word of the goal title appears as a whole word in the job title, in any order."""
     lowered = (job_title or "").lower()
-    return all(keyword in lowered for keyword in keywords)
+    return all(
+        re.search(rf"(?<![\w]){re.escape(keyword)}(?![\w])", lowered)
+        for keyword in title_keywords(goal_title)
+    )
 
 
 def selected_values(raw) -> Set[str]:

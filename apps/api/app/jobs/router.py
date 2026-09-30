@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 from app.auth.deps import get_current_user_access_or_device
 from app.db import get_db
 from app.fit.scoring import score_candidate_fit
-from app.jobs.dedupe import dedupe_key
+from app.jobs.dedupe import dedupe_key, legacy_dedupe_key
 from app.jobs.normalize import normalize_job_payload
 from app.jobs.ranking import apply_goals_rank_boost
 from app.models import Goals, Job, Profile, User, UserJob
@@ -31,6 +31,11 @@ def upsert_job(
     data_json = json.dumps(normalized)
 
     job = db.query(Job).filter(Job.dedupe_key == key).one_or_none()
+    legacy_key = legacy_dedupe_key(normalized) if job is None else None
+    if legacy_key:
+        job = db.query(Job).filter(Job.dedupe_key == legacy_key).one_or_none()
+        if job is not None:
+            job.dedupe_key = key
     job_created = job is None
     if job is None:
         job = Job(dedupe_key=key, data_json=data_json)
@@ -55,7 +60,10 @@ def upsert_job(
     goals = json.loads(goals_row.data_json) if goals_row else {}
 
     fit = score_candidate_fit(profile, normalized)
-    user_job.fit_score = apply_goals_rank_boost(float(fit["score"]), normalized, goals)
+    user_job.fit_score = (
+        None if fit["score"] is None
+        else apply_goals_rank_boost(float(fit["score"]), normalized, goals)
+    )
     user_job.fit_breakdown_json = json.dumps(fit["breakdown"])
     user_job.last_scored_at = datetime.utcnow()
 

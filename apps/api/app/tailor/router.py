@@ -239,7 +239,7 @@ def tailor_preview(
     gap_report = GapAnalyzer().analyze(profile, job_analysis, benchmark)
 
     fit = score_candidate_fit(profile_dict, job_dict)
-    candidate_fit_score = fit["score"] if fit["score"] > 0 else None
+    candidate_fit_score = fit["score"] or None
 
     resume_file = db.get(ResumeFile, user.id)
     use_docx_pipeline = (
@@ -615,7 +615,7 @@ def regenerate(run_id: str, user: User = Depends(get_current_user), db: Session 
         store, run.id, docx_bytes, pdf_bytes, str(validation.status), company, role,
     )
     report = build_final_report(
-        candidate_fit=fit["score"] if fit["score"] > 0 else None,
+        candidate_fit=fit["score"] or None,
         fit_breakdown=fit.get("breakdown", {}),
         original_alignment=benchmark.original_match_score,
         tailored_alignment=benchmark.original_match_score,
@@ -633,7 +633,7 @@ def regenerate(run_id: str, user: User = Depends(get_current_user), db: Session 
     diff_report = DiffGenerator().generate_diff(profile, tailored_resume)
 
     return TailorResult(
-        candidate_fit_score=fit["score"] if fit["score"] > 0 else None,
+        candidate_fit_score=fit["score"] or None,
         original_match_score=benchmark.original_match_score,
         tailored_resume=tailored_resume,
         final_score=benchmark.original_match_score,

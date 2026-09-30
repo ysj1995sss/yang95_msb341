@@ -67,6 +67,8 @@ class JobDatabase:
         existing_columns = {row[1] for row in cursor.fetchall()}
         if "alternative_sources" not in existing_columns:
             cursor.execute("ALTER TABLE job_postings ADD COLUMN alternative_sources TEXT")
+        if "last_seen" not in existing_columns:
+            cursor.execute("ALTER TABLE job_postings ADD COLUMN last_seen TIMESTAMP")
 
         # Create user_selections table
         cursor.execute("""
@@ -128,8 +130,8 @@ class JobDatabase:
             (id, source, source_id, company, title, location, description,
              posted_date, application_deadline, salary_min, salary_max,
              experience_required, education_required, sponsorship_available,
-             work_mode, url, ats_platform, raw_json, alternative_sources)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+             work_mode, url, ats_platform, raw_json, alternative_sources, last_seen)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (
             job_id,
             job.source.value,
@@ -149,7 +151,8 @@ class JobDatabase:
             job.url,
             job.ats_platform,
             raw_json_str,
-            alternative_sources_str
+            alternative_sources_str,
+            datetime.now().isoformat(),
         ))
 
         self.connection.commit()
@@ -173,7 +176,7 @@ class JobDatabase:
 
         return self._row_to_job_posting(row)
 
-    def search_jobs(self, goals: SearchGoals) -> List[JobPosting]:
+    def search_jobs(self, goals: SearchGoals, seen_since: Optional[datetime] = None) -> List[JobPosting]:
         """Search for jobs matching the given goals.
 
         Args:
@@ -188,10 +191,10 @@ class JobDatabase:
         where_clauses = []
         params = []
 
-        # Filter by job title (LIKE)
-        if goals.job_title:
-            where_clauses.append("title LIKE ?")
-            params.append(f"%{goals.job_title}%")
+        # Only postings returned by a search at or after seen_since.
+        if seen_since is not None:
+            where_clauses.append("last_seen >= ?")
+            params.append(seen_since.isoformat())
 
         # Filter by salary range
         # salary_max >= min_salary (job's max is at least as much as our minimum)

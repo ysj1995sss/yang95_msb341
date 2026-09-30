@@ -41,6 +41,16 @@ def test_title_matching_ignores_word_order():
     assert not title_matches("Product Manager", "Product Designer")
 
 
+def test_title_matching_keeps_short_words_and_matches_whole_words():
+    assert title_matches("UX Designer", "Senior UX Designer")
+    assert not title_matches("UX Designer", "Graphic Designer")
+    assert title_matches("AI Engineer", "Staff AI Engineer, Platform")
+    assert not title_matches("AI Engineer", "Email Engineer")
+    assert not title_matches("Product Engineer", "Production Engineer")
+    assert title_matches("Head of Product", "Head of Product, EMEA")
+    assert title_matches("C++ Developer", "Senior C++ Developer")
+
+
 def test_no_filters_keeps_every_title_match():
     jobs = [_job("Product Manager"), _job("Senior Product Manager", company="Coinbase")]
     assert apply_goal_filters(jobs, _goals()) == jobs

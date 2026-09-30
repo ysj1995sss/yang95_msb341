@@ -93,3 +93,18 @@ def job_dict_fingerprint(job: dict) -> str:
     title = normalize_title(job.get("title"))
     location = normalize_location(job.get("location"))
     return f"ct:{company}|{title}|{location}"
+
+
+def legacy_job_dict_fingerprint(job: dict) -> str | None:
+    """The URL key used before query params were kept, or None if unchanged.
+
+    Rows stored under the old key are re-keyed on their next upsert so their
+    triage state carries over instead of a duplicate row being created.
+    """
+    new_key = job_dict_fingerprint(job)
+    if not new_key.startswith("url:"):
+        return None
+    parsed = urlparse(new_key[len("url:"):])
+    if not parsed.query:
+        return None
+    return "url:" + urlunparse((parsed.scheme, parsed.netloc, parsed.path, "", "", ""))

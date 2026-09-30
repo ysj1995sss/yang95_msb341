@@ -68,12 +68,10 @@ class CandidateFitScorer:
         "project management", "business analysis", "data analytics",
     }
 
-    def score_fit(self, profile: CareerTruthProfile, job: JobPosting) -> float:
-        """Overall fit 0-100. Neutral ~80 when the posting has nothing scoreable."""
+    def score_fit(self, profile: CareerTruthProfile, job: JobPosting) -> Optional[float]:
+        """Overall fit 0-100, or None when the posting states nothing that can be scored."""
         detailed = self.score_fit_detailed(profile, job)
-        if detailed.overall_fit is not None:
-            return float(detailed.overall_fit)
-        return 80.0
+        return None if detailed.overall_fit is None else float(detailed.overall_fit)
 
     def score_fit_detailed(self, profile: CareerTruthProfile, job: JobPosting) -> FitResult:
         """Explainable Candidate Fit with component scores and evidence."""
@@ -302,10 +300,6 @@ class CandidateFitScorer:
                 return STRONGLY_SUPPORTED, sentence
 
         return UNSUPPORTED, ""
-
-    def _score_experience(self, profile: CareerTruthProfile, job: JobPosting) -> float:
-        score = self._score_experience_from_text(profile, job.experience_required)
-        return 80.0 if score is None else score
 
     def _score_experience_from_text(
         self, profile: CareerTruthProfile, experience_text: Optional[str]
