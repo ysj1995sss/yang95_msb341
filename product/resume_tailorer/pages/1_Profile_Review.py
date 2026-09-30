@@ -19,6 +19,8 @@ Streamlit import and is unit tested directly; this file is UI wiring only,
 per this app's established convention (see pages/2_Job_Search.py).
 """
 
+import os
+
 import streamlit as st
 
 from resume_tailorer.profile_review.api_client import (
@@ -32,12 +34,13 @@ from resume_tailorer.profile_review.api_client import (
     upload_resume,
 )
 from resume_tailorer.session_profile import FACT_VAULT, set_career_profile
+from resume_tailorer.ui.auth_gate import require_identity
 from resume_tailorer.ui import build_workflow_state, render_app_shell, render_page_header
 from resume_tailorer.ui.fact_vault import build_fact_vault_summary
 
 st.set_page_config(page_title="Review Your Profile", page_icon="\U0001F4C4", layout="wide")
 
-DEFAULT_API_BASE = "http://localhost:8000"
+DEFAULT_API_BASE = os.environ.get("JOB_COPILOT_API_BASE", "http://localhost:8000")
 
 
 def _verified_badge(path: str, verification: dict) -> str:
@@ -184,6 +187,7 @@ def _review_section(session):
             st.error(f"Save failed: {exc.detail}")
 
 
+require_identity()
 session = st.session_state.get("profile_review_session")
 render_app_shell("Fact Vault", build_workflow_state(st.session_state))
 if session is None:

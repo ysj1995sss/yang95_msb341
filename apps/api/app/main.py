@@ -1,5 +1,6 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from app.config import get_settings
 from app.db import Base, engine
 from app import models  # noqa: F401
 from app.migrations import apply_additive_migrations
@@ -14,7 +15,7 @@ from app.tailor.router import router as tailor_router
 app = FastAPI(title="Resume Copilot API")
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173"],
+    allow_origins=get_settings().cors_origins,
     allow_origin_regex=r"chrome-extension://.*",
     allow_credentials=True,
     allow_methods=["*"],

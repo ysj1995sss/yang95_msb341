@@ -21,6 +21,8 @@ of the real-submission path.
 
 import streamlit as st
 
+from resume_tailorer.ui.auth_gate import OWNER_KEY, job_service_for, require_identity
+
 from resume_tailorer.session_profile import get_career_profile
 from resume_tailorer.tailoring_session import handoff_for_job
 
@@ -33,8 +35,6 @@ from resume_tailorer.ui import build_workflow_state, render_app_shell, render_pa
 
 st.set_page_config(page_title="Applications", page_icon="\U0001F4E8", layout="wide")
 
-DB_PATH = "job_search.db"
-APPLICATIONS_DB_PATH = "applications.db"
 
 MODE_OPTIONS = {
     "Manual (I'll apply myself)": ApplicationMode.MANUAL,
@@ -44,12 +44,7 @@ MODE_OPTIONS = {
 
 
 def _get_job_service() -> JobService:
-    """Get (or lazily create) the JobService instance stored in session state."""
-    if "job_service" not in st.session_state:
-        st.session_state.job_service = JobService(
-            db_path=DB_PATH, applications_db_path=APPLICATIONS_DB_PATH
-        )
-    return st.session_state.job_service
+    return job_service_for(st.session_state[OWNER_KEY])
 
 
 def _render_disclosure_banner() -> None:
@@ -235,6 +230,7 @@ def _render_answer_bank(service: JobService) -> None:
 
 
 def main():
+    require_identity()
     render_app_shell("Apply Launchpad", build_workflow_state(st.session_state))
     render_page_header(
         "Apply Launchpad",

@@ -67,6 +67,16 @@ Migration from Anthropic-only setup: use `LLM_MODEL=anthropic/claude-3-5-sonnet-
 
 Set these in your shell, in a `.env` file (loaded via `python-dotenv`), or in your deployment environment.
 
+### Sign-in and where data is stored
+
+- `JOB_COPILOT_DATA_DIR`: the folder for each user's jobs, applications and tailored files
+  (default `~/.job_copilot`). Use a durable disk in any hosted deployment.
+- `[auth]` in Streamlit secrets: turns on Google sign-in, so each person gets a private
+  workspace. Without it the app runs in local single-user mode and warns not to share the
+  link. See `decisions/023` for the full deployment checklist.
+- `JOB_COPILOT_API_BASE`: the profile API address used by Fact Vault (default
+  `http://localhost:8000`).
+
 ## Usage
 
 ### Launch the Web UI
@@ -93,7 +103,7 @@ The Streamlit app opens in your browser at `http://localhost:8501`. Configure th
 
 ## Running Tests
 
-The project includes **77 integration and unit tests** covering:
+The project includes **786 tests** (plus 70 in `apps/api/`), run in CI on every push, covering:
 - Resume parsing from PDF and DOCX formats
 - Career Truth Profile construction
 - Job description analysis
@@ -150,7 +160,7 @@ product/
     ├── report_generator.py          # Generates final application report
     ├── docs/                        # Documentation (see docs/architecture.md)
     │   └── architecture.md
-    └── tests/                       # Test suite (323 tests)
+    └── tests/                       # Test suite (786 tests)
         ├── __init__.py
         ├── test_resume_parser.py
         ├── test_job_analyzer.py

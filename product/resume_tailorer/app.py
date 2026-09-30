@@ -62,6 +62,8 @@ except Exception:
     pass
 
 from resume_tailorer.parsers import ResumeParser
+from resume_tailorer.identity import artifacts_dir
+from resume_tailorer.ui.auth_gate import require_identity
 from resume_tailorer.session_profile import RESUME_UPLOAD, has_verified_profile, set_career_profile
 from resume_tailorer.tailoring_session import publish_artifact_handoff, sync_pending_job
 from resume_tailorer.analyzers import JobAnalyzer, ResumeBenchmarker, GapAnalyzer
@@ -224,6 +226,7 @@ def _regenerate_from_current_dispositions() -> None:
     publish_artifact_handoff(
         st.session_state, pdf_bytes=pdf_bytes, validation_status=validation.status.value,
         tailored_alignment=tailored_alignment, version=state["version"],
+        folder=st.session_state.get("artifacts_dir"),
     )
 
 
@@ -353,6 +356,8 @@ def _render_diagnostics_and_download(state: dict) -> None:
 
 
 def main():
+    identity = require_identity()
+    st.session_state["artifacts_dir"] = artifacts_dir(identity.owner_id)
     render_app_shell("Tailoring Studio", build_workflow_state(st.session_state))
     render_page_header(
         "Tailoring Studio",
@@ -603,6 +608,7 @@ def main():
     publish_artifact_handoff(
         st.session_state, pdf_bytes=pdf_bytes, validation_status=validation.status.value,
         tailored_alignment=tailored_alignment, version=1,
+        folder=st.session_state.get("artifacts_dir"),
     )
     st.rerun()
 

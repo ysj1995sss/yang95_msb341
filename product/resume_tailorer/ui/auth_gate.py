@@ -1,0 +1,70 @@
+"""Streamlit wiring for resume_tailorer.identity: sign-in gate and per-user services."""
+
+from __future__ import annotations
+
+from resume_tailorer.identity import (
+    Identity,
+    applications_db_path,
+    job_db_path,
+    resolve_identity,
+)
+
+OWNER_KEY = "owner_id"
+
+
+def _auth_config() -> dict:
+    import streamlit as st
+
+    try:
+        return dict(st.secrets.get("auth") or {})
+    except Exception:
+        return {}
+
+
+def require_identity() -> Identity:
+    """Stop the page with a sign-in screen until the visitor is identified."""
+    import streamlit as st
+
+    auth = _auth_config()
+    user_info = dict(st.user) if auth else {}
+    identity = resolve_identity(bool(auth), user_info)
+    if identity is None:
+        st.title("Job Copilot")
+        st.write("Sign in to keep your resumes, jobs and applications private to you.")
+        provider = "google" if "google" in auth else None
+        st.button("Sign in with Google", type="primary", on_click=st.login, args=(provider,) if provider else ())
+        st.stop()
+
+    if st.session_state.get(OWNER_KEY) not in (None, identity.owner_id):
+        # A different account in the same browser session: drop the previous one's state.
+        for key in list(st.session_state.keys()):
+            del st.session_state[key]
+    st.session_state[OWNER_KEY] = identity.owner_id
+
+    with st.sidebar:
+        if identity.signed_in:
+            st.caption(f"Signed in as {identity.display_name}")
+            st.button("Sign out", on_click=st.logout)
+        else:
+            st.warning(
+                "Local single-user mode: sign-in is not configured, so everyone using this "
+                "address shares one workspace. Don't share this link."
+            )
+    return identity
+
+
+def job_service_for(owner_id: str):
+    """This owner's JobService, reused across reruns of the same session."""
+    import streamlit as st
+
+    from resume_tailorer.job_search.job_service import JobService
+
+    service = st.session_state.get("job_service")
+    if service is None or st.session_state.get("job_service_owner") != owner_id:
+        service = JobService(
+            db_path=job_db_path(owner_id),
+            applications_db_path=applications_db_path(owner_id),
+        )
+        st.session_state["job_service"] = service
+        st.session_state["job_service_owner"] = owner_id
+    return service

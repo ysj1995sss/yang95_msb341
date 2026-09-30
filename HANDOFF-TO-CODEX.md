@@ -10,6 +10,45 @@ decisions 001, 006, 009, 012, 014, 015, 016, or 017 unless new evidence forces i
 
 ---
 
+## Latest update (2026-09-29) — read this first
+
+This document's body predates the work below. Where they disagree, this section and the listed
+decisions win.
+
+- **Discovery (`decisions/020`):**
+  - Greenhouse only, 36 verified company boards.
+  - No placeholder jobs.
+  - Industry, level and job-type filters are applied.
+  - Whole-word title matching.
+  - The dashboard is scoped to the latest search run.
+- **External audit, tasks 1–4 (`decisions/021`):**
+  - Validation fails blank PDFs and unreviewed flagged claims.
+  - One download rule: FAIL artifacts are never returned.
+  - Regeneration uses the run's exact resume version.
+  - One shared career profile (`session_profile.py`).
+  - Job switching and the Launchpad handoff (`tailoring_session.py`).
+  - Manual mode needs no ATS parsing, and previews never persist.
+  - Every real-submit failure is audited.
+- **Audit task 6 (`decisions/022`):**
+  - One bounded length-correction pass (`artifacts/length_control.py`) and a freeform page
+    limit.
+  - An approved-only answer bank for custom questions.
+  - Specs `005` (status sync) and `006` (browser Assist mode) are not built.
+- **Audit task 5 (`decisions/023`):**
+  - Google sign-in via Streamlit when `[auth]` is configured.
+  - Per-user data folders under `JOB_COPILOT_DATA_DIR`.
+  - The API refuses unsafe production config (`APP_ENV=production`).
+  - Not deployed yet: follow the checklist in 023.
+- **Audit task 7:**
+  - CI runs both suites on every push.
+  - LLM timeouts and bounded retries.
+  - Persistence errors are surfaced instead of swallowed.
+  - Batched triage reads and cached fit scores.
+  - Dead dashboard code removed.
+- **Test baseline:** `product/` 786 passed, `apps/api/` 70 passed.
+
+---
+
 ## 1. What this product is
 
 Automated job-application copilot for job seekers:
@@ -277,8 +316,8 @@ apps/api/app/tailor/storage.py                             # Steps 16-20 immutab
 ## 8. Verification commands
 
 ```bash
-cd product && ./.venv/Scripts/python.exe -m pytest -q          # expect 685 passed
-cd apps/api && ./.venv/Scripts/python.exe -m pytest -q          # expect 60 passed
+cd product && ./.venv/Scripts/python.exe -m pytest -q          # expect 786 passed
+cd apps/api && ./.venv/Scripts/python.exe -m pytest -q          # expect 70 passed
 ```
 
 Live smoke test (needs LLM keys configured):

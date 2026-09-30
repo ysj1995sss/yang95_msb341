@@ -13,36 +13,34 @@ a brand new session act like a colleague who already knows what you are working 
 
 ## Current state
 
-- **Where we are:** Sprint 1 (tailor) and Sprint 2 (Steps 4–9 job discovery) are both merged on
-  `main`. Steps 10–15 (job analysis → tailoring → length control) were audited and rebuilt — see
-  `decisions/013-steps-10-15-rebuild-summary.md`. Steps 16-20 (the validated resume artifact
-  pipeline: structured validation, immutable artifact versioning, review/regenerate, Streamlit +
-  API adapter parity) are built and merged — see `decisions/014` and
-  `decisions/015-steps-16-20-build-summary.md`; the one deliberately-deferred piece is the bounded
-  correction loop's actual condensation logic (decision 015's "known limitations"). Steps 21–24
-  (application modes/submission/status/dashboard) were revised this session — see
-  `decisions/016-ats-capability-model-and-hard-submission-safety-gate.md` (a real safety bug: the
-  real-submit path could silently record a false "Applied" status; fixed with an explicit
-  capability model and a hard gate) and `decisions/017-steps-21-24-revision-summary.md` (full
-  rebuild summary: attempt tracking, idempotency, immutable job/fit snapshots, status provenance,
-  a full dashboard rebuild). Assist/Auto mode still doesn't work against real ATS forms — see
-  `decisions/012-assist-auto-mode-does-not-work-against-real-ats-forms.md` — but the code now says
-  so honestly and refuses instead of silently pretending otherwise. Manual mode is the one
-  reliable application-submission path today.
-- **Next build:** (a) wire up the Steps 16-20 correction/condensation loop (decision 015), (b)
-  close the freeform/PDF tailoring path's remaining gaps (no repair loop, no hard length gate —
-  decision 013), (c) custom/job-specific application question answering (decision 017), (d)
-  revisit Assist/Auto mode via real browser automation (decision 012 scoped this out
-  deliberately — needs its own conversation before starting), or (e) something else entirely —
-  nothing is currently in progress.
-- **Where to see it:** `product/resume_tailorer/app.py` (tailor); `pages/2_Job_Search.py`
-  (discovery); `pages/3_Applications.py` (application submission + status dashboard).
-- **Biggest open risk:** real end-to-end usage by people other than the builder — the tailoring
-  and discovery pipelines are verified live against real postings, but the full search → triage →
-  tailor → apply loop hasn't been used by anyone else yet.
-- **Handoff doc:** `HANDOFF-TO-CODEX.md` — read this when starting a new Codex session, along
-  with `decisions/001`, `009`, `012`, `013`, `014`, `015`, `016`, and `017` for the architecture
-  and the most recent work.
+- **Where we are:** Sprint 2 (Steps 3–9 job discovery) is in progress, and all 24 spec steps
+  exist on `main`. A 2026-09-29 external audit was worked through in full: tasks 1–4 are in
+  `decisions/021`, task 6 in `decisions/022`, and task 5 in `decisions/023`.
+  - **Discovery:** real Greenhouse results only (36 company boards, no placeholder jobs), with
+    goal filters that actually filter (`decisions/020`).
+  - **Validation:** blank PDFs and unreviewed made-up claims fail; failed artifacts are never
+    handed out.
+  - **Regeneration** uses the run's exact resume version.
+  - **Connected workspaces:** the five share one career profile and hand the validated resume
+    to Launchpad.
+  - **Manual mode** needs no ATS parsing; previews never save anything.
+  - **Length:** one bounded length-correction pass, and a hard page limit on freeform.
+  - **Custom application answers** come only from the user's approved answer bank.
+  - **Sign-in:** Google sign-in (when `[auth]` is configured) and per-user data folders.
+- **Deployed:** https://yang95msb341-epxbfpbdegytjwcajjthay.streamlit.app runs in *local
+  single-user mode* (no `[auth]` secrets, no durable disk). It is for supervised demos only;
+  don't share it as a multi-user product. The deployment checklist is in `decisions/023`.
+- **Not built (specs only):**
+  - status sync (`specs/005`);
+  - browser Assist mode (`specs/006`) — Assist/Auto still can't fill real JavaScript ATS
+    forms (`decisions/012`);
+  - LinkedIn, Indeed and Handshake are demo data only.
+- **Biggest open risk:** nobody other than the builder has used the full search → tailor → apply
+  loop. Next: supervised tests with 2–3 people, then the Sprint 2 review.
+- **Where to see it:** `product/resume_tailorer/app.py` (Tailoring Studio) and
+  `product/resume_tailorer/pages/` (Fact Vault, Job Search, Launchpad, Tracker).
+- **Handoff docs:** `HANDOFF-TO-CLAUDE-CODE.md` and `HANDOFF-TO-CODEX.md`, both pointing at the
+  same `decisions/` history.
 
 ## How this repo works
 
@@ -56,8 +54,8 @@ a brand new session act like a colleague who already knows what you are working 
 
 - **Stack:** Python (resume_tailorer package), Streamlit for UI, an LLM API for tailoring (see `product/resume_tailorer/llm/`), pytest for testing, reportlab for PDF generation, python-docx + docx2pdf for the DOCX splice pipeline, multiple job board scrapers (Greenhouse live; LinkedIn/Indeed/Handshake limited/demo).
 - **Two separate venvs:** `product/.venv` (core engine + Streamlit) and `apps/api/.venv` (FastAPI backend). Set `PYTHONPATH` to include `product/` when running Streamlit or product tests directly.
-- **How work ships:** Streamlit app + FastAPI backend run locally; eventual deployment TBD.
-- **Testing and style:** pytest for unit and integration tests; extensive fixture-based testing with real job descriptions. Run the full suite (`product/`: currently 685 tests; `apps/api/`: currently 60) before claiming anything is done.
+- **How work ships:** push to `main` → Streamlit Community Cloud redeploys `product/resume_tailorer/app.py`. Multi-user deployment needs the `decisions/023` checklist first (Google OAuth secrets, durable `JOB_COPILOT_DATA_DIR`).
+- **Testing and style:** pytest; CI (`.github/workflows/tests.yml`) runs both suites on every push, on Python 3.14 with the pinned versions in `product/requirements.txt`. Run both before claiming anything is done: `product/` currently 786 tests, `apps/api/` currently 70.
 
 ## Working with me
 

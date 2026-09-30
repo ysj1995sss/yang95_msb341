@@ -62,6 +62,7 @@ def _fake_board(self, token):
 @pytest.fixture
 def app(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("JOB_COPILOT_DATA_DIR", str(tmp_path / "data"))
     stubs = {
         "get_profile": lambda session: VAULT_PROFILE,
         "get_verification": lambda session: {},
@@ -81,7 +82,7 @@ def _click(at, label):
     assert not at.exception, at.exception
 
 
-def test_fact_vault_to_tracker(app):
+def test_fact_vault_to_tracker(app, tmp_path):
     at = app
 
     # Fact Vault: verified facts become the one shared profile.
@@ -148,6 +149,9 @@ def test_fact_vault_to_tracker(app):
     service = at.session_state["job_service"]
     (submission,) = service.applications_db.get_submissions_by_job("greenhouse_101")
     assert submission.resume_match_score == pytest.approx(81.0)
+    # Stored in this user's own data folder, not in shared files in the working directory.
+    assert (tmp_path / "data" / "users" / "local" / "applications.db").exists()
+    assert not (tmp_path / "applications.db").exists()
     table = at.dataframe[0].value.to_string()
     assert "Senior Product Manager, Analytics" in table
     assert "Ready" in table

@@ -13,24 +13,34 @@ a brand new session act like a colleague who already knows what you are working 
 
 ## Current state
 
-- **Where we are:** Sprint 1 (tailor) and Sprint 2 (Steps 4–9 job discovery) are both merged on
-  `main`. Steps 10–15 (job analysis → tailoring → length control) were audited and rebuilt this
-  session — see `decisions/013-steps-10-15-rebuild-summary.md` for the full picture. Steps 21–24
-  (application modes/submission/status) are substantially built but Assist/Auto mode doesn't
-  work against real ATS forms yet — see `decisions/012-assist-auto-mode-does-not-work-against-real-ats-forms.md`.
-  Manual mode is the one reliable application-submission path today.
-- **Next build:** either (a) close the freeform/PDF tailoring path's remaining gaps (no repair
-  loop, no hard length gate — see decision 013's "known limitations"), or (b) revisit Assist/Auto
-  mode via real browser automation (decision 012 scoped this out deliberately — needs its own
-  conversation before starting), or (c) something else entirely — nothing is currently in
-  progress.
-- **Where to see it:** `product/resume_tailorer/app.py` (tailor); `pages/2_Job_Search.py`
-  (discovery); `pages/3_Applications.py` (application submission + status dashboard).
-- **Biggest open risk:** real end-to-end usage by people other than the builder — the tailoring
-  and discovery pipelines are verified live against real postings, but the full search → triage →
-  tailor → apply loop hasn't been used by anyone else yet.
-- **Handoff docs:** `HANDOFF-TO-CLAUDE-CODE.md` and `HANDOFF-TO-CODEX.md` — read whichever
-  matches the session you're starting; both point at the same `decisions/` history.
+- **Where we are:** Sprint 2 (Steps 3–9 job discovery) is in progress, and all 24 spec steps
+  exist on `main`. A 2026-09-29 external audit was worked through in full: tasks 1–4 are in
+  `decisions/021`, task 6 in `decisions/022`, and task 5 in `decisions/023`.
+  - **Discovery:** real Greenhouse results only (36 company boards, no placeholder jobs), with
+    goal filters that actually filter (`decisions/020`).
+  - **Validation:** blank PDFs and unreviewed made-up claims fail; failed artifacts are never
+    handed out.
+  - **Regeneration** uses the run's exact resume version.
+  - **Connected workspaces:** the five share one career profile and hand the validated resume
+    to Launchpad.
+  - **Manual mode** needs no ATS parsing; previews never save anything.
+  - **Length:** one bounded length-correction pass, and a hard page limit on freeform.
+  - **Custom application answers** come only from the user's approved answer bank.
+  - **Sign-in:** Google sign-in (when `[auth]` is configured) and per-user data folders.
+- **Deployed:** https://yang95msb341-epxbfpbdegytjwcajjthay.streamlit.app runs in *local
+  single-user mode* (no `[auth]` secrets, no durable disk). It is for supervised demos only;
+  don't share it as a multi-user product. The deployment checklist is in `decisions/023`.
+- **Not built (specs only):**
+  - status sync (`specs/005`);
+  - browser Assist mode (`specs/006`) — Assist/Auto still can't fill real JavaScript ATS
+    forms (`decisions/012`);
+  - LinkedIn, Indeed and Handshake are demo data only.
+- **Biggest open risk:** nobody other than the builder has used the full search → tailor → apply
+  loop. Next: supervised tests with 2–3 people, then the Sprint 2 review.
+- **Where to see it:** `product/resume_tailorer/app.py` (Tailoring Studio) and
+  `product/resume_tailorer/pages/` (Fact Vault, Job Search, Launchpad, Tracker).
+- **Handoff docs:** `HANDOFF-TO-CLAUDE-CODE.md` and `HANDOFF-TO-CODEX.md`, both pointing at the
+  same `decisions/` history.
 
 ## How this repo works
 
@@ -42,9 +52,9 @@ a brand new session act like a colleague who already knows what you are working 
 
 ## Tools and conventions
 
-- **Stack:** Python (resume_tailorer package), Streamlit for UI, Claude API for LLM, pytest for testing, reportlab for PDF generation, multiple job board scrapers (Greenhouse, LinkedIn, Indeed, Handshake).
-- **How work ships:** Streamlit app runs locally; eventual deployment TBD.
-- **Testing and style:** pytest for unit and integration tests; extensive fixture-based testing with real job descriptions.
+- **Stack:** Python (resume_tailorer package), Streamlit UI with built-in Google sign-in, any LiteLLM-supported model (`product/resume_tailorer/llm/`), pytest, reportlab/PyMuPDF for PDFs, python-docx for the DOCX splice pipeline, Greenhouse live job search (LinkedIn/Indeed/Handshake demo only), FastAPI backend in `apps/api/`.
+- **How work ships:** push to `main` → Streamlit Community Cloud redeploys `product/resume_tailorer/app.py`. Multi-user deployment needs the `decisions/023` checklist first (Google OAuth secrets, durable `JOB_COPILOT_DATA_DIR`).
+- **Testing and style:** pytest; CI (`.github/workflows/tests.yml`) runs both suites on every push, on Python 3.14 with the pinned versions in `product/requirements.txt`. Run both before claiming anything is done: `product/` currently 786 tests, `apps/api/` currently 70.
 
 ## Working with me
 

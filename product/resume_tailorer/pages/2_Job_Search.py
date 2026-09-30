@@ -7,6 +7,8 @@ APPLY hands the job description + fit snapshot to Resume Tailorer (Step 10).
 
 import streamlit as st
 
+from resume_tailorer.ui.auth_gate import OWNER_KEY, job_service_for, require_identity
+
 from resume_tailorer.session_profile import get_career_profile
 
 from resume_tailorer.job_search.dashboard import SORT_OPTIONS, filter_and_sort_jobs
@@ -40,7 +42,6 @@ from resume_tailorer.ui import build_workflow_state, render_app_shell, render_pa
 
 st.set_page_config(page_title="Job Search", page_icon="\U0001F50D", layout="wide")
 
-DB_PATH = "job_search.db"
 
 REMOTE_PREFERENCE_OPTIONS = ["any", "remote", "hybrid", "onsite"]
 SOURCE_OPTIONS = [JobSource.LINKEDIN, JobSource.INDEED, JobSource.HANDSHAKE, JobSource.GREENHOUSE]
@@ -60,9 +61,7 @@ SOURCE_FILTER_OPTIONS = ["any"] + [s.value for s in SOURCE_OPTIONS]
 
 
 def _get_job_service() -> JobService:
-    if "job_service" not in st.session_state:
-        st.session_state.job_service = JobService(db_path=DB_PATH)
-    return st.session_state.job_service
+    return job_service_for(st.session_state[OWNER_KEY])
 
 
 def _render_search_goals_form() -> dict:
@@ -377,6 +376,7 @@ def _render_job_dashboard() -> None:
 
 
 def main():
+    require_identity()
     render_app_shell("Job Discovery", build_workflow_state(st.session_state))
     render_page_header(
         "Job Discovery",

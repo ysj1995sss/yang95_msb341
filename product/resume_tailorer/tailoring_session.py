@@ -43,13 +43,14 @@ def publish_artifact_handoff(
     validation_status: str,
     tailored_alignment: Optional[float],
     version: int,
+    folder: Optional[str] = None,
 ) -> Optional[dict]:
     """Hand a validated PDF to Launchpad; a FAIL or missing artifact withdraws any handoff."""
     if not pdf_bytes or str(validation_status) == "FAIL":
         session.pop(HANDOFF_KEY, None)
         return None
     sha256 = hashlib.sha256(pdf_bytes).hexdigest()
-    folder = os.path.join(tempfile.gettempdir(), "job_copilot_artifacts")
+    folder = folder or os.path.join(tempfile.gettempdir(), "job_copilot_artifacts")
     os.makedirs(folder, exist_ok=True)
     pdf_path = os.path.join(folder, f"{sha256[:16]}.pdf")
     with open(pdf_path, "wb") as f:
