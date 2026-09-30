@@ -53,12 +53,20 @@ class LLMClient:
         }
         if self.settings.api_base:
             kwargs["api_base"] = self.settings.api_base
+        if self.settings.model.startswith("openrouter/"):
+            # Editing a bullet needs no step-by-step thinking. Reasoning models
+            # otherwise spend the whole output budget (and minutes) on it.
+            kwargs["extra_body"] = {"reasoning": {"enabled": False}}
 
         for attempt in range(self.MAX_RETRIES + 1):
             try:
                 response = litellm.completion(**kwargs)
                 break
             except Exception as exc:
+                if "extra_body" in kwargs and "reasoning" in str(exc).lower():
+                    # This model can't run without reasoning; use it as it is.
+                    kwargs.pop("extra_body")
+                    continue
                 if attempt == self.MAX_RETRIES or not self._is_transient(exc):
                     raise self._map_error(exc) from exc
                 self._sleep(self.BACKOFF_SECONDS * (attempt + 1))

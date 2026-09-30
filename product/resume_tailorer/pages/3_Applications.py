@@ -216,8 +216,8 @@ def _render_answer_bank(service: JobService) -> None:
         "Answers you approve here are saved and reused for the same question on later applications."
     )
     typed = {
-        question: st.text_area(question, key=f"answer_{question_key(question)}", height=80)
-        for question in unanswered
+        question: st.text_area(question, key=f"answer_{index}_{question_key(question)}", height=80)
+        for index, question in enumerate(dict.fromkeys(unanswered))
     }
     if st.button("Approve and save answers"):
         saved = 0

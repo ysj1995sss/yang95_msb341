@@ -104,7 +104,7 @@ class ApplicationSubmission:
     job_posting_id: str
     mode: ApplicationMode
     resume_used: str
-    candidate_fit_score: float
+    candidate_fit_score: Optional[float]
     resume_match_score: float
     form_fields_submitted: Dict[str, str]
     custom_answers: Dict[str, str]

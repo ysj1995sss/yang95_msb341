@@ -321,7 +321,7 @@ class JobService:
             raise ValueError(f"Job not found: {job_id}")
 
         fit_detail = self.fit_scorer.score_fit_detailed(profile, job)
-        candidate_fit_score = fit_detail.overall_fit if fit_detail.overall_fit is not None else 80.0
+        candidate_fit_score = fit_detail.overall_fit  # None when the posting states nothing scoreable
 
         # Immutable snapshots (spec 003 Step 22): the dashboard must be able
         # to show what was true when the user applied, not whatever the

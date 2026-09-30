@@ -106,3 +106,18 @@ def test_required_question_without_an_approved_answer_blocks_real_submit(db, mon
         with pytest.raises(ValueError, match="question_101"):
             _apply(engine, dry_run=False)
     submit.assert_not_called()
+
+
+def test_a_question_asked_twice_is_listed_and_answered_once():
+    fields = [
+        FormField("q_1", "text", label="Reservation number"),
+        FormField("q_2", "text", label="Reservation  Number"),
+        FormField("q_3", "select", label="Are you authorized to work in the US?"),
+    ]
+    filled, custom, unanswered = apply_answer_bank(fields, {question_key("Reservation number"): "R-1"})
+    assert unanswered == ["Are you authorized to work in the US?"]
+    assert custom == {"Reservation number": "R-1", "Reservation  Number": "R-1"}
+    assert [f.value for f in filled[:2]] == ["R-1", "R-1"]
+
+    _f, _c, still = apply_answer_bank(fields, {})
+    assert still == ["Reservation number", "Are you authorized to work in the US?"]

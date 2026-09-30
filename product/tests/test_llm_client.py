@@ -139,3 +139,32 @@ def test_think_blocks_are_removed_from_replies():
     client = LLMClient(_settings())
     with patch("resume_tailorer.llm.client.litellm.completion", return_value=_reply("<think>hmm\nlong</think>\n[1, 2]")):
         assert client.complete("s", "u") == "[1, 2]"
+
+
+def test_openrouter_calls_turn_reasoning_off():
+    client = LLMClient(LLMSettings(model="openrouter/nvidia/nemotron-3-ultra-550b-a55b:free", api_key="k"))
+    with patch("resume_tailorer.llm.client.litellm.completion", return_value=_reply("ok")) as mock_completion:
+        client.complete("s", "u")
+    assert mock_completion.call_args.kwargs["extra_body"] == {"reasoning": {"enabled": False}}
+
+
+def test_other_providers_are_not_sent_reasoning_options():
+    client = LLMClient(_settings())
+    with patch("resume_tailorer.llm.client.litellm.completion", return_value=_reply("ok")) as mock_completion:
+        client.complete("s", "u")
+    assert "extra_body" not in mock_completion.call_args.kwargs
+
+
+def test_a_model_that_requires_reasoning_is_called_again_without_the_switch():
+    client = LLMClient(LLMSettings(model="openrouter/some/always-thinks", api_key="k"), sleep=lambda s: None)
+    calls = []
+
+    def fake(**kwargs):
+        calls.append("extra_body" in kwargs)
+        if "extra_body" in kwargs:
+            raise Exception("Reasoning is mandatory for this endpoint and cannot be disabled")
+        return _reply("done")
+
+    with patch("resume_tailorer.llm.client.litellm.completion", side_effect=fake):
+        assert client.complete("s", "u") == "done"
+    assert calls == [True, False]

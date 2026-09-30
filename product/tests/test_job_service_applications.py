@@ -135,3 +135,17 @@ def test_apply_for_job_persists_job_and_fit_snapshots(job_service):
     assert persisted.job_snapshot["title"] == "Engineer"
     assert "overall_fit" in persisted.candidate_fit_snapshot
     assert persisted.career_profile_version  # non-empty hash
+
+
+def test_unscoreable_job_is_recorded_with_no_fit_score_not_an_invented_one(job_service):
+    from unittest.mock import patch as _patch
+    from resume_tailorer.job_search.models import FitResult
+
+    job = JobPosting(source=JobSource.GREENHOUSE, source_id="x1", company="A", title="PM",
+                     location="Remote", description="d", url="https://example.com/x1", ats_platform="Greenhouse")
+    job_service.db.save_job_posting(job)
+    with _patch.object(job_service.fit_scorer, "score_fit_detailed", return_value=FitResult(overall_fit=None)):
+        result = job_service.apply_for_job(
+            "greenhouse_x1", _make_profile(), "r.pdf", ApplicationMode.MANUAL, 50.0, dry_run=False
+        )
+    assert job_service.applications_db.get_submission(result.application_id).candidate_fit_score is None

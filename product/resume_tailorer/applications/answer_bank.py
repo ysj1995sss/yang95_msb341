@@ -43,7 +43,8 @@ def apply_answer_bank(
             custom[question] = answer
         else:
             filled.append(field)
-            unanswered.append(question)
+            if question_key(question) not in {question_key(q) for q in unanswered}:
+                unanswered.append(question)
     return filled, custom, unanswered
 
 
