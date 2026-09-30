@@ -168,3 +168,14 @@ def test_a_model_that_requires_reasoning_is_called_again_without_the_switch():
     with patch("resume_tailorer.llm.client.litellm.completion", side_effect=fake):
         assert client.complete("s", "u") == "done"
     assert calls == [True, False]
+
+
+def test_a_busy_provider_is_waited_out_longer_and_reported_plainly():
+    sleeps = []
+    client = LLMClient(_settings(), sleep=sleeps.append)
+    busy = Exception("OpenrouterException - Upstream error: Service temporarily overloaded")
+    with patch("resume_tailorer.llm.client.litellm.completion", side_effect=busy) as mock_completion:
+        with pytest.raises(RuntimeError, match="busy right now"):
+            client.complete("s", "u")
+    assert mock_completion.call_count == 1 + LLMClient.MAX_RETRIES
+    assert sleeps == [10.0, 20.0, 30.0]

@@ -10,13 +10,15 @@ from resume_tailorer.llm.settings import LLMSettings
 
 
 _TRANSIENT_MARKERS = ("timeout", "timed out", "connection", "429", "rate limit", "500", "502", "503", "504", "overloaded")
+_BUSY_MARKERS = ("overloaded", "503", "429", "rate limit", "service unavailable", "temporarily")
 _THINK_BLOCK = re.compile(r"<think>.*?</think>", re.DOTALL | re.IGNORECASE)
 
 
 class LLMClient:
     TIMEOUT_SECONDS = 180
-    MAX_RETRIES = 2
+    MAX_RETRIES = 3
     BACKOFF_SECONDS = 2.0
+    BUSY_BACKOFF_SECONDS = 10.0  # a busy provider needs longer than a network blip
     # Reasoning models spend output tokens thinking before they answer. A reply
     # cut off at the limit is retried once with more room, then reported plainly.
     TRUNCATION_RETRY_FACTOR = 4
@@ -69,7 +71,8 @@ class LLMClient:
                     continue
                 if attempt == self.MAX_RETRIES or not self._is_transient(exc):
                     raise self._map_error(exc) from exc
-                self._sleep(self.BACKOFF_SECONDS * (attempt + 1))
+                busy = any(marker in str(exc).lower() for marker in _BUSY_MARKERS)
+                self._sleep((self.BUSY_BACKOFF_SECONDS if busy else self.BACKOFF_SECONDS) * (attempt + 1))
 
         choice = response.choices[0]
         content = choice.message.content
@@ -91,6 +94,11 @@ class LLMClient:
         if "404" in text or "model not found" in text or "does not exist" in text:
             return RuntimeError(
                 "Model not found for this provider; check the model id (and Base URL if using a proxy)."
+            )
+        if any(marker in text for marker in _BUSY_MARKERS):
+            return RuntimeError(
+                "The model provider is busy right now (free models are often overloaded). "
+                "Wait a minute and try again, or switch models in Model settings."
             )
         if "timeout" in text or "connection" in text or "network" in text:
             return RuntimeError("Could not reach the model provider.")
