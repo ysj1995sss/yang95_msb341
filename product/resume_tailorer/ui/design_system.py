@@ -102,19 +102,22 @@ THEME_CSS = r"""
   --jc-paper: #FFFFFF; --jc-line: #D9E0E8;
 }
 html, body, [class*="st-"] { font-family: "Atkinson Hyperlegible", Inter, system-ui, sans-serif; color: var(--jc-ink); }
+/* Streamlit draws icons with a ligature font; the rule above would turn them into words. */
+[data-testid="stIconMaterial"], [data-testid="stIconMaterial"] * { font-family: "Material Symbols Rounded" !important; }
 .stApp { background: var(--jc-canvas); }
-[data-testid="stSidebar"] { background: #111923; border-right: 1px solid #293442; }
-[data-testid="stSidebar"] * { color: #F7F9FC; }
+[data-testid="stSidebar"] { background: var(--jc-paper); border-right: 1px solid var(--jc-line); }
 [data-testid="stSidebar"] a { border-radius: 4px; }
-[data-testid="stSidebar"] a:hover { background: #233044; }
+[data-testid="stSidebar"] a:hover { background: #EEF2F7; }
+input, textarea, [data-baseweb="select"] * { color: var(--jc-ink) !important; }
+[data-testid="stExpander"] summary { gap: .5rem; }
 [data-testid="stSidebarNav"] { display: none; }
 .block-container { max-width: 1440px; padding-top: 2rem; padding-bottom: 4rem; }
 h1, h2, h3 { color: var(--jc-ink); letter-spacing: -0.025em; }
 h1 { font-size: clamp(2rem, 4vw, 2.6rem) !important; line-height: 1.08 !important; }
 p { line-height: 1.55; }
-.jc-brand { padding: .5rem 0 1rem; border-bottom: 1px solid #344151; margin-bottom: 1rem; }
+.jc-brand { padding: .5rem 0 1rem; border-bottom: 1px solid var(--jc-line); margin-bottom: 1rem; }
 .jc-brand strong { font-size: 1.2rem; letter-spacing: -.02em; }
-.jc-brand span { display: block; color: #B9C4D0 !important; font-size: .82rem; margin-top: .2rem; }
+.jc-brand span { display: block; color: #52606D !important; font-size: .82rem; margin-top: .2rem; }
 .jc-page-header { border-bottom: 1px solid var(--jc-line); padding: .25rem 0 1.25rem; margin-bottom: 1.5rem; }
 .jc-page-header p { max-width: 72ch; margin: .45rem 0 0; color: #52606D; }
 .jc-ribbon { display: flex; gap: 0; overflow-x: auto; background: var(--jc-paper); border: 1px solid var(--jc-line); margin: 0 0 1.75rem; }
