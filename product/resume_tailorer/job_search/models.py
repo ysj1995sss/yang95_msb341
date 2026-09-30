@@ -231,6 +231,8 @@ class SearchRunSummary:
     total_after_dedupe: int = 0
     closed_filtered: int = 0
     total_stored: int = 0
+    save_failed: int = 0
+    save_error: Optional[str] = None
     status: SearchRunStatus = SearchRunStatus.OK
 
     def to_dict(self) -> Dict[str, Any]:
@@ -242,6 +244,8 @@ class SearchRunSummary:
             "total_after_dedupe": self.total_after_dedupe,
             "closed_filtered": self.closed_filtered,
             "total_stored": self.total_stored,
+            "save_failed": self.save_failed,
+            "save_error": self.save_error,
             "status": self.status.value,
         }
 

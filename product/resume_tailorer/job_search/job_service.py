@@ -175,16 +175,23 @@ class JobService:
         total_after_dedupe = len(deduplicated_postings)
 
         stored_count = 0
+        save_failed = 0
+        save_error = None
         for posting in deduplicated_postings:
             try:
                 self.db.save_job_posting(posting)
                 stored_count += 1
-            except Exception:
-                pass
+            except Exception as exc:
+                save_failed += 1
+                save_error = save_error or (str(exc) or exc.__class__.__name__)
 
         ok_count = sum(1 for p in provider_results if p.status == ProviderRunStatus.OK)
         fail_count = sum(1 for p in provider_results if p.status == ProviderRunStatus.FAILED)
-        if fail_count == 0 and ok_count > 0:
+        if save_failed and stored_count == 0:
+            run_status = SearchRunStatus.FAILED
+        elif save_failed:
+            run_status = SearchRunStatus.PARTIAL
+        elif fail_count == 0 and ok_count > 0:
             run_status = SearchRunStatus.OK
         elif ok_count > 0 and fail_count > 0:
             run_status = SearchRunStatus.PARTIAL
@@ -201,6 +208,8 @@ class JobService:
             total_scraped=len(all_postings),
             total_after_dedupe=total_after_dedupe,
             total_stored=stored_count,
+            save_failed=save_failed,
+            save_error=save_error,
             status=run_status,
         )
         self.last_search_run = summary
@@ -225,6 +234,26 @@ class JobService:
         jobs = sort_jobs(jobs, sort_by="posted_date", sort_dir="desc")
 
         return jobs
+
+    def fit_results_cached(
+        self, profile: CareerTruthProfile, jobs: List[JobPosting], cache: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        """Detailed fit per job id, computed once per (profile version, job content)."""
+        import hashlib
+
+        profile_version = _profile_hash(profile)
+        results: Dict[str, Any] = {}
+        for job in jobs:
+            job_id = f"{job.source.value}_{job.source_id}"
+            content = hashlib.sha256(f"{job.title}|{job.description}".encode("utf-8")).hexdigest()
+            key = f"{profile_version}:{job_id}:{content}"
+            if key not in cache:
+                try:
+                    cache[key] = self.fit_scorer.score_fit_detailed(profile, job)
+                except Exception:
+                    cache[key] = None
+            results[job_id] = cache[key]
+        return results
 
     def get_job_with_fit_score(
         self,

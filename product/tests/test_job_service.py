@@ -5,7 +5,7 @@ from datetime import datetime
 from unittest import mock
 
 from resume_tailorer.job_search.job_service import JobService
-from resume_tailorer.job_search.models import SearchGoals, JobPosting, JobSource
+from resume_tailorer.job_search.models import SearchGoals, JobPosting, JobSource, UserSelection
 from resume_tailorer.models.career_profile import (
     CareerTruthProfile,
     EducationEntry,
@@ -507,4 +507,70 @@ def test_dashboard_can_be_limited_to_the_latest_search_run(temp_db):
     latest = service.get_available_jobs(goals, seen_since=run_started)
     assert [j.source_id for j in latest] == ["new"]
     assert len(service.get_available_jobs(goals)) == 2
+    service.close()
+
+
+def test_jobs_that_fail_to_save_are_reported_not_swallowed(temp_db):
+    service = JobService(db_path=temp_db)
+    goals = SearchGoals(
+        job_title="Engineer", industries=[], min_salary=0, max_salary=0,
+        location="", remote_preference="any", sponsorship_required=False,
+        experience_level="", company_size="",
+    )
+    jobs = [
+        JobPosting(source=JobSource.GREENHOUSE, source_id=str(i), company=f"C{i}",
+                   title="Engineer", location="Remote", description="d", url=f"https://c{i}.example/1")
+        for i in range(2)
+    ]
+    scraper = mock.MagicMock()
+    scraper.scrape.return_value = jobs
+    scraper.data_source = "real"
+    real_save = service.db.save_job_posting
+
+    def flaky_save(posting):
+        if posting.source_id == "1":
+            raise RuntimeError("disk is full")
+        return real_save(posting)
+
+    with mock.patch.object(service, "_get_scraper", return_value=scraper), \
+         mock.patch.object(service.db, "save_job_posting", side_effect=flaky_save):
+        summary = service.search_and_store(goals, [JobSource.GREENHOUSE])
+
+    assert summary.total_stored == 1
+    assert summary.save_failed == 1
+    assert summary.save_error == "disk is full"
+    assert summary.status.value == "partial"
+    service.close()
+
+
+def test_latest_actions_are_read_in_one_batch(temp_db):
+    service = JobService(db_path=temp_db)
+    for sid in ("a", "b"):
+        service.db.save_job_posting(JobPosting(source=JobSource.GREENHOUSE, source_id=sid, company="C",
+                                               title="Engineer", location="Remote", description="d"))
+    for sid, action in [("a", "save"), ("b", "pass"), ("a", "apply")]:
+        service.db.record_user_selection(UserSelection(job_posting_id=f"greenhouse_{sid}", action=action))
+    latest = service.db.get_latest_actions(["greenhouse_a", "greenhouse_b", "greenhouse_c"])
+    assert latest == {"greenhouse_a": "apply", "greenhouse_b": "pass"}
+
+
+def test_saving_a_choice_for_an_unknown_job_raises_instead_of_failing_silently(temp_db):
+    import sqlite3
+
+    service = JobService(db_path=temp_db)
+    with pytest.raises(sqlite3.IntegrityError):
+        service.db.record_user_selection(UserSelection(job_posting_id="missing", action="save"))
+    service.close()
+
+
+def test_fit_is_computed_once_per_profile_and_job(temp_db, sample_profile):
+    service = JobService(db_path=temp_db)
+    job = JobPosting(source=JobSource.GREENHOUSE, source_id="1", company="A",
+                     title="Engineer", location="Remote", description="Python required")
+    cache = {}
+    with mock.patch.object(service.fit_scorer, "score_fit_detailed", wraps=service.fit_scorer.score_fit_detailed) as scorer:
+        first = service.fit_results_cached(sample_profile, [job], cache)
+        second = service.fit_results_cached(sample_profile, [job], cache)
+    assert scorer.call_count == 1
+    assert first == second
     service.close()

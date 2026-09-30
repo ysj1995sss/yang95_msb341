@@ -256,30 +256,44 @@ class JobDatabase:
             selection: UserSelection object with user action
 
         Returns:
-            True on success, False on error
+            True once saved. Database errors propagate so the caller can show them.
         """
         from resume_tailorer.job_search.models import (
             canonicalize_triage_action,
             triage_storage_value,
         )
 
-        try:
-            action = triage_storage_value(canonicalize_triage_action(selection.action))
-            cursor = self.connection.cursor()
-            cursor.execute("""
-                INSERT INTO user_selections
-                (job_posting_id, action, user_notes, timestamp)
-                VALUES (?, ?, ?, ?)
-            """, (
-                selection.job_posting_id,
-                action,
-                selection.user_notes,
-                selection.timestamp.isoformat() if isinstance(selection.timestamp, datetime) else selection.timestamp
-            ))
-            self.connection.commit()
-            return True
-        except Exception:
-            return False
+        action = triage_storage_value(canonicalize_triage_action(selection.action))
+        cursor = self.connection.cursor()
+        cursor.execute("""
+            INSERT INTO user_selections
+            (job_posting_id, action, user_notes, timestamp)
+            VALUES (?, ?, ?, ?)
+        """, (
+            selection.job_posting_id,
+            action,
+            selection.user_notes,
+            selection.timestamp.isoformat() if isinstance(selection.timestamp, datetime) else selection.timestamp
+        ))
+        self.connection.commit()
+        return True
+
+    def get_latest_actions(self, job_ids: List[str]) -> dict:
+        """Latest triage action per job, in one query per 500 ids."""
+        latest: dict = {}
+        ids = list(dict.fromkeys(job_ids))
+        cursor = self.connection.cursor()
+        for start in range(0, len(ids), 500):
+            chunk = ids[start:start + 500]
+            placeholders = ",".join("?" * len(chunk))
+            cursor.execute(
+                f"SELECT job_posting_id, action FROM user_selections "
+                f"WHERE job_posting_id IN ({placeholders}) ORDER BY timestamp, id",
+                chunk,
+            )
+            for row in cursor.fetchall():
+                latest[row["job_posting_id"]] = row["action"]
+        return latest
 
     def get_user_selections(self, job_id: str) -> List[UserSelection]:
         """Retrieve all user selections for a job.

@@ -152,6 +152,12 @@ def _render_search_run_summary(summary) -> None:
             f"(stored {summary.total_stored}). See per-source details below."
         )
 
+    if summary.save_failed:
+        st.error(
+            f"{summary.save_failed} job(s) could not be saved and are missing from the results: "
+            f"{summary.save_error}"
+        )
+
     lines = []
     for provider in summary.providers:
         err = f" — {provider.error}" if provider.error else ""
@@ -271,30 +277,18 @@ def _render_job_dashboard() -> None:
         st.info("No jobs found for the current search goals.")
         return
 
-    actions: dict = {}
-    for job in jobs:
-        job_id = f"{job.source.value}_{job.source_id}"
-        selections = service.db.get_user_selections(job_id)
-        actions[job_id] = selections[0].action if selections else None
+    actions = service.db.get_latest_actions([f"{job.source.value}_{job.source_id}" for job in jobs])
 
     filters = _render_dashboard_filters()
 
     career_profile = get_career_profile(st.session_state)
-    fit_scores: dict = {}
-    fit_results: dict = {}
-    quality_by_id: dict = {}
-
-    for job in jobs:
-        job_id = f"{job.source.value}_{job.source_id}"
-        quality_by_id[job_id] = evaluate_job_quality(job)
-        if career_profile is not None:
-            try:
-                fit_result = service.fit_scorer.score_fit_detailed(career_profile, job)
-                fit_results[job_id] = fit_result
-                fit_scores[job_id] = fit_result.overall_fit
-            except Exception:
-                fit_results[job_id] = None
-                fit_scores[job_id] = None
+    quality_by_id = {f"{job.source.value}_{job.source_id}": evaluate_job_quality(job) for job in jobs}
+    fit_results: dict = (
+        service.fit_results_cached(career_profile, jobs, st.session_state.setdefault("fit_cache", {}))
+        if career_profile is not None
+        else {}
+    )
+    fit_scores = {job_id: (r.overall_fit if r else None) for job_id, r in fit_results.items()}
 
     filtered_jobs = filter_and_sort_jobs(
         jobs,
@@ -349,8 +343,10 @@ def _render_job_dashboard() -> None:
             for col, (action, label) in zip(action_cols, triage_actions):
                 if col.button(label, key=f"{job_id}_{action}"):
                     selection = UserSelection(job_posting_id=job_id, action=action)
-                    if not service.db.record_user_selection(selection):
-                        st.error("Failed to record selection.")
+                    try:
+                        service.db.record_user_selection(selection)
+                    except Exception as exc:
+                        st.error(f"Could not save your choice: {exc}")
                         continue
 
                     if action == TriageAction.APPLY.value:

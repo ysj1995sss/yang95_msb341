@@ -60,10 +60,52 @@ def test_model_not_found_maps_to_plain_message():
 
 
 def test_timeout_maps_to_plain_message():
-    client = LLMClient(_settings())
+    client = LLMClient(_settings(), sleep=lambda s: None)
     with patch(
         "resume_tailorer.llm.client.litellm.completion",
         side_effect=Exception("Connection timeout"),
     ):
         with pytest.raises(RuntimeError, match="Could not reach the model provider"):
             client.complete("s", "u")
+
+
+def _ok(text="ok"):
+    response = MagicMock()
+    response.choices = [MagicMock()]
+    response.choices[0].message.content = text
+    return response
+
+
+def test_every_call_has_a_timeout_and_no_hidden_provider_retries():
+    client = LLMClient(_settings())
+    with patch("resume_tailorer.llm.client.litellm.completion", return_value=_ok()) as mock_completion:
+        client.complete("s", "u")
+    kwargs = mock_completion.call_args.kwargs
+    assert kwargs["timeout"] == LLMClient.TIMEOUT_SECONDS
+    assert kwargs["num_retries"] == 0
+
+
+def test_transient_failures_are_retried_a_bounded_number_of_times():
+    sleeps = []
+    client = LLMClient(_settings(), sleep=sleeps.append)
+    errors = [Exception("Request timed out"), Exception("429 rate limit exceeded")]
+    with patch("resume_tailorer.llm.client.litellm.completion", side_effect=[*errors, _ok("done")]) as mock_completion:
+        assert client.complete("s", "u") == "done"
+    assert mock_completion.call_count == 3
+    assert len(sleeps) == 2
+
+
+def test_gives_up_after_the_retry_limit():
+    client = LLMClient(_settings(), sleep=lambda s: None)
+    with patch("resume_tailorer.llm.client.litellm.completion", side_effect=Exception("503 service unavailable")) as mock_completion:
+        with pytest.raises(RuntimeError):
+            client.complete("s", "u")
+    assert mock_completion.call_count == 1 + LLMClient.MAX_RETRIES
+
+
+def test_auth_errors_are_not_retried():
+    client = LLMClient(_settings(), sleep=lambda s: None)
+    with patch("resume_tailorer.llm.client.litellm.completion", side_effect=Exception("401 Unauthorized")) as mock_completion:
+        with pytest.raises(RuntimeError, match="rejected the API key"):
+            client.complete("s", "u")
+    assert mock_completion.call_count == 1
