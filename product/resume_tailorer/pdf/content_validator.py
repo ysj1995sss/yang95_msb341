@@ -12,6 +12,7 @@ from resume_tailorer.artifacts.models import (
     FindingSeverity,
     ResumeChange,
     ValidationFinding,
+    ValidationStatus,
 )
 from resume_tailorer.models import CareerTruthProfile
 
@@ -106,6 +107,28 @@ def validate_pdf_content(
                                  missing=missing_metrics))
 
     for change in accepted_changes:
+        if (
+            change.validation_status is ValidationStatus.FAIL
+            and change.category is not ChangeCategory.REJECTED
+            and change.proposed_text
+            and _contains(text, change.proposed_text)
+        ):
+            if change.disposition is ChangeDisposition.ACCEPTED:
+                # The user explicitly vouched for it (changes are accepted one at a time).
+                findings.append(ValidationFinding(
+                    "USER_CONFIRMED_UNVERIFIED_CLAIM", FindingSeverity.WARNING, FindingCategory.TRUTH,
+                    "You accepted a claim that is not in your verified facts.",
+                    {"change_id": change.change_id},
+                ))
+            else:
+                findings.append(_failure(
+                    "UNSUPPORTED_CLAIM_PRESENT", FindingCategory.TRUTH,
+                    "The resume contains a claim not supported by your verified facts. "
+                    "Review it: reject it, or accept it only if it is true.",
+                    change_id=change.change_id,
+                ))
+
+    for change in accepted_changes:
         # category CATEGORY.REJECTED (distinct from a user setting
         # disposition=REJECTED on an otherwise-confident change) marks an
         # auto-rejected AMBIGUOUS pairing (see artifacts/changes.py's
@@ -122,6 +145,8 @@ def validate_pdf_content(
             continue
         if change.disposition in (ChangeDisposition.REJECTED, ChangeDisposition.RESTORED):
             expected = change.original_text
+        elif change.disposition is ChangeDisposition.MANUALLY_EDITED and change.manual_text:
+            expected = change.manual_text
         else:
             expected = change.proposed_text
         if expected and not _contains(text, expected):

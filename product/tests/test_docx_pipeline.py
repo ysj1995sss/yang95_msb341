@@ -398,3 +398,24 @@ def test_finalize_docx_edits_never_calls_the_tailorer(
     spliced = Document(io.BytesIO(result.docx_bytes))
     assert any(p.text == "Reverted to original" for p in spliced.paragraphs)
     assert result.bullets_evaluated == 0  # caller-supplied, not re-derived
+
+
+def test_blank_generated_pdf_fails_validation(
+    tmp_path, monkeypatch, sample_profile, sample_job_analysis, sample_gap_report
+):
+    """A converted PDF with no extractable text must never be reported as PASS."""
+    from reportlab.pdfgen import canvas
+
+    blank_pdf = tmp_path / "blank.pdf"
+    c = canvas.Canvas(str(blank_pdf), pagesize=(200, 200))
+    c.showPage()
+    c.save()
+    monkeypatch.setattr(pipeline_module, "convert_docx_to_pdf", lambda src, dst: shutil.copy(blank_pdf, dst))
+
+    result = run_docx_tailoring_pipeline(
+        _sample_docx_bytes(tmp_path), sample_profile, sample_job_analysis, sample_gap_report,
+        bullet_tailorer=_StubBulletTailorer(),
+    )
+
+    assert result.validation.status is ValidationStatus.FAIL
+    assert "TEXT_NOT_EXTRACTABLE" in {f.code for f in result.validation.findings}

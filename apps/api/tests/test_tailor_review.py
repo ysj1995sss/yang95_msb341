@@ -219,7 +219,19 @@ def test_download_artifact_is_owned(client):
     headers = auth_headers(client)
     client.put("/profile", json=_PROFILE, headers=headers)
     data = _preview(client, headers).json()
-    artifact_id = data["artifacts"][0]["artifact_id"]
+    # The preview contains an unreviewed flagged claim, so it is not downloadable.
+    blocked = client.get(f"/tailor/artifacts/{data['artifacts'][0]['artifact_id']}", headers=headers)
+    assert blocked.status_code == 409
+
+    aws_change = next(c for c in data["resume_changes"] if "AWS infrastructure" in c["proposed_text"])
+    client.patch(
+        f"/tailor/runs/{data['run_id']}/changes",
+        headers=headers,
+        json={"changes": [{"change_id": aws_change["change_id"], "disposition": "ACCEPTED"}]},
+    )
+    regenerated = client.post(f"/tailor/runs/{data['run_id']}/regenerate", headers=headers).json()
+    assert regenerated["validation"]["status"] == "WARNING"
+    artifact_id = regenerated["artifacts"][0]["artifact_id"]
 
     own = client.get(f"/tailor/artifacts/{artifact_id}", headers=headers)
     assert own.status_code == 200

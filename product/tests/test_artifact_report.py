@@ -84,7 +84,9 @@ def test_freeform_change_is_linked_to_requirement_and_evidence():
     assert len(changes) == 1
     assert changes[0].job_requirement == "Cross-functional leadership"
     assert changes[0].evidence_text == "Led a 10-person team across launches"
-    assert changes[0].validation_status is ValidationStatus.PASS
+    # "cross-functional" is not in the verified facts, so the change needs review.
+    assert changes[0].validation_status is ValidationStatus.FAIL
+    assert "cross-functional" in changes[0].reason
 
 
 def test_ambiguous_freeform_pairing_requires_review_instead_of_being_accepted():

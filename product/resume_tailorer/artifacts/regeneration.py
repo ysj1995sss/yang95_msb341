@@ -42,21 +42,68 @@ def final_text_for_change(change: ResumeChange) -> str:
     return change.proposed_text
 
 
-def apply_dispositions_to_text(baseline_text: str, changes: Sequence[ResumeChange]) -> str:
+def apply_dispositions_to_text(
+    baseline_text: str,
+    changes: Sequence[ResumeChange],
+    profile: CareerTruthProfile | None = None,
+) -> str:
     """Rebuild the full resume text from the ORIGINAL baseline (never from
     a previously-regenerated text) by substituting each change's current
-    disposition outcome for its AI-proposed text. Rebuilding from the
-    baseline every time (rather than mutating progressively) keeps
-    regeneration idempotent regardless of how many times a user flips a
-    disposition back and forth."""
+    disposition outcome for what the baseline contains. Rebuilding from the
+    baseline every time keeps regeneration idempotent regardless of how many
+    times a user flips a disposition back and forth."""
     text = baseline_text
     for change in changes:
-        if not change.proposed_text or change.proposed_text == change.original_text:
-            continue
         final_text = final_text_for_change(change)
-        if final_text != change.proposed_text and change.proposed_text in text:
-            text = text.replace(change.proposed_text, final_text)
+        in_baseline = change.proposed_text
+        if not in_baseline:
+            # The AI removed this item; restoring or manually editing it puts it back.
+            if final_text:
+                text = _reinsert_removed(text, change.original_text, final_text, profile)
+            continue
+        if final_text != in_baseline and in_baseline in text:
+            text = text.replace(in_baseline, final_text, 1)
     return text
+
+
+def _is_bullet(line: str) -> bool:
+    return line.lstrip().startswith(("-", "*", "•"))
+
+
+def _reinsert_removed(
+    text: str, original: str, final_text: str, profile: CareerTruthProfile | None
+) -> str:
+    """Put a removed item back where it belongs: under its own job's bullets,
+    or at the end of the text when its job can't be located."""
+    if final_text in text:
+        return text
+    lines = text.splitlines()
+    employer = None
+    if profile is not None:
+        employer = next(
+            (
+                job.employer
+                for job in profile.work_experience
+                if original in (*job.responsibilities, *job.accomplishments)
+            ),
+            None,
+        )
+    start = next(
+        (i for i, line in enumerate(lines) if employer and employer.lower() in line.lower()),
+        None,
+    )
+    if start is None:
+        return text.rstrip("\n") + f"\n- {final_text}\n"
+    insert_at = start + 1
+    seen_bullet = False
+    for i in range(start + 1, len(lines)):
+        if _is_bullet(lines[i]):
+            seen_bullet = True
+            insert_at = i + 1
+        elif seen_bullet and lines[i].strip():
+            break
+    lines.insert(insert_at, f"- {final_text}")
+    return "\n".join(lines) + ("\n" if text.endswith("\n") else "")
 
 
 def regenerate_docx_artifact(
@@ -114,7 +161,7 @@ def regenerate_freeform_artifact(
 ) -> tuple[bytes, str]:
     """Rebuild the freeform/PDF-only path's text from reviewed dispositions
     and regenerate a fresh PDF from it. Returns (pdf_bytes, final_text)."""
-    final_text = apply_dispositions_to_text(baseline_tailored_text, changes)
+    final_text = apply_dispositions_to_text(baseline_tailored_text, changes, profile)
     with tempfile.TemporaryDirectory() as temp_dir:
         output_path = os.path.join(temp_dir, "regenerated.pdf")
         PDFGenerator().generate(

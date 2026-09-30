@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 from app.auth.deps import get_current_user
 from app.db import get_db
 from app.fit.scoring import score_candidate_fit
-from app.models import Job, Profile, ResumeFile, TailoredArtifact, User
+from app.models import Job, Profile, ResumeFile, ResumeFileVersion, TailoredArtifact, User
 from app.schemas.artifact import (
     ArtifactMetadataOut,
     ArtifactValidationOut,
@@ -74,6 +74,30 @@ def _extract_style_hints(resume_file: ResumeFile | None) -> dict | None:
     finally:
         if os.path.exists(tmp_path):
             os.remove(tmp_path)
+
+
+def _b64_if_downloadable(data: bytes | None, validation) -> str | None:
+    """The one download rule: a FAIL artifact is never handed out, in any response."""
+    if not data or str(getattr(validation, "status", "")) == "FAIL":
+        return None
+    return base64.b64encode(data).decode("ascii")
+
+
+def _run_resume_file(db: Session, run) -> "ResumeFile | ResumeFileVersion | None":
+    """The exact resume upload a run was created from, even after re-uploads."""
+    if run.original_resume_version is None:
+        return None
+    current = db.get(ResumeFile, run.user_id)
+    if current is not None and current.version == run.original_resume_version:
+        return current
+    return (
+        db.query(ResumeFileVersion)
+        .filter(
+            ResumeFileVersion.user_id == run.user_id,
+            ResumeFileVersion.version == run.original_resume_version,
+        )
+        .one_or_none()
+    )
 
 
 def get_optimizer() -> ResumeTailoringOptimizer:
@@ -321,7 +345,7 @@ def tailor_preview(
     pdf_bytes_for_artifact = None
 
     if use_docx_pipeline:
-        docx_base64 = base64.b64encode(docx_result.docx_bytes).decode("ascii")
+        docx_base64 = _b64_if_downloadable(docx_result.docx_bytes, artifact_validation)
         docx_conversion_available = docx_result.conversion_available
         original_page_count = docx_result.original_page_count
         tailored_page_count = docx_result.tailored_page_count
@@ -335,12 +359,12 @@ def tailor_preview(
         tailoring_seems_shallow = docx_result.tailoring_seems_shallow
         docx_bytes_for_artifact = docx_result.docx_bytes
         if body.generate_pdf and docx_result.pdf_bytes:
-            pdf_base64 = base64.b64encode(docx_result.pdf_bytes).decode("ascii")
+            pdf_base64 = _b64_if_downloadable(docx_result.pdf_bytes, artifact_validation)
             pdf_bytes_for_artifact = docx_result.pdf_bytes
     else:
         pdf_bytes_for_artifact = pdf_artifact_bytes
         if body.generate_pdf:
-            pdf_base64 = base64.b64encode(pdf_artifact_bytes).decode("ascii")
+            pdf_base64 = _b64_if_downloadable(pdf_artifact_bytes, artifact_validation)
 
     # Persist the run + generated artifacts (Steps 16-20, spec 002).
     store = TailoringRunStore(db)
@@ -577,11 +601,14 @@ def regenerate(run_id: str, user: User = Depends(get_current_user), db: Session 
     role = job_dict.get("title", "") or job_dict.get("role", "") or ""
 
     is_docx = run.source_kind == "DOCX"
-    resume_file = db.get(ResumeFile, user.id)
+    resume_file = _run_resume_file(db, run)
 
     if is_docx:
         if resume_file is None:
-            raise HTTPException(status_code=409, detail="Original DOCX resume is no longer available.")
+            raise HTTPException(
+                status_code=409,
+                detail="The exact resume this run was created from is no longer available.",
+            )
         docx_result = regenerate_docx_artifact(
             original_docx_bytes=resume_file.data, changes=changes, profile=profile,
             gap_report=gap_report, convert_to_pdf=bool(request_options.get("generate_pdf")),
@@ -611,6 +638,9 @@ def regenerate(run_id: str, user: User = Depends(get_current_user), db: Session 
         fidelity_mode = FidelityMode.RECONSTRUCTED
 
     unsupported_claims = find_unsupported_claims(gap_report, tailored_resume)
+    tailored_alignment, _matched, missing_qualifications = ResumeTailoringOptimizer._score_resume(
+        tailored_resume, job_analysis, profile
+    )
     saved_artifacts = _persist_artifacts(
         store, run.id, docx_bytes, pdf_bytes, str(validation.status), company, role,
     )
@@ -618,7 +648,7 @@ def regenerate(run_id: str, user: User = Depends(get_current_user), db: Session 
         candidate_fit=fit["score"] or None,
         fit_breakdown=fit.get("breakdown", {}),
         original_alignment=benchmark.original_match_score,
-        tailored_alignment=benchmark.original_match_score,
+        tailored_alignment=tailored_alignment,
         gap_report=gap_report,
         validation=validation,
         artifacts=(),
@@ -636,10 +666,10 @@ def regenerate(run_id: str, user: User = Depends(get_current_user), db: Session 
         candidate_fit_score=fit["score"] or None,
         original_match_score=benchmark.original_match_score,
         tailored_resume=tailored_resume,
-        final_score=benchmark.original_match_score,
+        final_score=tailored_alignment,
         iterations=1,
         ceiling_reached=False,
-        missing_qualifications=[],
+        missing_qualifications=missing_qualifications,
         gap_summary=gap_report.summary,
         gaps=[
             GapItemOut(requirement=i.requirement, category=i.category.name, reason=i.reason, evidence=i.candidate_evidence)
@@ -651,8 +681,8 @@ def regenerate(run_id: str, user: User = Depends(get_current_user), db: Session 
         ],
         fabrication_risk_issues=diff_report.issues,
         unsupported_claims_added=unsupported_claims,
-        pdf_base64=base64.b64encode(pdf_bytes).decode("ascii") if pdf_bytes else None,
-        docx_base64=base64.b64encode(docx_bytes).decode("ascii") if docx_bytes else None,
+        pdf_base64=_b64_if_downloadable(pdf_bytes, validation),
+        docx_base64=_b64_if_downloadable(docx_bytes, validation),
         run_id=run.id,
         report=_report_out(report),
         validation=_validation_out(validation),

@@ -187,11 +187,14 @@ def _regenerate_from_current_dispositions() -> None:
         docx_bytes = None
 
     unsupported_claims = find_unsupported_claims(gap_report, tailored_text)
+    tailored_alignment, _matched, _missing = ResumeTailoringOptimizer._score_resume(
+        tailored_text, state["job_analysis"], profile
+    )
     report = build_final_report(
         candidate_fit=None,
         fit_breakdown={},
         original_alignment=state["original_alignment"],
-        tailored_alignment=state["original_alignment"],
+        tailored_alignment=tailored_alignment,
         gap_report=gap_report,
         validation=validation,
         artifacts=(),
@@ -570,6 +573,7 @@ def main():
         "style_hints": style_hints,
         "profile": profile,
         "gap_report": gap_report,
+        "job_analysis": job_analysis,
         "original_alignment": benchmark.original_match_score,
         "fidelity_mode": fidelity_mode,
         "changes": changes,

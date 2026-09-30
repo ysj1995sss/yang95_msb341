@@ -49,7 +49,8 @@ def build_freeform_changes(
     gap_report: GapReport,
 ) -> list[ResumeChange]:
     """Build deterministic, reviewable changes for the freeform/PDF path."""
-    diff = DiffGenerator().generate_diff(profile, tailored_text)
+    diff_generator = DiffGenerator()
+    diff = diff_generator.generate_diff(profile, tailored_text)
     changes: list[ResumeChange] = []
     for index, change in enumerate(diff.changes):
         similarity = change.similarity
@@ -63,6 +64,16 @@ def build_freeform_changes(
         category = _category(change)
         status = ValidationStatus.PASS
         disposition = ChangeDisposition.PENDING
+        unverified = (
+            diff_generator.check_bullet_pair_fabrication_risk(change.original, change.tailored, profile)
+            if change.tailored
+            else []
+        )
+        if unverified:
+            # Left PENDING so the user decides; the content gate blocks the
+            # artifact while this text is still in it.
+            status = ValidationStatus.FAIL
+            reason = " ".join(unverified)
         if ambiguous:
             category = ChangeCategory.REJECTED
             status = ValidationStatus.FAIL

@@ -22,7 +22,7 @@ from resume_tailorer.tailorer.docx_bullet_tailorer import DocxBulletTailorer, Bu
 from resume_tailorer.tailorer.resume_tailorer import _job_header_lines
 from resume_tailorer.docx_export.splicer import splice_bullets_into_docx, save_docx
 from resume_tailorer.docx_export.converter import convert_docx_to_pdf, DocxConversionUnavailable
-from resume_tailorer.pdf.validator import PDFValidator
+from resume_tailorer.pdf.validator import PDFValidator, findings_from_pdf_issues
 from resume_tailorer.utils.scoring import qualification_match_ratio
 from resume_tailorer.artifacts.models import (
     ArtifactValidation,
@@ -288,6 +288,7 @@ def finalize_docx_edits(
                 tailored_validation = PDFValidator().validate(tailored_pdf_path, target_length="preserve")
                 original_validation = PDFValidator().validate(original_pdf_path, target_length="preserve")
                 pdf_validation_issues = tailored_validation.issues
+                structured_findings.extend(findings_from_pdf_issues(pdf_validation_issues))
                 original_page_count = original_validation.page_count
                 tailored_page_count = tailored_validation.page_count
                 with open(tailored_pdf_path, "rb") as f:
@@ -348,7 +349,7 @@ def finalize_docx_edits(
             structured_findings,
             original_page_count=original_page_count,
             tailored_page_count=tailored_page_count,
-            checks_run=("docx_layout", "inline_formatting", "page_count"),
+            checks_run=("docx_layout", "inline_formatting", "page_count", "pdf_technical"),
         ),
     )
 

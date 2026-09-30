@@ -187,18 +187,7 @@ class PDFValidator:
     ) -> ArtifactValidation:
         """Run the structured Step 18 gate while preserving legacy validate()."""
         legacy = self.validate(pdf_path, target_length="preserve")
-        findings: list[ValidationFinding] = []
-        for issue in legacy.issues:
-            lowered = issue.lower()
-            if "file not found" in lowered:
-                code, category = "FILE_MISSING", FindingCategory.STRUCTURE
-            elif "could not open" in lowered:
-                code, category = "PDF_CORRUPT", FindingCategory.STRUCTURE
-            elif "no extractable text" in lowered:
-                code, category = "TEXT_NOT_EXTRACTABLE", FindingCategory.ATS
-            else:
-                code, category = "PDF_TECHNICAL_VALIDATION_FAILED", FindingCategory.ATS
-            findings.append(ValidationFinding(code, FindingSeverity.FAIL, category, issue))
+        findings: list[ValidationFinding] = findings_from_pdf_issues(legacy.issues)
 
         if (
             expected_page_count is not None
@@ -252,3 +241,20 @@ class PDFValidator:
             extracted_text=legacy.extracted_text,
             checks_run=("pdf_open", "text_extraction", "content", "visual"),
         )
+
+
+def findings_from_pdf_issues(issues: list[str]) -> list[ValidationFinding]:
+    """Blocking findings for every technical PDF problem validate() reported."""
+    findings: list[ValidationFinding] = []
+    for issue in issues:
+        lowered = issue.lower()
+        if "file not found" in lowered:
+            code, category = "FILE_MISSING", FindingCategory.STRUCTURE
+        elif "could not open" in lowered:
+            code, category = "PDF_CORRUPT", FindingCategory.STRUCTURE
+        elif "no extractable text" in lowered:
+            code, category = "TEXT_NOT_EXTRACTABLE", FindingCategory.ATS
+        else:
+            code, category = "PDF_TECHNICAL_VALIDATION_FAILED", FindingCategory.ATS
+        findings.append(ValidationFinding(code, FindingSeverity.FAIL, category, issue))
+    return findings

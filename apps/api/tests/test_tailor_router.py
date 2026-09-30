@@ -33,13 +33,21 @@ class _FakeTailorer:
         return "Initial tailored resume draft."
 
 
+_COMPLETE_RESUME = (
+    "Jane Doe\njane@example.com\n\nWORK EXPERIENCE\nBackend Engineer\nAcme Corp | 2020-2023\n"
+    "- Built REST APIs with Python and FastAPI\n- Deployed services on AWS\n"
+)
+
+
 class _FakeOptimizer:
+    tailored_resume = "- Built REST APIs with Python and FastAPI\n- Deployed services on AWS"
+
     def __init__(self):
         self.tailorer = _FakeTailorer()
 
     def optimize(self, profile, job_analysis, initial_tailored, gap_report, conservative=False):
         return OptimizationResult(
-            tailored_resume="- Built REST APIs with Python and FastAPI\n- Deployed services on AWS",
+            tailored_resume=self.tailored_resume,
             final_score=0.9,
             iterations=2,
             ceiling_reached=False,
@@ -130,6 +138,32 @@ def test_tailor_preview_can_generate_a_real_pdf(client):
 
     assert r.status_code == 200
     data = r.json()
+    # That fake resume lacks the name, email, employer and dates, so it fails
+    # validation and must not be handed out through any response field.
+    assert data["validation"]["status"] == "FAIL"
+    assert data["pdf_base64"] is None
+
+
+class _FakeCompleteOptimizer(_FakeOptimizer):
+    tailored_resume = _COMPLETE_RESUME
+
+
+def test_tailor_preview_returns_pdf_when_validation_passes(client):
+    headers = auth_headers(client)
+    client.put("/profile", json=_PROFILE, headers=headers)
+
+    app.dependency_overrides[get_optimizer] = lambda: _FakeCompleteOptimizer()
+    try:
+        r = client.post(
+            "/tailor/preview",
+            json={"job_description": "Required: Python, AWS.", "generate_pdf": True},
+            headers=headers,
+        )
+    finally:
+        app.dependency_overrides.pop(get_optimizer, None)
+
+    data = r.json()
+    assert data["validation"]["status"] != "FAIL", data["validation"]["findings"]
     assert data["pdf_base64"], "expected a real generated PDF"
 
 
@@ -307,7 +341,7 @@ def test_tailor_preview_uses_stored_original_for_style_hints_without_crashing(cl
     # test profile back so the tailoring pipeline has real content to work with.
     client.put("/profile", json=_PROFILE, headers=headers)
 
-    app.dependency_overrides[get_optimizer] = lambda: _FakeOptimizer()
+    app.dependency_overrides[get_optimizer] = lambda: _FakeCompleteOptimizer()
     try:
         r = client.post(
             "/tailor/preview",

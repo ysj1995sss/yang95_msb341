@@ -162,8 +162,9 @@ class ResumeTailoringOptimizer:
             missing_qualifications=missing,
         )
 
+    @staticmethod
     def _score_resume(
-        self, resume_text: str, job_analysis: JobAnalysis, profile: CareerTruthProfile | None = None
+        resume_text: str, job_analysis: JobAnalysis, profile: CareerTruthProfile | None = None
     ) -> tuple[float, list[str], list[str]]:
         """
         Score the resume against job requirements.
