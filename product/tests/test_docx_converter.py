@@ -1,43 +1,53 @@
 import sys
+import threading
 import types
 
-import pytest
-
-from resume_tailorer.docx_export.converter import convert_docx_to_pdf, DocxConversionUnavailable
+from resume_tailorer.docx_export import converter
 
 
-def test_raises_unavailable_when_docx2pdf_not_installed(monkeypatch):
-    monkeypatch.setitem(sys.modules, "docx2pdf", None)
-    with pytest.raises(DocxConversionUnavailable):
-        convert_docx_to_pdf("in.docx", "out.pdf")
+def _fake_modules(monkeypatch, convert):
+    events = []
+    pythoncom = types.SimpleNamespace(
+        CoInitialize=lambda: events.append("init"), CoUninitialize=lambda: events.append("uninit")
+    )
+    docx2pdf = types.SimpleNamespace(convert=lambda src, dst: (events.append("convert"), convert(src, dst)))
+    monkeypatch.setitem(sys.modules, "pythoncom", pythoncom)
+    monkeypatch.setitem(sys.modules, "docx2pdf", docx2pdf)
+    return events
 
 
-def test_raises_unavailable_when_convert_fails(monkeypatch):
-    fake_module = types.SimpleNamespace(convert=lambda *a, **k: (_ for _ in ()).throw(RuntimeError("Word not found")))
-    monkeypatch.setitem(sys.modules, "docx2pdf", fake_module)
-    monkeypatch.setattr("resume_tailorer.docx_export.converter._RETRY_DELAY_SECONDS", 0)
-    with pytest.raises(DocxConversionUnavailable):
-        convert_docx_to_pdf("in.docx", "out.pdf")
+def test_com_is_initialized_around_each_conversion_and_released(monkeypatch):
+    events = _fake_modules(monkeypatch, lambda src, dst: None)
+    converter.convert_docx_to_pdf("a.docx", "a.pdf")
+    assert events == ["init", "convert", "uninit"]
 
 
-def test_succeeds_when_convert_succeeds(monkeypatch):
-    calls = []
-    fake_module = types.SimpleNamespace(convert=lambda src, dst: calls.append((src, dst)))
-    monkeypatch.setitem(sys.modules, "docx2pdf", fake_module)
-    convert_docx_to_pdf("in.docx", "out.pdf")
-    assert calls == [("in.docx", "out.pdf")]
+def test_com_is_released_even_when_word_fails(monkeypatch):
+    monkeypatch.setattr(converter, "_RETRY_DELAY_SECONDS", 0)
+
+    def boom(src, dst):
+        raise RuntimeError("Word crashed")
+
+    events = _fake_modules(monkeypatch, boom)
+    try:
+        converter.convert_docx_to_pdf("a.docx", "a.pdf")
+        raised = False
+    except converter.DocxConversionUnavailable:
+        raised = True
+    assert raised and events[0] == "init" and events[-1] == "uninit"
 
 
-def test_retries_once_after_transient_failure(monkeypatch):
-    attempts = {"count": 0}
+def test_conversion_from_a_worker_thread_initializes_that_thread(monkeypatch):
+    events = _fake_modules(monkeypatch, lambda src, dst: None)
+    worker = threading.Thread(target=converter.convert_docx_to_pdf, args=("a.docx", "a.pdf"))
+    worker.start()
+    worker.join()
+    assert events == ["init", "convert", "uninit"]
 
-    def flaky_convert(src, dst):
-        attempts["count"] += 1
-        if attempts["count"] == 1:
-            raise AttributeError("Open.SaveAs")
 
-    fake_module = types.SimpleNamespace(convert=flaky_convert)
-    monkeypatch.setitem(sys.modules, "docx2pdf", fake_module)
-    monkeypatch.setattr("resume_tailorer.docx_export.converter._RETRY_DELAY_SECONDS", 0)
-    convert_docx_to_pdf("in.docx", "out.pdf")
-    assert attempts["count"] == 2
+def test_machines_without_pywin32_still_convert(monkeypatch):
+    events = []
+    monkeypatch.setitem(sys.modules, "pythoncom", None)  # import raises ImportError
+    monkeypatch.setitem(sys.modules, "docx2pdf", types.SimpleNamespace(convert=lambda s, d: events.append("convert")))
+    converter.convert_docx_to_pdf("a.docx", "a.pdf")
+    assert events == ["convert"]

@@ -41,14 +41,28 @@ def convert_docx_to_pdf(docx_path: str, pdf_path: str) -> None:
             "docx2pdf is not installed; DOCX-to-PDF conversion is unavailable."
         ) from exc
 
-    last_error: Exception | None = None
-    for attempt in range(_MAX_ATTEMPTS):
-        if attempt > 0:
-            time.sleep(_RETRY_DELAY_SECONDS)
-        try:
-            convert(docx_path, pdf_path)
-            return
-        except Exception as exc:
-            last_error = exc
+    # Word automation (COM) must be initialized on the thread that uses it.
+    # Found live (2026-09-30): the first build worked, but a rebuild triggered
+    # from a Streamlit callback ran on another thread and failed with
+    # "CoInitialize has not been called". Harmless when already initialized.
+    try:
+        import pythoncom
+    except ImportError:
+        pythoncom = None
+    if pythoncom is not None:
+        pythoncom.CoInitialize()
+    try:
+        last_error: Exception | None = None
+        for attempt in range(_MAX_ATTEMPTS):
+            if attempt > 0:
+                time.sleep(_RETRY_DELAY_SECONDS)
+            try:
+                convert(docx_path, pdf_path)
+                return
+            except Exception as exc:
+                last_error = exc
+    finally:
+        if pythoncom is not None:
+            pythoncom.CoUninitialize()
 
     raise DocxConversionUnavailable(f"DOCX-to-PDF conversion failed: {last_error}") from last_error
