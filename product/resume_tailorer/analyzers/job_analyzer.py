@@ -3,6 +3,7 @@ from typing import Optional
 import re
 
 from resume_tailorer.analyzers.competency_map import normalize_concept
+from resume_tailorer.analyzers.jd_sections import PREFERRED, REQUIRED, RESPONSIBILITIES, split_sections
 from resume_tailorer.utils.stemming import stem
 
 @dataclass
@@ -143,19 +144,29 @@ class JobAnalyzer:
         # blank line instead of using bullet markers -- also found live on
         # the same real posting, which had five separate "What you'll
         # need" paragraphs and lost four of them to this exact bug.
-        section_end = r"(?:\n\n(?=[A-Z][A-Za-z' ]*:)|\Z)"
-        required_qual = self._extract_section(
-            job_description,
-            r"(?:must|required|requirements?|what you'll need|what we're looking for|qualifications)[:\n]+(.*?)"
-            + section_end,
-            re.IGNORECASE | re.DOTALL,
-        )
-        preferred_qual = self._extract_section(
-            job_description,
-            r"(?:preferred|nice.*?to.*?have|what you'll bring|what you bring)[:\n]+(.*?)" + section_end,
-            re.IGNORECASE | re.DOTALL,
-        )
-        responsibilities = self._extract_responsibilities(job_description)
+        #
+        # Postings whose own heading lines can be classified are split by
+        # those headings (jd_sections); the patterns below remain the
+        # fallback for text with no recognizable headings.
+        sections = split_sections(job_description)
+        if sections is not None:
+            required_qual = sections[REQUIRED]
+            preferred_qual = sections[PREFERRED]
+            responsibilities = sections[RESPONSIBILITIES]
+        else:
+            section_end = r"(?:\n\n(?=[A-Z][A-Za-z' ]*:)|\Z)"
+            required_qual = self._extract_section(
+                job_description,
+                r"(?:must|required|requirements?|what you'll need|what we're looking for|qualifications)[:\n]+(.*?)"
+                + section_end,
+                re.IGNORECASE | re.DOTALL,
+            )
+            preferred_qual = self._extract_section(
+                job_description,
+                r"(?:preferred|nice.*?to.*?have|what you'll bring|what you bring)[:\n]+(.*?)" + section_end,
+                re.IGNORECASE | re.DOTALL,
+            )
+            responsibilities = self._extract_responsibilities(job_description)
 
         # Extract skills and tools
         skills = self._extract_skills(job_description, required_qual)

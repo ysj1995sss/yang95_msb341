@@ -50,11 +50,25 @@ def usd_yearly_range(salaries: List[Tuple[Optional[str], Optional[str], Optional
     return (min(lows) if lows else None, max(highs) if highs else None)
 
 
+_BLOCK_TAGS = re.compile(r"</?\s*(?:p|div|ul|ol|h[1-6]|tr|section|article|header|footer)\b[^>]*>", re.I)
+
+
 def strip_html(raw_html: str) -> str:
-    """Unescape first: some boards double-encode markup ("&lt;div&gt;")."""
+    """Plain text that keeps the posting's structure: one line per paragraph,
+    heading or list item ("- " prefix). The job analyzer finds requirements by
+    their lines, so collapsing everything into one line hides them.
+
+    Unescaped before and after tag removal: some boards double-encode markup
+    ("&lt;li&gt;") and entities ("&amp;amp;").
+    """
     text = html.unescape(raw_html or "")
-    text = re.sub(r"<[^>]+>", " ", text)
-    return re.sub(r"\s+", " ", text).strip()
+    text = re.sub(r"<\s*li\b[^>]*>", "\n- ", text, flags=re.I)
+    text = re.sub(r"<\s*br\s*/?\s*>", "\n", text, flags=re.I)
+    text = _BLOCK_TAGS.sub("\n", text)
+    text = html.unescape(re.sub(r"<[^>]+>", " ", text))
+    lines = [re.sub(r"[ \t ]+", " ", line).strip() for line in text.splitlines()]
+    lines = [line for line in lines if line and line != "-"]
+    return "\n".join(lines)
 
 
 def parse_iso(value: Optional[str]) -> Optional[datetime]:

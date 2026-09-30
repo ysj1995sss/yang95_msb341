@@ -137,3 +137,29 @@ def test_failed_board_responses_are_not_cached(monkeypatch):
     scraper._fetch_board("spotify")
     scraper._fetch_board("spotify")
     assert len(calls) == 2
+
+
+def test_html_descriptions_keep_their_list_structure():
+    """Found live (2026-09-30): collapsing all whitespace turned every Greenhouse
+    description into one line, so the job analyzer found almost no requirements
+    and tailoring reported a false 100% match."""
+    from resume_tailorer.analyzers import JobAnalyzer
+    from resume_tailorer.job_search.scrapers.board_scraper import strip_html
+
+    double_encoded = (
+        "&lt;p&gt;&lt;strong&gt;What you&amp;rsquo;ll need:&lt;/strong&gt;&lt;/p&gt;"
+        "&lt;ul&gt;&lt;li&gt;4+ years of product marketing experience&lt;/li&gt;"
+        "&lt;li&gt;Experience with SQL and A/B testing&lt;/li&gt;"
+        "&lt;li&gt;Strong stakeholder management across Checking &amp;amp; Savings&lt;/li&gt;&lt;/ul&gt;"
+        "&lt;p&gt;Nice to have:&lt;br&gt;Fintech experience&lt;/p&gt;"
+    )
+    text = strip_html(double_encoded)
+    assert text.splitlines() == [
+        "What you\u2019ll need:",
+        "- 4+ years of product marketing experience",
+        "- Experience with SQL and A/B testing",
+        "- Strong stakeholder management across Checking & Savings",
+        "Nice to have:",
+        "Fintech experience",
+    ]
+    assert len(JobAnalyzer().analyze(text).required_qualifications) >= 3

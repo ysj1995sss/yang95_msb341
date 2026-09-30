@@ -111,7 +111,7 @@ def build_search_goals_from_form(form_data: Dict[str, Any]) -> SearchGoals:
     min_salary = form_data.get("min_salary") or 0
     max_salary = form_data.get("max_salary") or 0
 
-    if min_salary > max_salary:
+    if max_salary and min_salary > max_salary:  # 0 = no maximum
         raise ValueError(
             f"min_salary ({min_salary}) must be <= max_salary ({max_salary})"
         )

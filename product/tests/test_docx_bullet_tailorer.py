@@ -485,3 +485,15 @@ class TestPriorityFocus:
         tailorer.tailor_bullets(sample_bullets, sample_profile, sample_job_analysis, sample_gap_report)
         user_prompt = tailorer.llm.complete.call_args_list[0].args[1]
         assert "RESUME-WIDE OPTIMIZATION PASS" not in user_prompt
+
+
+def test_edits_are_found_inside_a_reply_that_thinks_aloud_first():
+    from resume_tailorer.parsers.docx_structure import Bullet
+    from resume_tailorer.tailorer.docx_bullet_tailorer import _last_edit_array
+
+    reply = (
+        "Let me look at paragraph [5] first. Options: [keep, rewrite].\n"
+        'Final answer:\n```json\n[{"paragraph_index": 5, "change": false}]\n```\nDone.'
+    )
+    assert _last_edit_array(reply) == [{"paragraph_index": 5, "change": False}]
+    assert _last_edit_array("no json here [1, 2, 3]") is None

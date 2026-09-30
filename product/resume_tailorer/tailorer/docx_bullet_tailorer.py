@@ -30,6 +30,23 @@ _CODE_FENCE_RE = re.compile(r"^```(?:json)?\s*|\s*```$", re.MULTILINE)
 _WHITESPACE_RE = re.compile(r"[\r\n]+")
 
 
+def _last_edit_array(text: str):
+    """The last JSON array of edit objects inside a reply that also contains prose
+    (reasoning models often think aloud before answering), or None."""
+    decoder = json.JSONDecoder()
+    found = None
+    for match in re.finditer(r"\[", text):
+        try:
+            value, _end = decoder.raw_decode(text[match.start():])
+        except ValueError:
+            continue
+        if isinstance(value, list) and value and all(
+            isinstance(item, dict) and "paragraph_index" in item for item in value
+        ):
+            found = value
+    return found
+
+
 def _split_competency_line(text: str) -> tuple[str, list[str]]:
     """"Core Competencies: A | B | C" -> ("Core Competencies", ["A", "B", "C"])."""
     label, _, rest = text.partition(":")
@@ -361,7 +378,7 @@ Return the JSON array now:"""
         try:
             parsed = json.loads(cleaned)
         except (json.JSONDecodeError, ValueError):
-            parsed = None
+            parsed = _last_edit_array(cleaned)
 
         if not isinstance(parsed, list):
             return BulletTailoringResult(

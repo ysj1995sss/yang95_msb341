@@ -350,3 +350,30 @@ class TestEducationAndSummaryExtraction:
         profile = parser._parse_text(self.REAL_STYLE_RESUME)
         assert profile.summary
         assert "Data-savvy analyst" in profile.summary
+
+
+class TestCompanyLineDates:
+    """Found live (2026-09-30): a tab before the dates and no spaces around the
+    dash lost or truncated three of four real job dates."""
+
+    TEXT = (
+        "Alex Kim\nalex@example.com\n\nPROFESSIONAL EXPERIENCE\n"
+        "Marketing Strategy Intern\nAcme Health | Boston, MA\tMay 2026\u2013Aug 2026\n"
+        "- Built a growth strategy\n"
+        "Marketing Manager\nGlobex Co | Zhengzhou, China\tAug 2024-Jul 2025\n"
+        "- Grew sales 75%\n"
+        "Analyst\nInitech | Remote \u2014 03/2021 to Present\n"
+        "- Ran reports\n"
+        "Coordinator\nHooli Hotel | Layton, UT | Summer 2020\n"
+        "- Led guest programs\n"
+        "\nEDUCATION\nMBA, State University, 2027\n"
+    )
+
+    def test_dates_and_locations_are_separated_correctly(self):
+        jobs = ResumeParser()._parse_text(self.TEXT).work_experience
+        assert [(j.employer, j.location, j.dates) for j in jobs] == [
+            ("Acme Health", "Boston, MA", "May 2026\u2013Aug 2026"),
+            ("Globex Co", "Zhengzhou, China", "Aug 2024-Jul 2025"),
+            ("Initech", "Remote", "03/2021 to Present"),
+            ("Hooli Hotel", "Layton, UT", "Summer 2020"),
+        ]

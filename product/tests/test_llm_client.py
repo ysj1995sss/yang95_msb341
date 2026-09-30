@@ -109,3 +109,33 @@ def test_auth_errors_are_not_retried():
         with pytest.raises(RuntimeError, match="rejected the API key"):
             client.complete("s", "u")
     assert mock_completion.call_count == 1
+
+
+def _reply(text, finish="stop"):
+    response = MagicMock()
+    response.choices = [MagicMock()]
+    response.choices[0].message.content = text
+    response.choices[0].finish_reason = finish
+    return response
+
+
+def test_a_reply_cut_off_at_the_token_limit_is_retried_with_more_room():
+    client = LLMClient(_settings(), sleep=lambda s: None)
+    replies = [_reply("Let me think about this...", "length"), _reply('{"ok": true}')]
+    with patch("resume_tailorer.llm.client.litellm.completion", side_effect=replies) as mock_completion:
+        assert client.complete("s", "u", max_tokens=2000) == '{"ok": true}'
+    assert [c.kwargs["max_tokens"] for c in mock_completion.call_args_list] == [2000, 8000]
+
+
+def test_a_reply_still_cut_off_after_the_retry_is_reported_plainly():
+    client = LLMClient(_settings(), sleep=lambda s: None)
+    with patch("resume_tailorer.llm.client.litellm.completion", return_value=_reply("thinking...", "length")) as mock_completion:
+        with pytest.raises(RuntimeError, match="cut off.*non-reasoning model"):
+            client.complete("s", "u", max_tokens=2000)
+    assert mock_completion.call_count == 2
+
+
+def test_think_blocks_are_removed_from_replies():
+    client = LLMClient(_settings())
+    with patch("resume_tailorer.llm.client.litellm.completion", return_value=_reply("<think>hmm\nlong</think>\n[1, 2]")):
+        assert client.complete("s", "u") == "[1, 2]"

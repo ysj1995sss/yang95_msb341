@@ -15,6 +15,35 @@ MAX_SKILLS = 20  # Maximum number of skills to extract
 ACCOMPLISHMENT_PATTERN = r'\d+[%K$M]'  # Pattern to identify accomplishments (contains numbers with %, K, $, M)
 MIN_TITLE_LENGTH = 3  # Minimum length for job title
 
+_PERIOD = (
+    r"(?:(?:jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z]*\.?\s+"
+    r"|(?:spring|summer|fall|autumn|winter)\s+|(?:0?[1-9]|1[0-2])/)?(?:19|20)\d{2}"
+)
+_DATE_RANGE = re.compile(
+    rf"{_PERIOD}(?:\s*(?:-|–|—|to)\s*(?:{_PERIOD}|present|current|now))?",
+    re.IGNORECASE,
+)
+
+
+def split_company_line(line: str) -> tuple[str, str, str]:
+    """(employer, location, dates) from a "Company | Location<tab>Dates" style line.
+
+    The date range is located first, so a tab before it or a dash without
+    spaces inside it can't cut it apart or glue it to the location.
+    """
+    matches = list(_DATE_RANGE.finditer(line))
+    dates = ""
+    rest = line
+    if matches:
+        last = matches[-1]
+        dates = last.group(0).strip()
+        rest = line[: last.start()] + line[last.end():]
+    parts = [p.strip(" ,") for p in re.split(r"\s*(?:\||—|–|\t)\s*", rest) if p.strip(" ,")]
+    employer = parts[0] if parts else "Unknown"
+    location = parts[1] if len(parts) > 1 else ""
+    return employer, location, dates
+
+
 class ResumeParser:
     """
     Parses PDF/DOCX resumes and extracts a CareerTruthProfile.
@@ -350,10 +379,7 @@ class ResumeParser:
                 continue
             title = title_line.replace("<b>", "").replace("</b>", "")
 
-            parts = re.split(r"\s*(?:\||—|–)\s*", company_line)
-            employer = parts[0] if parts else "Unknown"
-            location = parts[1] if len(parts) > 1 else ""
-            dates = parts[2] if len(parts) > 2 else ""
+            employer, location, dates = split_company_line(company_line)
 
             bullet_lines = [lines[i] for i in block.body_indices]
 

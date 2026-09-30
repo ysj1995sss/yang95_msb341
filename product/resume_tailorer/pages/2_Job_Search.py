@@ -89,7 +89,7 @@ def _render_search_goals_form() -> dict:
             "Minimum salary", min_value=0, step=5000, value=0, key="min_salary"
         )
         max_salary = st.number_input(
-            "Maximum salary", min_value=0, step=5000, value=200000, key="max_salary"
+            "Maximum salary (0 = no maximum)", min_value=0, step=5000, value=0, key="max_salary"
         )
         employment_type = st.multiselect(
             "Employment type", EMPLOYMENT_TYPE_OPTIONS, key="employment_type"

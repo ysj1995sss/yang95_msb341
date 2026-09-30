@@ -71,7 +71,7 @@ class SearchGoals:
 
     def __post_init__(self):
         """Validate search goals."""
-        if self.min_salary > self.max_salary:
+        if self.max_salary and self.min_salary > self.max_salary:  # 0 = no maximum
             raise ValueError(f"min_salary ({self.min_salary}) must be <= max_salary ({self.max_salary})")
 
 

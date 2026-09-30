@@ -368,7 +368,7 @@ class JobService:
             ValueError: If goals are invalid
         """
         # Check min_salary <= max_salary (SearchGoals __post_init__ handles this)
-        if goals.min_salary > goals.max_salary:
+        if goals.max_salary and goals.min_salary > goals.max_salary:  # 0 = no maximum
             raise ValueError(
                 f"min_salary ({goals.min_salary}) must be <= max_salary ({goals.max_salary})"
             )

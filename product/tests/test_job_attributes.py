@@ -106,3 +106,16 @@ def test_sort_handles_dates_with_and_without_timezone():
     aware.posted_date = datetime(2026, 9, 20, tzinfo=timezone.utc)
     naive.posted_date = datetime(2026, 9, 25)
     assert [j.title for j in sort_jobs([aware, naive])] == ["naive", "aware"]
+
+
+def test_zero_maximum_salary_means_no_maximum(tmp_path):
+    from resume_tailorer.job_search.database import JobDatabase
+    from resume_tailorer.job_search.ui_helpers import build_search_goals_from_form
+
+    goals = build_search_goals_from_form({"job_title": "Product Manager", "min_salary": 120000, "max_salary": 0})
+    db = JobDatabase(str(tmp_path / "j.db"))
+    db.create_tables()
+    high = _job("Product Manager", company="Ramp")
+    high.salary_min, high.salary_max = 250000, 320000
+    db.save_job_posting(high)
+    assert [j.company for j in db.search_jobs(goals)] == ["Ramp"]

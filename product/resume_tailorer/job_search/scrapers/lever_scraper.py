@@ -40,9 +40,9 @@ class LeverScraper(BoardApiScraper):
         )
         sections = [raw_job.get("descriptionPlain") or ""]
         for item in raw_job.get("lists") or []:
-            sections.append(f"{item.get('text', '')}: {strip_html(item.get('content', ''))}")
+            sections.append(f"{item.get('text', '')}:\n{strip_html(item.get('content', ''))}")
         sections.append(raw_job.get("additionalPlain") or "")
-        description = " ".join(part.strip() for part in sections if part and part.strip())
+        description = "\n\n".join(part.strip() for part in sections if part and part.strip())
 
         return JobPosting(
             source=JobSource.LEVER,
