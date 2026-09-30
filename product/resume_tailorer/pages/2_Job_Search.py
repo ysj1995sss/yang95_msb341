@@ -44,9 +44,13 @@ st.set_page_config(page_title="Job Search", page_icon="\U0001F50D", layout="wide
 
 
 REMOTE_PREFERENCE_OPTIONS = ["any", "remote", "hybrid", "onsite"]
-SOURCE_OPTIONS = [JobSource.LINKEDIN, JobSource.INDEED, JobSource.HANDSHAKE, JobSource.GREENHOUSE]
+LIVE_SOURCES = [JobSource.GREENHOUSE, JobSource.LEVER, JobSource.ASHBY]
+DEMO_SOURCES = [JobSource.LINKEDIN, JobSource.INDEED, JobSource.HANDSHAKE]
+SOURCE_OPTIONS = LIVE_SOURCES + DEMO_SOURCES
 SOURCE_LABELS = {
-    JobSource.GREENHOUSE: "greenhouse — available (live ATS boards)",
+    JobSource.GREENHOUSE: "greenhouse — live (36 company boards)",
+    JobSource.LEVER: "lever — live (8 company boards)",
+    JobSource.ASHBY: "ashby — live (19 company boards)",
     JobSource.LINKEDIN: "linkedin — limited (demo data)",
     JobSource.INDEED: "indeed — limited (demo data)",
     JobSource.HANDSHAKE: "handshake — limited (demo data)",
@@ -120,14 +124,14 @@ def _render_search_goals_form() -> dict:
 def _render_source_selection() -> list:
     st.subheader("Sources")
     st.caption(
-        "Greenhouse can return live public board listings. LinkedIn, Indeed, and "
+        "Greenhouse, Lever, and Ashby return live listings from public company boards. LinkedIn, Indeed, and "
         "Handshake are demo/limited until a permitted connector is available."
     )
-    default_label = SOURCE_LABELS[JobSource.GREENHOUSE]
+    default_labels = [SOURCE_LABELS[s] for s in LIVE_SOURCES]
     selected_labels = st.multiselect(
         "Select job sources to search",
         options=[SOURCE_LABELS[s] for s in SOURCE_OPTIONS],
-        default=[default_label],
+        default=default_labels,
         key="selected_sources",
     )
     return [_LABEL_TO_SOURCE[label] for label in selected_labels]
@@ -183,7 +187,7 @@ def _render_search_button(form_data: dict, sources: list) -> None:
 
         service = _get_job_service()
         try:
-            with st.spinner("Searching for jobs..."):
+            with st.spinner("Searching 63 company boards. The first search can take about 30 seconds; searches in the next 15 minutes are faster."):
                 summary = service.search_and_store(goals, sources)
             st.session_state.last_search_run = summary
             st.session_state.last_search_goals = goals
@@ -193,7 +197,7 @@ def _render_search_button(form_data: dict, sources: list) -> None:
                 st.info(
                     "No open postings matched this job title. Try fewer or broader words."
                 )
-            if any(source != JobSource.GREENHOUSE for source in sources):
+            if any(source in DEMO_SOURCES for source in sources):
                 st.warning(
                     "LinkedIn, Indeed, and Handshake results are simulated demo "
                     "listings, not real jobs."
@@ -382,7 +386,7 @@ def main():
         "Job Discovery",
         "Search permitted sources, inspect why each role matches, and send one evidence snapshot into tailoring.",
     )
-    st.info("Greenhouse is live. LinkedIn, Indeed, and Handshake are limited demo sources until permitted connectors are available.")
+    st.info("Greenhouse, Lever, and Ashby are live. LinkedIn, Indeed, and Handshake are demo sources until permitted connectors are available.")
     with st.sidebar:
         form_data = _render_search_goals_form()
         sources = _render_source_selection()

@@ -69,6 +69,8 @@ class JobDatabase:
             cursor.execute("ALTER TABLE job_postings ADD COLUMN alternative_sources TEXT")
         if "last_seen" not in existing_columns:
             cursor.execute("ALTER TABLE job_postings ADD COLUMN last_seen TIMESTAMP")
+        if "employment_type" not in existing_columns:
+            cursor.execute("ALTER TABLE job_postings ADD COLUMN employment_type TEXT")
 
         # Create user_selections table
         cursor.execute("""
@@ -130,8 +132,8 @@ class JobDatabase:
             (id, source, source_id, company, title, location, description,
              posted_date, application_deadline, salary_min, salary_max,
              experience_required, education_required, sponsorship_available,
-             work_mode, url, ats_platform, raw_json, alternative_sources, last_seen)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+             work_mode, url, ats_platform, raw_json, alternative_sources, last_seen, employment_type)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (
             job_id,
             job.source.value,
@@ -153,6 +155,7 @@ class JobDatabase:
             raw_json_str,
             alternative_sources_str,
             datetime.now().isoformat(),
+            job.employment_type,
         ))
 
         self.connection.commit()
@@ -391,7 +394,8 @@ class JobDatabase:
             url=row["url"],
             ats_platform=row["ats_platform"],
             raw_json=raw_json,
-            alternative_sources=alternative_sources
+            alternative_sources=alternative_sources,
+            employment_type=row["employment_type"] if "employment_type" in row_keys else None,
         )
 
     def close(self) -> None:

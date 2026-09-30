@@ -13,6 +13,23 @@ from resume_tailorer.job_search.scrapers.greenhouse_scraper import GreenhouseScr
 from resume_tailorer.job_search.models import SearchGoals, JobPosting, JobSource
 
 
+_FAKE_TITLES = ["Senior Engineer", "Operations Manager", "Director of Operations", "Software Engineer", "Test Analyst", "Data Engineer"]
+
+
+@pytest.fixture(autouse=True)
+def offline_greenhouse(monkeypatch):
+    """Keep these tests off the network: every Greenhouse board returns the same small fake list."""
+    def fake_board(self, token):
+        return {"jobs": [
+            {"id": f"{token}-{i}", "title": title, "absolute_url": f"https://example.com/{token}/{i}",
+             "location": {"name": "Remote"}, "content": "<p>Role description.</p>",
+             "updated_at": "2026-09-01T12:00:00-00:00"}
+            for i, title in enumerate(_FAKE_TITLES)
+        ]}
+
+    monkeypatch.setattr(GreenhouseScraper, "_fetch_board", fake_board)
+
+
 class TestBaseScraper:
     """Tests for BaseScraper abstract base class."""
 

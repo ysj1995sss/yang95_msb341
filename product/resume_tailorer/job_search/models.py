@@ -97,6 +97,8 @@ class JobPosting:
     ats_platform: str = "Unknown"
     raw_json: Dict[str, Any] = field(default_factory=dict)
     alternative_sources: List[str] = field(default_factory=list)
+    # Stated by the source ("full-time", "part-time", "contract", "internship"); None if not stated.
+    employment_type: Optional[str] = None
 
     def __post_init__(self):
         """Validate job posting."""

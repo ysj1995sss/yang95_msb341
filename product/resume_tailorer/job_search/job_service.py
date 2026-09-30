@@ -3,6 +3,7 @@
 Coordinates: user goals → scraper selection → scraping → deduplication → database storage.
 """
 
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 from typing import Any, Dict, List, Optional, Tuple
 from resume_tailorer.job_search.models import (
@@ -25,6 +26,8 @@ from resume_tailorer.job_search.scrapers import (
     IndeedScraper,
     HandshakeScraper,
     GreenhouseScraper,
+    LeverScraper,
+    AshbyScraper,
 )
 from resume_tailorer.models.career_profile import CareerTruthProfile
 from resume_tailorer.applications.database import ApplicationDatabase
@@ -93,6 +96,8 @@ class JobService:
             JobSource.INDEED: IndeedScraper,
             JobSource.HANDSHAKE: HandshakeScraper,
             JobSource.GREENHOUSE: GreenhouseScraper,
+            JobSource.LEVER: LeverScraper,
+            JobSource.ASHBY: AshbyScraper,
         }
 
         # Cache of instantiated scrapers, keyed by JobSource. This ensures the
@@ -135,41 +140,12 @@ class JobService:
         all_postings: List[JobPosting] = []
         provider_results: List[ProviderRunResult] = []
 
-        for source in sources:
-            scraper = self._get_scraper(source)
-            if scraper is None:
-                provider_results.append(
-                    ProviderRunResult(
-                        source=source,
-                        status=ProviderRunStatus.SKIPPED,
-                        scraped=0,
-                        error="No scraper configured for this source",
-                    )
-                )
-                continue
-            try:
-                postings = scraper.scrape(goals)
-                if getattr(scraper, "data_source", None) == "unavailable":
-                    raise ConnectionError("Source could not be reached")
-                batch = list(postings or [])
-                all_postings.extend(batch)
-                provider_results.append(
-                    ProviderRunResult(
-                        source=source,
-                        status=ProviderRunStatus.OK,
-                        scraped=len(batch),
-                        error=note if isinstance(note := getattr(scraper, "coverage_note", None), str) else None,
-                    )
-                )
-            except Exception as exc:
-                provider_results.append(
-                    ProviderRunResult(
-                        source=source,
-                        status=ProviderRunStatus.FAILED,
-                        scraped=0,
-                        error=str(exc) or exc.__class__.__name__,
-                    )
-                )
+        # Sources are independent, so they are searched in parallel; results keep request order.
+        with ThreadPoolExecutor(max_workers=max(1, len(sources))) as pool:
+            outcomes = list(pool.map(lambda src: self._run_provider(src, goals), sources))
+        for result, batch in outcomes:
+            provider_results.append(result)
+            all_postings.extend(batch)
 
         deduplicated_postings = self.deduplicator.deduplicate(all_postings)
         total_after_dedupe = len(deduplicated_postings)
@@ -214,6 +190,31 @@ class JobService:
         )
         self.last_search_run = summary
         return summary
+
+    def _run_provider(
+        self, source: JobSource, goals: SearchGoals
+    ) -> Tuple[ProviderRunResult, List[JobPosting]]:
+        """Search one source in isolation: its failure never affects the others."""
+        scraper = self._get_scraper(source)
+        if scraper is None:
+            return ProviderRunResult(
+                source=source, status=ProviderRunStatus.SKIPPED, scraped=0,
+                error="No scraper configured for this source",
+            ), []
+        try:
+            batch = list(scraper.scrape(goals) or [])
+            if getattr(scraper, "data_source", None) == "unavailable":
+                raise ConnectionError("Source could not be reached")
+        except Exception as exc:
+            return ProviderRunResult(
+                source=source, status=ProviderRunStatus.FAILED, scraped=0,
+                error=str(exc) or exc.__class__.__name__,
+            ), []
+        note = getattr(scraper, "coverage_note", None)
+        return ProviderRunResult(
+            source=source, status=ProviderRunStatus.OK, scraped=len(batch),
+            error=note if isinstance(note, str) else None,
+        ), batch
 
     def get_available_jobs(
         self, goals: SearchGoals, seen_since: Optional[datetime] = None

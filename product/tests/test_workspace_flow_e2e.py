@@ -14,7 +14,7 @@ import pytest
 from streamlit.testing.v1 import AppTest
 
 from resume_tailorer.job_search.job_service import PENDING_TAILOR_JOB_KEY
-from resume_tailorer.job_search.scrapers.greenhouse_scraper import GreenhouseScraper
+from resume_tailorer.job_search.scrapers import AshbyScraper, GreenhouseScraper, LeverScraper
 from resume_tailorer.models import CareerTruthProfile
 from resume_tailorer.pdf.generator import PDFGenerator
 from resume_tailorer.pdf.validator import PDFValidator
@@ -69,7 +69,7 @@ def app(tmp_path, monkeypatch):
         "get_resume_meta": lambda session: None,
         "get_resume_versions": lambda session: [],
     }
-    with patch.object(GreenhouseScraper, "_fetch_board", _fake_board):
+    with patch.object(GreenhouseScraper, "_fetch_board", _fake_board),          patch.object(LeverScraper, "_fetch_board", lambda self, token: []),          patch.object(AshbyScraper, "_fetch_board", lambda self, token: {"jobs": []}):
         with patch.multiple("resume_tailorer.profile_review.api_client", **stubs):
             at = AppTest.from_file(APP, default_timeout=60)
             at.session_state["profile_review_session"] = {"token": "test"}

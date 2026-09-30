@@ -14,8 +14,7 @@ from resume_tailorer.job_search.models import JobPosting, SearchGoals
 
 NOT_SPECIFIED = "Not specified"
 
-# Greenhouse board token -> (display name, industry). Every token here was
-# confirmed to return a public job board on 2026-09-29.
+# Greenhouse board token -> (display name, industry). Confirmed live on 2026-09-29.
 COMPANY_DIRECTORY: Dict[str, tuple] = {
     "airbnb": ("Airbnb", "Travel & Hospitality"),
     "gitlab": ("GitLab", "Technology"),
@@ -55,8 +54,44 @@ COMPANY_DIRECTORY: Dict[str, tuple] = {
     "peloton": ("Peloton", "Consumer Goods"),
 }
 
-INDUSTRY_OPTIONS = sorted({industry for _, industry in COMPANY_DIRECTORY.values()})
-_INDUSTRY_BY_COMPANY = {name.lower(): industry for name, industry in COMPANY_DIRECTORY.values()}
+# Lever board token -> (display name, industry). Confirmed live on 2026-09-30.
+LEVER_BOARDS: Dict[str, tuple] = {
+    "spotify": ("Spotify", "Media"),
+    "palantir": ("Palantir", "Technology"),
+    "wealthfront": ("Wealthfront", "Finance"),
+    "zoox": ("Zoox", "Transportation"),
+    "ro": ("Ro", "Healthcare"),
+    "matchgroup": ("Match Group", "Media"),
+    "tala": ("Tala", "Finance"),
+    "jumpcloud": ("JumpCloud", "Technology"),
+}
+
+# Ashby job-board name -> (display name, industry). Confirmed live on 2026-09-30.
+ASHBY_BOARDS: Dict[str, tuple] = {
+    "openai": ("OpenAI", "Technology"),
+    "notion": ("Notion", "Technology"),
+    "ramp": ("Ramp", "Finance"),
+    "linear": ("Linear", "Technology"),
+    "vanta": ("Vanta", "Technology"),
+    "zapier": ("Zapier", "Technology"),
+    "multiverse": ("Multiverse", "Education"),
+    "cursor": ("Cursor", "Technology"),
+    "perplexity": ("Perplexity", "Technology"),
+    "replit": ("Replit", "Technology"),
+    "posthog": ("PostHog", "Technology"),
+    "sentry": ("Sentry", "Technology"),
+    "plaid": ("Plaid", "Finance"),
+    "docker": ("Docker", "Technology"),
+    "supabase": ("Supabase", "Technology"),
+    "benchling": ("Benchling", "Technology"),
+    "harvey": ("Harvey", "Technology"),
+    "elevenlabs": ("ElevenLabs", "Technology"),
+    "cohere": ("Cohere", "Technology"),
+}
+
+_ALL_COMPANIES = [*COMPANY_DIRECTORY.values(), *LEVER_BOARDS.values(), *ASHBY_BOARDS.values()]
+INDUSTRY_OPTIONS = sorted({industry for _, industry in _ALL_COMPANIES})
+_INDUSTRY_BY_COMPANY = {name.lower(): industry for name, industry in _ALL_COMPANIES}
 
 EXPERIENCE_LEVEL_OPTIONS = ["internship", "entry", "mid", "senior", "lead", "executive"]
 EMPLOYMENT_TYPE_OPTIONS = ["full-time", "part-time", "contract", "internship"]
@@ -89,6 +124,8 @@ def experience_level_for(job: JobPosting) -> str:
 
 
 def employment_type_for(job: JobPosting) -> str:
+    if job.employment_type:
+        return job.employment_type
     title = (job.title or "").lower()
     for job_type, pattern in _TYPE_RULES:
         if re.search(pattern, title):
