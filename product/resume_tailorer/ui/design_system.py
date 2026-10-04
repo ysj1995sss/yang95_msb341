@@ -27,6 +27,7 @@ class SemanticStatus:
 
 
 WORKSPACES = (
+    Workspace("Start Here", "pages/0_Start_Here.py", "See progress and your next step"),
     Workspace("Fact Vault", "pages/1_Profile_Review.py", "Verify reusable career facts"),
     Workspace("Job Discovery", "pages/2_Job_Search.py", "Find roles and inspect fit"),
     Workspace("Tailoring Studio", "app.py", "Review evidence-backed edits"),

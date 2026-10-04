@@ -35,8 +35,11 @@ from resume_tailorer.job_search.models import (
 from resume_tailorer.job_search.ui_helpers import (
     build_job_card_view,
     build_search_goals_from_form,
+    fit_tone,
     format_job_for_display,
+    missing_line,
 )
+from resume_tailorer.ui.onboarding import apply_goals_to_search_form
 from resume_tailorer.ui import build_workflow_state, render_app_shell, render_page_header
 
 
@@ -69,6 +72,7 @@ def _get_job_service() -> JobService:
 
 
 def _render_search_goals_form() -> dict:
+    apply_goals_to_search_form(st.session_state)
     st.subheader("Search criteria")
     st.caption("Only a job title is required. Leave anything else blank for no preference.")
 
@@ -312,8 +316,9 @@ def _render_job_dashboard() -> None:
         card = build_job_card_view(job, fit_result, quality, actions.get(job_id))
 
         with st.expander(
-            f"{card.title} · {card.company} · {card.location} · Fit {card.fit}"
+            f"{fit_tone(card.fit)[0]} {card.title} · {card.company} · {card.location} · Fit {card.fit}"
         ):
+            st.caption(missing_line(card))
             facts = st.columns(4)
             facts[0].metric("Candidate fit", card.fit)
             facts[1].metric("Compensation", card.compensation)

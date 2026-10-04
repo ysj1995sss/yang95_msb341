@@ -8,6 +8,7 @@ from resume_tailorer.ui.design_system import (
 
 def test_workspaces_use_the_five_user_facing_destinations():
     assert [workspace.name for workspace in WORKSPACES] == [
+        "Start Here",
         "Fact Vault",
         "Job Discovery",
         "Tailoring Studio",

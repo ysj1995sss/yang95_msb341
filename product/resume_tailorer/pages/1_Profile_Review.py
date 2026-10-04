@@ -36,7 +36,11 @@ from resume_tailorer.profile_review.api_client import (
 from resume_tailorer.session_profile import FACT_VAULT, set_career_profile
 from resume_tailorer.ui.auth_gate import require_identity
 from resume_tailorer.ui import build_workflow_state, render_app_shell, render_page_header
-from resume_tailorer.ui.fact_vault import build_fact_vault_summary
+from resume_tailorer.ui.fact_vault import (
+    build_fact_vault_summary,
+    build_section_completeness,
+    overall_completeness,
+)
 
 st.set_page_config(page_title="Review Your Profile", page_icon="\U0001F4C4", layout="wide")
 
@@ -118,6 +122,13 @@ def _review_section(session):
     metrics[1].metric("Skills", summary.skill_count)
     metrics[2].metric("Evidence bullets", summary.bullet_count)
     metrics[3].metric("Your edits", summary.user_edit_count)
+    sections = build_section_completeness(profile)
+    st.markdown(f"**Profile completeness: {overall_completeness(sections)}%**")
+    st.progress(overall_completeness(sections) / 100)
+    for sec in sections:
+        pct = "Optional" if sec.percent is None else f"{sec.percent}%"
+        hint = f" — to add: {', '.join(sec.missing[:3])}" if sec.missing else ""
+        st.caption(f"{'✅' if sec.percent in (100, None) and not sec.missing else '⬜'} **{sec.name}** {pct}{hint}")
     st.caption("📄 Extracted from your resume · 🖊️ Added or edited by you")
     tone = "review" if summary.unresolved_count else "verified"
     st.markdown(

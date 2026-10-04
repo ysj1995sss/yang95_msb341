@@ -49,6 +49,31 @@ def build_launchpad_state(mode: ApplicationMode, capability: ATSCapability) -> L
     )
 
 
+def _render_weekly_gauge(trackers, submissions) -> None:
+    import streamlit as st
+    from datetime import date
+
+    from resume_tailorer.applications.weekly import build_weekly_summary
+
+    entries = [
+        (t.status, submissions[t.application_id].submission_timestamp.date() if submissions.get(t.application_id) else None)
+        for t in trackers
+    ]
+    week = build_weekly_summary(entries, date.today())
+    goal = int(st.session_state.get("weekly_goal", 0))
+    left, right = st.columns([2, 3])
+    with left:
+        st.markdown(f"**Week of {week.week_start:%b %d} – {week.week_end:%b %d}**")
+        st.metric("Applied this week", week.applied, delta=f"goal {goal}" if goal else None, delta_color="off")
+        if goal:
+            st.progress(min(week.applied / goal, 1.0))
+        st.number_input("Weekly goal (0 = none)", min_value=0, max_value=100, key="weekly_goal")
+    with right:
+        a, b = st.columns(2)
+        a.metric("In interview stages", week.interviews)
+        b.metric("Saved, not applied", week.saved)
+
+
 def render_application_tracker(service) -> None:
     """Render the tracker from existing immutable submission snapshots."""
     import streamlit as st
@@ -64,6 +89,7 @@ def render_application_tracker(service) -> None:
         for tracker in trackers
     }
     rows = [format_application_for_display(t, submissions[t.application_id]) for t in trackers]
+    _render_weekly_gauge(trackers, submissions)
     view = st.radio("Saved view", list(STATUS_GROUPS), horizontal=True, key="tracker_view")
     filters = st.columns(4)
     company = filters[0].text_input("Company", key="tracker_company")
