@@ -13,6 +13,7 @@ from typing import Any, MutableMapping, Optional
 from resume_tailorer.job_search.job_service import PENDING_TAILOR_JOB_KEY, build_tailor_snapshot
 
 ACTIVE_JOB_FIELD = "active_job_id"
+HANDOFF_FIELD = "active_handoff"
 
 
 def remember(record: MutableMapping[str, Any], job_id: str) -> None:
@@ -34,3 +35,37 @@ def restore_pending_job(session: MutableMapping[str, Any], record: Optional[dict
     snapshot = build_tailor_snapshot(job, fit)
     session[PENDING_TAILOR_JOB_KEY] = snapshot
     return snapshot
+
+
+def remember_handoff(record: MutableMapping[str, Any], handoff: Optional[dict], review_complete: bool) -> bool:
+    """Keep the validated resume handoff with the record. Returns True when it changed."""
+    value = dict(handoff, review_complete=bool(review_complete)) if handoff else None
+    if record.get(HANDOFF_FIELD) == value:
+        return False
+    record[HANDOFF_FIELD] = value
+    return True
+
+
+def restore_handoff(session: MutableMapping[str, Any], record: Optional[dict]) -> Optional[dict]:
+    """Bring back the tailored resume for the active job, only if the exact file is still there."""
+    import hashlib
+    import os
+
+    from resume_tailorer.tailoring_session import HANDOFF_KEY
+
+    if session.get(HANDOFF_KEY):
+        return session[HANDOFF_KEY]
+    saved = (record or {}).get(HANDOFF_FIELD)
+    pending = session.get(PENDING_TAILOR_JOB_KEY) or {}
+    if not saved or saved.get("job_id") != pending.get("job_id"):
+        return None
+    if str(saved.get("validation_status", "")).upper() == "FAIL":
+        return None
+    path = saved.get("pdf_path") or ""
+    if not os.path.isfile(path):
+        return None
+    with open(path, "rb") as f:
+        if hashlib.sha256(f.read()).hexdigest() != saved.get("sha256"):
+            return None
+    session[HANDOFF_KEY] = dict(saved)
+    return session[HANDOFF_KEY]

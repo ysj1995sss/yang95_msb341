@@ -118,3 +118,30 @@ def test_gpa_edit_is_saved_and_marked(data_dir):
     edited = dict(record["profile"], education=[dict(record["profile"]["education"][0], gpa="3.8")])
     assert apply_edits(record, edited) == ["education[0]"]
     assert record["profile"]["education"][0]["gpa"] == "3.8"
+
+
+def test_tailored_resume_handoff_is_restored_only_if_the_exact_file_is_there(tmp_path):
+    import hashlib
+
+    from resume_tailorer.active_job import remember_handoff, restore_handoff
+    from resume_tailorer.job_search.job_service import PENDING_TAILOR_JOB_KEY
+    from resume_tailorer.tailoring_session import HANDOFF_KEY
+
+    pdf = tmp_path / "r.pdf"
+    pdf.write_bytes(b"%PDF-1.4 tailored")
+    handoff = {"job_id": "greenhouse_1", "pdf_path": str(pdf), "sha256": hashlib.sha256(b"%PDF-1.4 tailored").hexdigest(),
+               "version": 2, "validation_status": "PASS", "resume_match_score": 0.8}
+    record = {}
+    assert remember_handoff(record, handoff, True) is True
+    assert remember_handoff(record, handoff, True) is False  # unchanged, no rewrite
+
+    session = {PENDING_TAILOR_JOB_KEY: {"job_id": "greenhouse_1"}}
+    assert restore_handoff(session, record)["review_complete"] is True
+    assert session[HANDOFF_KEY]["version"] == 2
+
+    other_job = {PENDING_TAILOR_JOB_KEY: {"job_id": "greenhouse_2"}}
+    assert restore_handoff(other_job, record) is None
+    pdf.write_bytes(b"changed")
+    assert restore_handoff({PENDING_TAILOR_JOB_KEY: {"job_id": "greenhouse_1"}}, record) is None
+    failed = dict(record, active_handoff=dict(record["active_handoff"], validation_status="FAIL"))
+    assert restore_handoff({PENDING_TAILOR_JOB_KEY: {"job_id": "greenhouse_1"}}, failed) is None

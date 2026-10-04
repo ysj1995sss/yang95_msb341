@@ -50,12 +50,13 @@ def require_identity() -> Identity:
     except Exception as exc:  # a damaged profile file must not lock the user out
         st.session_state["profile_load_error"] = str(exc)
     try:
-        from resume_tailorer.active_job import restore_pending_job
+        from resume_tailorer.active_job import restore_handoff, restore_pending_job
         from resume_tailorer.session_profile import get_career_profile
 
         service = job_service_for(identity.owner_id)
         restore_pending_job(st.session_state, st.session_state.get("profile_record"), service.db,
                             service.fit_scorer, get_career_profile(st.session_state))
+        restore_handoff(st.session_state, st.session_state.get("profile_record"))
     except Exception:  # the chosen job is a convenience; never block a page on it
         pass
     return identity

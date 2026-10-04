@@ -224,13 +224,13 @@ def _render_context(pending: dict, state: dict | None) -> None:
     report = (state or {}).get("report")
     status = report.validation.status if report else None
     tone = artifact_tone(status)
-    alignment = _percent(report.tailored_alignment) if report else "Not built yet"
+    alignment = _percent(report.tailored_alignment) if report else "after tailoring"
     st.markdown(
         f'<div class="jc-panel"><div class="jc-eyebrow">{escape(company) or "Pasted job description"}</div>'
         f'<h2 style="margin:.1rem 0 .5rem">{escape(title)}</h2>'
         f'{chip("Candidate fit " + _fit_label(pending), "action")}'
         f'{chip("Resume alignment " + alignment)}'
-        f'{chip(artifact_status_text(status), tone)}'
+        f'{chip(artifact_status_text(status), tone) if report else ""}'
         f'<p class="jc-meta" style="margin-top:.35rem">Candidate fit measures your background. '
         f"Resume alignment measures how clearly this resume shows it. They are never combined.</p></div>",
         unsafe_allow_html=True,
@@ -374,6 +374,7 @@ def _render_review_room(pending: dict) -> None:
         _render_preview(state)
 
     _render_action_bar(state, progress)
+    _persist_handoff(progress.can_continue)
 
 
 def _render_preview(state: dict) -> None:
@@ -426,6 +427,20 @@ def _render_preview(state: dict) -> None:
                 st.write(f"- {claim}")
         for finding in report.validation.findings:
             st.write(f"- {finding.message}")
+
+
+def _persist_handoff(review_complete: bool) -> None:
+    """Keep the validated resume with the Career Profile so Apply finds it in a new session."""
+    from resume_tailorer.active_job import remember_handoff
+    from resume_tailorer.profile_import import save_record
+    from resume_tailorer.ui.auth_gate import OWNER_KEY
+
+    record = st.session_state.get(RECORD_KEY)
+    handoff = st.session_state.get(HANDOFF_KEY)
+    if handoff:
+        handoff["review_complete"] = bool(review_complete)
+    if record is not None and remember_handoff(record, handoff, review_complete):
+        save_record(st.session_state, st.session_state[OWNER_KEY], record)
 
 
 def _render_action_bar(state: dict, progress) -> None:

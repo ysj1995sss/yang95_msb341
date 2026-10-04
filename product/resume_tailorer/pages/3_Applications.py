@@ -56,7 +56,8 @@ def _current_application(service: JobService, job_id: str):
 def _review_complete() -> bool:
     state = st.session_state.get("artifact_run_state")
     if not state:
-        return False
+        handoff = st.session_state.get("tailored_artifact_handoff") or {}
+        return bool(handoff.get("review_complete"))
     report = state["report"]
     reviewable = group_changes(visible_changes(state["changes"]), report.true_gaps).reviewable
     progress = review_progress(reviewable, state.get("decided", set()), state.get("dirty", False), report.validation.status)
