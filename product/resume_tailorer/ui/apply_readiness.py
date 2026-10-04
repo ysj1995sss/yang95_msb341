@@ -126,3 +126,24 @@ def build_apply_view(
         can_mark_applied=stage == "tracked", stage=stage, headline=headline,
         modes=mode_options(capability),
     )
+
+
+@dataclass(frozen=True)
+class EmptyApplyView:
+    items: tuple[tuple[str, bool], ...]
+    action_label: str
+    action_page: str
+
+
+def empty_apply_view(has_job: bool, has_resume_for_job: bool) -> EmptyApplyView:
+    """What Apply shows before anything is ready: three plain steps and the one that's next."""
+    items = (
+        ("Choose a real job", has_job),
+        ("Review the tailored resume", has_resume_for_job),
+        ("Open the employer's application", False),
+    )
+    if not has_job:
+        return EmptyApplyView(items, "Find a job", "pages/2_Job_Search.py")
+    if not has_resume_for_job:
+        return EmptyApplyView(items, "Finish tailoring", "pages/5_Tailor.py")
+    return EmptyApplyView(items, "Review application readiness", "pages/3_Applications.py")

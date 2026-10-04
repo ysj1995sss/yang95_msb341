@@ -17,7 +17,7 @@ INTERVIEWING = {
 }
 CLOSED = {ApplicationStatus.OFFER, ApplicationStatus.REJECTED, ApplicationStatus.WITHDRAWN}
 
-VIEWS = ("All", "Needs action", "Ready to apply", "Applied", "Interviewing", "Waiting", "Closed")
+VIEWS = ("Needs action", "Ready to apply", "Interviewing", "Waiting", "Closed", "Applied", "All")
 
 STATUS_WORDS = {
     ApplicationStatus.DISCOVERED: "Discovered",
@@ -145,3 +145,11 @@ def view_counts(rows: list[TrackerRow], today: date) -> dict[str, int]:
 def sort_rows(rows: list[TrackerRow]) -> list[TrackerRow]:
     """Due items first (soonest), then most recently updated."""
     return sorted(rows, key=lambda r: (r.due is None, r.due or date.max, -r.last_update.timestamp()))
+
+
+def default_view(counts: dict[str, int]) -> str:
+    """Start where action is needed; otherwise show everything."""
+    return "Needs action" if counts.get("Needs action") else "All"
+
+
+LIFECYCLE = ("Ready to apply", "Applied", "Recruiter screen", "Interview", "Offer or closed")

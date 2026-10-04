@@ -216,6 +216,13 @@ a:focus-visible, button:focus-visible, input:focus-visible, textarea:focus-visib
 .jc-check { display: grid; grid-template-columns: 1fr auto; gap: .5rem; padding: .55rem 0; border-bottom: 1px solid var(--jc-line); align-items: center; }
 .jc-check:last-child { border-bottom: 0; }
 .jc-srow { display: grid; grid-template-columns: 1.4fr 1fr; gap: .5rem; align-items: center; padding: .55rem 0; border-bottom: 1px solid var(--jc-line); }
+.st-key-tracker_cards { display: none; }
+@media (max-width: 780px) {
+  .st-key-tracker_table { display: none; }
+  .st-key-tracker_cards { display: block; }
+  .st-key-joblist { max-height: 420px; }
+  .jc-search-summary { font-size: 1rem; }
+}
 @keyframes jc-confirm { from { background: #E7F3EE; } to { background: transparent; } }
 .jc-confirmed { animation: jc-confirm 1.2s ease-out 1; }
 @media (max-width: 780px) {

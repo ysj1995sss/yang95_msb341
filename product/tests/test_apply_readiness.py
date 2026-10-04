@@ -58,3 +58,12 @@ def test_warnings_and_unreviewed_changes_are_flagged():
     assert states["Tailored resume"] == "review"
     assert states["Your review of the changes"] == "review"
     assert states["Application questions"] == "review"
+
+
+def test_empty_apply_names_the_one_next_step():
+    from resume_tailorer.ui.apply_readiness import empty_apply_view
+
+    v = empty_apply_view(False, False)
+    assert v.action_label == "Find a job" and [done for _, done in v.items] == [False, False, False]
+    assert empty_apply_view(True, False).action_label == "Finish tailoring"
+    assert empty_apply_view(True, True).action_label == "Review application readiness"

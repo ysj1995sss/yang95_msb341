@@ -26,7 +26,8 @@ from resume_tailorer.profile_import import RECORD_KEY
 from resume_tailorer.session_profile import get_career_profile
 from resume_tailorer.tailoring_session import handoff_for_job
 from resume_tailorer.ui import chip, render_app_shell, render_page_header, render_progress
-from resume_tailorer.ui.apply_readiness import build_apply_view
+from resume_tailorer.ui.apply_readiness import build_apply_view, empty_apply_view
+from resume_tailorer.ui.shell import primary_action
 from resume_tailorer.ui.auth_gate import OWNER_KEY, job_service_for, require_identity
 from resume_tailorer.ui.design_system import ProgressStep
 from resume_tailorer.ui.profile_readiness import build_readiness
@@ -66,12 +67,21 @@ def _pick_staged(service: JobService) -> None:
     """No active job: offer staged applications waiting to be finished."""
     tracker = StatusTracker(service.applications_db)
     staged = [t for t in tracker.get_all_applications() if t.status == ApplicationStatus.READY_TO_APPLY]
-    st.markdown(
-        '<section class="jc-focus"><div class="jc-eyebrow">Nothing selected</div><h2>Choose a job to apply for</h2>'
-        "<p>Pick a role in Jobs and prepare your resume in Tailor. It arrives here ready to go.</p></section>",
-        unsafe_allow_html=True,
-    )
-    st.page_link("pages/2_Job_Search.py", label="Find a job →")
+    view = empty_apply_view(False, False)
+    main, side = st.columns([2, 1], gap="large")
+    with main:
+        with st.container(border=True):
+            st.markdown('<h2 class="jc-card-title">To prepare an application</h2>'
+                        '<p class="jc-meta">Apply checks that everything is ready, then sends you to the '
+                        "employer's own application. It never submits for you.</p>", unsafe_allow_html=True)
+            st.markdown("".join(
+                f'<div class="jc-check"><span>{i}. {label}</span>{chip("Done" if done else "Not yet", "verified" if done else "")}</div>'
+                for i, (label, done) in enumerate(view.items, start=1)), unsafe_allow_html=True)
+            primary_action(view.action_label, view.action_page, "apply_empty_next")
+    with side:
+        st.markdown('<div class="jc-aside"><h3>Why Manual mode</h3><p>Most application forms are built in the '
+                    "browser, so Job Copilot can't fill them reliably yet. You finish on the employer's site with "
+                    "your tailored resume, then mark it as applied.</p></div>", unsafe_allow_html=True)
     if staged:
         st.markdown("### Or finish one you've already staged")
         for t in staged:

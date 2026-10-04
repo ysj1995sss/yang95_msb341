@@ -73,3 +73,11 @@ def test_weekly_summary_counts_only_this_weeks_applications():
 def test_hash_named_resumes_get_a_readable_label():
     r = build_row(ApplicationTracker("a", "greenhouse_1", S.APPLIED), sub(resume_used="/x/f18c187374455a7c.pdf"), [])
     assert r.resume_version == "Tailored resume (f18c1873)"
+
+
+def test_views_put_action_first_and_default_to_needs_action_only_when_needed():
+    from resume_tailorer.ui.tracker_views import VIEWS, default_view
+
+    assert VIEWS[:5] == ("Needs action", "Ready to apply", "Interviewing", "Waiting", "Closed")
+    assert default_view({"Needs action": 2}) == "Needs action"
+    assert default_view({"Needs action": 0, "All": 3}) == "All"

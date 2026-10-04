@@ -44,19 +44,33 @@ def render_application_tracker(service, owner_id: str = "local") -> None:
     from resume_tailorer.job_search.job_service import PENDING_TAILOR_JOB_KEY
     from resume_tailorer.ui.shell import chip
     from resume_tailorer.ui.tracker_views import (
-        STATUS_WORDS, VIEWS, build_row, in_view, sort_rows, view_counts,
+        STATUS_WORDS, VIEWS, build_row, default_view, in_view, sort_rows, view_counts,
     )
 
     status_tracker = StatusTracker(service.applications_db)
     trackers = status_tracker.get_all_applications()
     if not trackers:
-        st.markdown(
-            '<section class="jc-focus"><div class="jc-eyebrow">Nothing tracked yet</div>'
-            "<h2>Your applications will appear here</h2><p>Prepare an application from Jobs, then choose "
-            "<strong>Track this application</strong> on Apply.</p></section>",
-            unsafe_allow_html=True,
-        )
-        st.page_link("pages/2_Job_Search.py", label="Find a job →")
+        from resume_tailorer.ui.shell import primary_action
+        from resume_tailorer.ui.tracker_views import LIFECYCLE
+
+        main, side = st.columns([2, 1], gap="large")
+        with main:
+            with st.container(border=True):
+                st.markdown(
+                    '<h2 class="jc-card-title">Nothing tracked yet</h2>'
+                    '<p class="jc-meta">When you choose <strong>Track this application</strong> on Apply, it '
+                    "appears here with:</p>"
+                    '<div class="jc-check"><span>The exact job posting, as it was when you applied</span></div>'
+                    '<div class="jc-check"><span>The tailored resume version and any saved answers you used</span></div>'
+                    '<div class="jc-check"><span>Every status change, who made it, and when</span></div>'
+                    f'<p class="jc-meta" style="margin-top:.75rem">Status: {escape(" → ".join(LIFECYCLE))}</p>',
+                    unsafe_allow_html=True,
+                )
+                primary_action("Find a job", "pages/2_Job_Search.py", "tracker_empty_find")
+        with side:
+            st.markdown('<div class="jc-aside"><h3>Next actions</h3><p>Give each application a next step and a due '
+                        "date. Anything due shows up first on Home and under Needs action here.</p></div>",
+                        unsafe_allow_html=True)
         return
 
     today = date.today()
@@ -69,6 +83,8 @@ def render_application_tracker(service, owner_id: str = "local") -> None:
     with side:
         _weekly_panel(rows, owner_id)
     with main:
+        if "tracker_view" not in st.session_state:
+            st.session_state["tracker_view"] = default_view(counts)
         view = st.radio(
             "Saved view", VIEWS, horizontal=True, key="tracker_view",
             format_func=lambda v: f"{v} ({counts[v]})",
@@ -81,7 +97,16 @@ def render_application_tracker(service, owner_id: str = "local") -> None:
         if not shown:
             st.info("Nothing in this view." if not search else "No applications match that search.")
             return
-        st.dataframe([r.as_table() for r in shown], use_container_width=True, hide_index=True)
+        with st.container(key="tracker_table"):
+            st.dataframe([r.as_table() for r in shown], use_container_width=True, hide_index=True)
+        with st.container(key="tracker_cards"):
+            # Phones: readable summaries instead of a wide table (CSS shows one or the other).
+            st.markdown("".join(
+                f'<div class="jc-row"><strong>{escape(r.role)}</strong><br><span class="jc-meta">'
+                f'{escape(r.company)} · {escape(STATUS_WORDS.get(r.status, r.status.value))}'
+                f'{" · next: " + escape(r.next_action) if r.next_action else ""}'
+                f'{" · due " + r.due.isoformat() if r.due else ""}</span></div>' for r in shown),
+                unsafe_allow_html=True)
 
         labels = {r.application_id: f"{r.role} at {r.company} · {STATUS_WORDS.get(r.status, r.status.value)}" for r in shown}
         application_id = st.selectbox("Open an application", list(labels), format_func=labels.get, key="tracker_selected")
