@@ -30,7 +30,7 @@ def test_brand_new_user_imports_a_resume_on_home():
                                   application_prepared=False))
     assert view.mode == "first_time" and view.completed == 0
     assert view.next_action.inline == "upload"
-    assert [s.state for s in view.milestones][:2] == ["current", "pending"]
+    assert [e.state for e in view.checklist] == ["not_started"] * 5
 
 
 def test_after_import_the_user_confirms_facts_and_hears_how_many_need_attention():
@@ -89,3 +89,21 @@ def test_due_items_include_today_and_overdue_but_not_closed_or_future():
     items = due_items(rows, date(2026, 10, 4))
     assert [i.title for i in items] == ["A at X", "B at Y"]
     assert "overdue" in items[0].detail and "due today" in items[1].detail
+
+
+def test_out_of_order_completion_is_shown_honestly_without_numbered_steps():
+    # A role chosen and an application tracked, but facts not yet confirmed.
+    view = build_home_view(inputs(readiness=readiness(True, False, ("Add your email",)), goals_set=False))
+    states = {e.label: e.state for e in view.checklist}
+    assert states == {
+        "Resume imported": "ready",
+        "Facts confirmed": "attention",
+        "Job goals set": "not_started",
+        "A role chosen": "ready",
+        "An application tracked": "ready",
+    }
+    assert view.completed == 3 and view.mode == "first_time"
+    assert view.next_action.page == PROFILE_PAGE  # one recommended action, chosen by priority
+    attention = next(e for e in view.checklist if e.state == "attention")
+    assert attention.detail == "1 item to review"
+    assert all(not e.label[0].isdigit() for e in view.checklist)

@@ -69,4 +69,5 @@ def test_local_mode_warns_not_to_share_the_link():
     at.switch_page("pages/4_Application_Tracker.py")
     at.run()
     assert not at.exception, at.exception
-    assert any("Don't share this link" in w.value for w in at.sidebar.warning)
+    status = [m.value for m in at.sidebar.markdown if "Local demo" in m.value]
+    assert status and "Don't share this link" in status[0] and "<details" in status[0]

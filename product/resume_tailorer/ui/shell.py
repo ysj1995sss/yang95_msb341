@@ -9,6 +9,14 @@ from resume_tailorer.ui.design_system import DESTINATIONS, THEME_CSS, ProgressSt
 
 ACTIVE_JOB_KEY = "pending_tailor_job"
 
+# Honest but compact: the full explanation opens on demand (native, keyboard-accessible).
+LOCAL_DEMO_STATUS = (
+    '<details class="jc-rail-status"><summary>Local demo · shared, temporary data</summary>'
+    "<p>Sign-in isn't set up here, so everyone using this address shares one workspace, and data can be "
+    "erased when the app restarts. Don't share this link. Job Copilot only uses facts you've confirmed "
+    "and never submits for you.</p></details>"
+)
+
 
 def _rail_profile_line(session) -> str:
     from resume_tailorer.ui.profile_readiness import readiness_line
@@ -45,8 +53,7 @@ def render_app_shell(active: str, _legacy_state: Optional[Iterable] = None) -> N
             st.caption(f"Signed in as {identity.get('name', '')}")
             st.button("Sign out", on_click=st.logout, key="jc_sign_out")
         else:
-            st.warning("Local demo: everyone using this address shares one workspace. Don't share this link.")
-        st.caption("Job Copilot only uses facts you've confirmed and never submits for you.")
+            st.markdown(LOCAL_DEMO_STATUS, unsafe_allow_html=True)
     st.session_state["jc_active_destination"] = active
 
 

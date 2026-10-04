@@ -1,6 +1,6 @@
 """Home: the entry point (spec 007).
 
-First-time users see a five-milestone journey with one dominant next action.
+First-time users see a readiness checklist (any order) and one recommended next action.
 Returning users see a command center: the next best action, saved jobs,
 drafts, applications ready to finish, follow-ups, weekly progress and recent
 activity. All decisions about what to show live in ui/home_state.py.
@@ -128,32 +128,6 @@ def _focus(action, eyebrow: str) -> None:
     )
 
 
-def identity_owner() -> str:
-    from resume_tailorer.ui.auth_gate import OWNER_KEY
-
-    return st.session_state[OWNER_KEY]
-
-
-def _resume_chosen_job(owner_id: str, action):
-    """When Home sends the user to Tailor or Apply without an active job, hand
-    over the job they chose most recently, so nothing has to be picked again."""
-    if action.page not in (TAILOR_PAGE, APPLY_PAGE) or st.session_state.get(PENDING_TAILOR_JOB_KEY):
-        return None
-
-    def load():
-        from resume_tailorer.job_search.job_service import build_tailor_snapshot
-        from resume_tailorer.session_profile import get_career_profile
-
-        service = job_service_for(owner_id)
-        earlier = service.db.get_jobs_by_latest_action("apply", limit=1)
-        if earlier:
-            profile = get_career_profile(st.session_state)
-            fit = service.fit_scorer.score_fit_detailed(profile, earlier[0]) if profile else None
-            st.session_state[PENDING_TAILOR_JOB_KEY] = build_tailor_snapshot(earlier[0], fit)
-
-    return load
-
-
 def _render_upload(owner_id: str) -> None:
     upload = st.file_uploader("Your resume (Word or PDF)", type=["docx", "pdf"], key="home_resume_upload")
     st.caption("Word (.docx) keeps your exact layout in tailored versions. Your file stays in your private folder.")
@@ -169,36 +143,42 @@ def _render_upload(owner_id: str) -> None:
         st.rerun()
 
 
-def _render_milestones(view) -> None:
-    marks = {"complete": "✓", "current": "→", "pending": "○"}
+def _render_checklist(view) -> None:
+    from resume_tailorer.ui.home_state import STATE_LABELS
+    from resume_tailorer.ui.shell import chip
+
+    tones = {"ready": "verified", "attention": "review", "not_started": ""}
+    marks = {"ready": "✓", "attention": "!", "not_started": "–"}
     rows = "".join(
-        f'<div class="jc-milestone {step.state}"><span class="jc-mark" aria-hidden="true">{marks[step.state]}</span>'
-        f'<span>{index}. {escape(step.label)}<span class="jc-sr-only"> — {step.state}</span></span></div>'
-        for index, step in enumerate(view.milestones, start=1)
+        f'<div class="jc-check"><span>{escape(item.label)}'
+        f'{"<br><span class=jc-meta>" + escape(item.detail) + "</span>" if item.detail else ""}</span>'
+        f'{chip(marks[item.state] + " " + STATE_LABELS[item.state], tones[item.state])}</div>'
+        for item in view.checklist
     )
-    st.markdown(f'<div class="jc-panel"><h3>Your setup</h3>{rows}</div>', unsafe_allow_html=True)
+    st.markdown(f'<div class="jc-panel"><h3>Getting set up</h3><p class="jc-meta">{view.completed} of '
+                f'{len(view.checklist)} ready. These can be done in any order.</p>{rows}</div>',
+                unsafe_allow_html=True)
 
 
 def _first_time(owner_id: str, view) -> None:
     st.markdown(
-        '<header class="jc-page-header"><h1>Get your first application ready</h1>'
-        "<p>Job Copilot finds real openings, shows why each one fits, and tailors your resume using only facts "
-        "you've confirmed. You stay in control of every change and every application.</p></header>",
+        '<header class="jc-page-header"><h1>Welcome to Job Copilot</h1>'
+        "<p>Find real openings, see why each one fits, and tailor your resume using only facts you've confirmed.</p></header>",
         unsafe_allow_html=True,
     )
     main, side = st.columns([2, 1], gap="large")
     action = view.next_action
     with main:
-        _focus(action, f"Step {next((i for i, s in enumerate(view.milestones, 1) if s.state == 'current'), view.completed + 1)} of 5 · {view.completed} done")
+        _focus(action, "Recommended next")
         if action.inline == "upload":
             _render_upload(owner_id)
         elif action.inline == "goals":
             if render_goals_wizard(owner_id, "Save goals and continue"):
                 st.rerun()
         else:
-            primary_action(action.label, action.page, "home_next_action", before=_resume_chosen_job(identity_owner(), action))
+            primary_action(action.label, action.page, "home_next_action")
     with side:
-        _render_milestones(view)
+        _render_checklist(view)
         st.markdown(
             '<div class="jc-panel" style="margin-top:1rem"><h3>What Job Copilot won\'t do</h3>'
             "<p>Invent experience, guess legal answers, or submit an application for you.</p></div>",
@@ -232,7 +212,7 @@ def _returning(owner_id: str, view, record, weekly, recent) -> None:
     action = view.next_action
     with main:
         _focus(action, "Your next best action")
-        primary_action(action.label, action.page, "home_next_action", before=_resume_chosen_job(owner_id, action))
+        primary_action(action.label, action.page, "home_next_action")
         st.write("")
         a, b = st.columns(2)
         with a:

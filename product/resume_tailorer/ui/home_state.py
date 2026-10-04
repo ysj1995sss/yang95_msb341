@@ -1,4 +1,7 @@
-"""Home: first-time journey or returning command center, and the one next best action.
+"""Home: a readiness checklist (setup) or a command center (returning), and the one next best action.
+
+Setup items can be completed in any order, so they are a checklist with
+Ready / Needs attention / Not started, never a numbered sequence (spec 008).
 
 Pure. The Home page gathers plain facts into HomeInputs; everything shown is
 derived here and tested without Streamlit.
@@ -10,7 +13,6 @@ from dataclasses import dataclass, field
 from datetime import date
 from typing import Optional
 
-from resume_tailorer.ui.design_system import ProgressStep, progress_steps
 from resume_tailorer.ui.profile_readiness import ProfileReadiness
 
 PROFILE_PAGE = "pages/1_Profile_Review.py"
@@ -19,13 +21,22 @@ TAILOR_PAGE = "pages/5_Tailor.py"
 APPLY_PAGE = "pages/3_Applications.py"
 TRACKER_PAGE = "pages/4_Application_Tracker.py"
 
-MILESTONES = (
-    "Import career history",
-    "Confirm important facts",
-    "Set job goals",
-    "Choose a real role",
-    "Prepare the first application",
+CHECKLIST = (
+    "Resume imported",
+    "Facts confirmed",
+    "Job goals set",
+    "A role chosen",
+    "An application tracked",
 )
+READY, ATTENTION, NOT_STARTED = "ready", "attention", "not_started"
+STATE_LABELS = {READY: "Ready", ATTENTION: "Needs attention", NOT_STARTED: "Not started"}
+
+
+@dataclass(frozen=True)
+class ChecklistEntry:
+    label: str
+    state: str
+    detail: str = ""
 
 
 @dataclass(frozen=True)
@@ -64,7 +75,7 @@ class NextAction:
 @dataclass(frozen=True)
 class HomeView:
     mode: str  # "first_time" or "returning"
-    milestones: tuple[ProgressStep, ...]
+    checklist: tuple[ChecklistEntry, ...]
     completed: int
     next_action: NextAction
     drafts: tuple[Item, ...] = ()
@@ -81,6 +92,20 @@ def milestone_flags(inputs: HomeInputs) -> tuple[bool, ...]:
         inputs.role_chosen,
         inputs.application_prepared,
     )
+
+
+def checklist_entries(inputs: HomeInputs, flags: tuple[bool, ...]) -> tuple[ChecklistEntry, ...]:
+    entries = []
+    for index, (label, done) in enumerate(zip(CHECKLIST, flags)):
+        if done:
+            entries.append(ChecklistEntry(label, READY))
+        elif index == 1 and inputs.readiness.has_resume:
+            n = len(inputs.readiness.attention)
+            detail = f"{n} {'item' if n == 1 else 'items'} to review" if n else "Give it a quick look and confirm"
+            entries.append(ChecklistEntry(label, ATTENTION, detail))
+        else:
+            entries.append(ChecklistEntry(label, NOT_STARTED))
+    return tuple(entries)
 
 
 def _first_time_action(index: int, inputs: HomeInputs) -> NextAction:
@@ -178,12 +203,12 @@ def returning_action(inputs: HomeInputs) -> NextAction:
 
 def build_home_view(inputs: HomeInputs) -> HomeView:
     flags = milestone_flags(inputs)
-    steps = progress_steps(MILESTONES, flags)
+    steps = checklist_entries(inputs, flags)
     completed = sum(flags)
     drafts = ()
     if inputs.active_job and inputs.artifact_status and not inputs.artifact_reviewed:
         drafts = (Item(inputs.active_job.title, inputs.active_job.detail, TAILOR_PAGE),)
-    if completed < len(MILESTONES):
+    if completed < len(CHECKLIST):
         first_open = flags.index(False)
         action = _first_time_action(first_open, inputs)
         mode = "first_time"
@@ -192,7 +217,7 @@ def build_home_view(inputs: HomeInputs) -> HomeView:
         mode = "returning"
     return HomeView(
         mode=mode,
-        milestones=steps,
+        checklist=steps,
         completed=completed,
         next_action=action,
         drafts=drafts,
