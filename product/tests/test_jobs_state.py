@@ -72,7 +72,7 @@ def test_partial_failure_keeps_the_successful_results():
     statuses = (("greenhouse", "ok"), ("lever", "ok"), ("ashby", "failed"))
     view = resolve(inputs(searched=True, result_ids=("a",), provider_statuses=statuses))
     assert view.state is JobsState.DETAIL_SELECTED and view.partial_failure
-    assert "Ashby didn't respond" in view.source_note and "Searched Greenhouse, Lever" in view.source_note
+    assert "Ashby didn't respond" in view.source_note and view.source_note.startswith("Greenhouse, Lever")
 
 
 def test_no_results_state():

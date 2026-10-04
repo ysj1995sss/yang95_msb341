@@ -187,7 +187,7 @@ def _first_time(owner_id: str, view) -> None:
 
 
 def _list_panel(title: str, items, empty: str) -> None:
-    st.markdown(f"#### {escape(title)}")
+    st.markdown(f'<div class="jc-list-title">{escape(title)}</div>', unsafe_allow_html=True)
     if not items:
         st.markdown(f'<p class="jc-meta">{escape(empty)}</p>', unsafe_allow_html=True)
         return
@@ -223,19 +223,19 @@ def _returning(owner_id: str, view, record, weekly, recent) -> None:
             _list_panel("Saved jobs to review", view.saved_jobs, "No saved jobs. Save roles from Jobs to compare later.")
     with side:
         goal = int((record.get("preferences") or {}).get("weekly_goal") or 0)
-        st.markdown("#### This week")
+        st.markdown('<div class="jc-list-title">This week</div>', unsafe_allow_html=True)
         st.metric("Applications sent", weekly.applied, help="Counted when you mark an application as applied.")
         if goal:
             st.progress(min(weekly.applied / goal, 1.0))
             st.caption(f"{weekly.applied} of your goal of {goal}. A steady pace beats a burst.")
         else:
             st.caption("Set a weekly goal in Tracker if it helps you pace yourself.")
-        st.markdown("#### Quick actions")
+        st.markdown('<div class="jc-list-title">Quick actions</div>', unsafe_allow_html=True)
         st.page_link(JOBS_PAGE, label="Find jobs", icon=":material/search:")
         st.page_link(TAILOR_PAGE, label="Tailor a resume", icon=":material/edit_document:")
         st.page_link(PROFILE_PAGE, label="Answer saved questions", icon=":material/quiz:")
         st.page_link(TRACKER_PAGE, label="Review applications", icon=":material/checklist:")
-        st.markdown("#### Recent activity")
+        st.markdown('<div class="jc-list-title">Recent activity</div>', unsafe_allow_html=True)
         if recent:
             for line in recent:
                 st.markdown(f'<div class="jc-meta">{escape(line)}</div>', unsafe_allow_html=True)

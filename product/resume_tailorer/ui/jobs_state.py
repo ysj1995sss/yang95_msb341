@@ -69,7 +69,7 @@ def source_note(statuses: Iterable[tuple[str, str]]) -> tuple[bool, str]:
         return False, ""
     if not ok:
         return False, "No source responded. Check your connection and search again."
-    note = "Searched " + ", ".join(ok)
+    note = ", ".join(ok)
     if failed:
         note += f" · {', '.join(failed)} didn't respond, so results may be incomplete"
     return bool(failed), note

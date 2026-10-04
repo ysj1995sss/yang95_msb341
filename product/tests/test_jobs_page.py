@@ -170,3 +170,26 @@ def test_a_new_session_restores_the_chosen_job_in_tailor(app, tmp_path):
     assert fresh.session_state[PENDING_TAILOR_JOB_KEY]["job_id"] == app.session_state["selected_job_id"]
     assert fresh.session_state["job_description_text"].strip()
     assert "Choose a job first" not in _text(fresh)
+
+
+def test_edit_search_opens_with_the_current_search_filled_in(app):
+    _search(app)
+    app.switch_page("pages/1_Profile_Review.py")
+    app.run()
+    app.switch_page("pages/2_Job_Search.py")
+    app.run()
+    _click(app, "Edit search")
+    assert [t for t in app.text_input if t.key == "job_title"][0].value == "Product Manager"
+    assert "Product Manager, Growth" in app.radio(key="w_jobs_selected").options
+
+
+def test_same_title_in_two_cities_stays_distinguishable(app):
+    dup = {"jobs": BOARD["jobs"] + [dict(BOARD["jobs"][0], id=3, location={"name": "Austin, TX"},
+                                         absolute_url="https://job-boards.greenhouse.io/gitlab/jobs/3")]}
+    with patch.object(GreenhouseScraper, "_fetch_board", lambda self, token: dup if token == "gitlab" else {"jobs": []}):
+        _click(app, "Find matching jobs")
+    options = app.radio(key="w_jobs_selected").options
+    assert len(set(options)) == len(options) == 3
+    app.radio(key="w_jobs_selected").set_value("greenhouse_3").run()
+    assert app.session_state["selected_job_id"] == "greenhouse_3"
+    assert any("Austin, TX" in m.value for m in app.markdown if "jc-meta" in m.value)

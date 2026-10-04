@@ -198,17 +198,19 @@ a:focus-visible, button:focus-visible, input:focus-visible, textarea:focus-visib
 .jc-ev-mark.verified { color: var(--jc-verified); }
 .jc-ev-mark.review { color: var(--jc-review); }
 .jc-ev-mark.blocked { color: var(--jc-blocked); }
-/* Selectable result rows: one radio group styled as a list. */
-.st-key-joblist { background: var(--jc-paper); border: 1px solid var(--jc-line) !important; border-radius: 4px; }
+/* Selectable result rows: one radio group styled as a list (Streamlit 1.64 markup). */
+.st-key-joblist { background: var(--jc-paper); border: 1px solid var(--jc-line) !important; border-radius: 4px; padding: 0 !important; }
 .st-key-joblist [role="radiogroup"] { gap: 0 !important; width: 100%; }
-.st-key-joblist [role="radiogroup"] > label { width: 100%; margin: 0 !important; padding: .65rem .8rem .65rem .7rem !important;
-  border-bottom: 1px solid var(--jc-line); border-left: 4px solid transparent; cursor: pointer; align-items: flex-start; }
-.st-key-joblist [role="radiogroup"] > label:hover { background: #F6F8FC; }
-.st-key-joblist [role="radiogroup"] > label:has(input:checked) { border-left-color: var(--jc-action); background: #EAF0FC; }
-.st-key-joblist [role="radiogroup"] > label > div:first-child { display: none; }
-.st-key-joblist [role="radiogroup"] > label p { font-weight: 700; font-size: .98rem; margin: 0; }
-.st-key-joblist [role="radiogroup"] > label [data-testid="stCaptionContainer"] p,
-.st-key-joblist [role="radiogroup"] > label small { font-weight: 400; color: var(--jc-muted); font-size: .84rem; }
+.st-key-joblist [role="radiogroup"] > div { width: 100%; padding: .6rem .85rem .6rem .7rem; border-bottom: 1px solid var(--jc-line);
+  border-left: 4px solid transparent; cursor: pointer; }
+.st-key-joblist [role="radiogroup"] > div:hover { background: #F6F8FC; }
+.st-key-joblist [role="radiogroup"] > div[data-selected="true"] { border-left-color: var(--jc-action); background: #EAF0FC; }
+.st-key-joblist [data-testid="stRadioOption"] { width: 100%; margin: 0 !important; }
+.st-key-joblist [data-testid="stRadioOption"] > div > div:first-child { display: none; }
+.st-key-joblist [data-testid="stRadioOption"] p { font-weight: 700; font-size: .98rem; margin: 0; }
+.st-key-joblist [data-testid="stRadioCaption"] { padding-left: 0 !important; margin-left: 0 !important; }
+.st-key-joblist [data-testid="stRadioCaption"] p { font-weight: 400; color: var(--jc-muted); font-size: .84rem; margin: .1rem 0 0; }
+.st-key-joblist [role="radiogroup"] > div:has(input:focus-visible) { outline: 3px solid #FFBF47; outline-offset: -3px; }
 .st-key-jobdetail { background: var(--jc-paper); border: 1px solid var(--jc-line); border-radius: 4px; padding: 1.1rem 1.25rem; }
 .jc-rail-status { font-size: .82rem; border: 1px solid var(--jc-line); border-radius: 4px; padding: .45rem .6rem; background: #FBFAF3; }
 .jc-rail-status summary { cursor: pointer; font-weight: 700; }
@@ -216,6 +218,7 @@ a:focus-visible, button:focus-visible, input:focus-visible, textarea:focus-visib
 .jc-check { display: grid; grid-template-columns: 1fr auto; gap: .5rem; padding: .55rem 0; border-bottom: 1px solid var(--jc-line); align-items: center; }
 .jc-check:last-child { border-bottom: 0; }
 .jc-srow { display: grid; grid-template-columns: 1.4fr 1fr; gap: .5rem; align-items: center; padding: .55rem 0; border-bottom: 1px solid var(--jc-line); }
+.jc-list-title { font-size: 1rem; font-weight: 700; margin: 1rem 0 .3rem; padding-bottom: .3rem; border-bottom: 1px solid var(--jc-line); }
 .st-key-tracker_cards { display: none; }
 @media (max-width: 780px) {
   .st-key-tracker_table { display: none; }

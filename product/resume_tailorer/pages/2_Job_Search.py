@@ -103,6 +103,10 @@ def _use_suggestion(title: str) -> None:
 def _render_form(compact: bool) -> None:
     """The search form. Find matching jobs queues a search that runs at the end of this run."""
     apply_goals_to_search_form(st.session_state, _record())
+    # Streamlit forgets widget values while the form is hidden; refill from the last search.
+    for key, value in (st.session_state.get(LAST_FORM_KEY) or {}).items():
+        if key != "max_salary" and value is not None:
+            st.session_state.setdefault(key, value)
     st.session_state.setdefault("selected_sources", [SOURCE_LABELS[s] for s in LIVE_SOURCES])
     suggestions = suggested_titles(_record().get("profile"))
     if suggestions and not compact:
@@ -158,7 +162,8 @@ def _queue_search_from_form() -> None:
     if record.get("profile"):
         save_goals(record, form_to_goals(form))
         save_record(st.session_state, st.session_state[OWNER_KEY], record)
-    st.session_state[LAST_FORM_KEY] = form
+    # LAST_FORM_KEY changes only when the search finishes, so the header keeps describing
+    # the results on screen while a new search runs.
     st.session_state[PENDING_SEARCH_KEY] = {"form": form, "sources": [s.value for s in sources]}
     st.session_state[EDITING_KEY] = False
 
@@ -253,7 +258,12 @@ def _render_list(jobs, fits, actions, ids) -> None:
     for job in jobs:
         job_id = job_id_for(job)
         row = build_row(job, fits.get(job_id), actions.get(job_id))
-        labels[job_id] = re.sub(r"([\\`*_{}\[\]<>#|])", r"\\\1", row.title)
+        label = _md_literal(row.title)
+        # Identical titles (one role in several cities) must stay distinguishable to the radio,
+        # or the highlighted row and the selected job can disagree. Zero-width spaces are invisible.
+        while label in labels.values():
+            label += "​"
+        labels[job_id] = label
         bits = [row.company, row.location]
         if row.work_mode != "Work mode not stated":
             bits.append(row.work_mode)
@@ -264,7 +274,7 @@ def _render_list(jobs, fits, actions, ids) -> None:
             bits.append(row.status)
         if row.is_demo:
             bits.append("Demo listing")
-        captions[job_id] = " · ".join(bits)
+        captions[job_id] = _md_literal(" · ".join(bits))
     current = st.session_state.get(SELECTED_KEY)
     if st.session_state.get("w_jobs_selected") not in ids:
         st.session_state["w_jobs_selected"] = current if current in ids else ids[0]
@@ -272,6 +282,11 @@ def _render_list(jobs, fits, actions, ids) -> None:
         chosen = st.radio("Jobs", list(ids), format_func=labels.get, captions=[captions[i] for i in ids],
                           key="w_jobs_selected", label_visibility="collapsed")
     st.session_state[SELECTED_KEY] = chosen
+
+
+def _md_literal(text: str) -> str:
+    """Text shown through Streamlit markdown as-is: no formatting, and "$" never starts maths."""
+    return re.sub(r"([\\`*_{}\[\]<>#|$])", r"\\\1", text or "")
 
 
 def _evidence_rows(lines, mark: str, tone: str) -> str:
@@ -325,8 +340,13 @@ def _render_detail(job, fit, action, quality) -> None:
         if not detail.strong and not detail.partial:
             html += '<p class="jc-meta">No matching evidence found in your verified facts yet.</p>'
         html += '<div class="jc-ev-group">Missing from your background</div>'
-        html += (_evidence_rows(detail.gaps, "×", "blocked") if detail.gaps
-                 else '<p class="jc-meta">Nothing genuinely missing against the stated requirements.</p>')
+        if detail.gaps:
+            html += _evidence_rows(detail.gaps, "×", "blocked")
+        elif fit is None or fit.overall_fit is None:
+            html += '<p class="jc-meta">Not known yet: this needs your Career Profile to compare against.</p>'
+        else:
+            html += '<p class="jc-meta">Nothing genuinely missing against the stated requirements.</p>'
+
         if detail.unknowns:
             html += '<div class="jc-ev-group">Important unknowns</div>' + _evidence_rows(detail.unknowns, "–", "")
         st.markdown(html, unsafe_allow_html=True)
@@ -348,8 +368,7 @@ def _render_detail(job, fit, action, quality) -> None:
 def _posting_markdown(description: str) -> str:
     """The posting as readable text; markdown symbols in it are shown literally."""
     text = (description or "").strip() or "This posting has no description."
-    text = re.sub(r"([\\`*_{}\[\]<>#|])", r"\\\1", text)
-    return "  \n".join(line.strip() for line in text.splitlines())
+    return "  \n".join(_md_literal(line.strip()) for line in text.splitlines())
 
 
 def _render_keywords(job) -> None:
@@ -388,21 +407,32 @@ def _render_setup_card() -> None:
 
 def _render_ready_card() -> None:
     goals = _saved_goals()
-    with st.container(border=True):
-        st.markdown(f'<div class="jc-eyebrow">Your search</div><div class="jc-search-summary">'
-                    f"{escape(goals_summary_line(goals))}</div>", unsafe_allow_html=True)
-        b1, b2, _ = st.columns([1.2, 0.9, 2])
-        if b1.button("Find matching jobs", type="primary", key="jobs_find_saved", use_container_width=True):
-            st.session_state[LAST_FORM_KEY] = dict(goals)
-            _queue_search_again()
-        if b2.button("Edit search", key="jobs_edit_saved", use_container_width=True):
-            st.session_state[EDITING_KEY] = True
+    main, side = st.columns([2.2, 1], gap="large")
+    with main:
+        with st.container(border=True):
+            st.markdown(f'<div class="jc-eyebrow">Your search</div><div class="jc-search-summary">'
+                        f"{escape(goals_summary_line(goals))}</div>"
+                        '<p class="jc-meta">Live openings from 63 company boards on Greenhouse, Lever and Ashby.</p>',
+                        unsafe_allow_html=True)
+            b1, b2, _ = st.columns([1.2, 0.9, 2])
+            if b1.button("Find matching jobs", type="primary", key="jobs_find_saved", use_container_width=True):
+                st.session_state[LAST_FORM_KEY] = dict(goals)
+                _queue_search_again()
+            if b2.button("Edit search", key="jobs_edit_saved", use_container_width=True):
+                st.session_state[EDITING_KEY] = True
+                st.rerun()
+        saved = _service().db.get_jobs_by_latest_action("save", limit=100)
+        if saved and st.button(f"View {len(saved)} saved {'job' if len(saved) == 1 else 'jobs'}", key="jobs_open_saved"):
+            st.session_state[VIEW_KEY] = SAVED_VIEW
+            st.session_state.pop("w_jobs_view", None)
             st.rerun()
-    saved = _service().db.get_jobs_by_latest_action("save", limit=100)
-    if saved and st.button(f"View {len(saved)} saved {'job' if len(saved) == 1 else 'jobs'}", key="jobs_open_saved"):
-        st.session_state[VIEW_KEY] = SAVED_VIEW
-        st.session_state.pop("w_jobs_view", None)
-        st.rerun()
+    with side:
+        st.markdown(
+            '<div class="jc-aside"><h3>What you get</h3>'
+            "<p>Each role shows why it may fit you, what is genuinely missing, and what the posting doesn't say.</p>"
+            "<p>Nothing is submitted from here. Choosing a role opens Tailor with the posting loaded.</p></div>",
+            unsafe_allow_html=True,
+        )
 
 
 def _render_results(status_slot, has_goals: bool, searched: bool) -> None:
