@@ -26,7 +26,7 @@ class ReviewProgress:
     def label(self) -> str:
         if self.total == 0:
             return "No changes need your review"
-        return f"{self.reviewed} of {self.total} changes reviewed"
+        return f"{self.reviewed} of {self.total} meaningful changes reviewed"
 
 
 def review_progress(

@@ -215,5 +215,5 @@ def test_an_empty_reply_that_hit_the_limit_is_retried_with_more_room():
 def test_an_empty_reply_for_another_reason_is_reported_plainly():
     client = LLMClient(_settings(), sleep=lambda s: None)
     with patch("resume_tailorer.llm.client.litellm.completion", return_value=_reply(None, "content_filter")):
-        with pytest.raises(RuntimeError, match="empty reply \(stopped: content_filter\)"):
+        with pytest.raises(RuntimeError, match=r"empty reply \(stopped: content_filter\)"):
             client.complete("s", "u")

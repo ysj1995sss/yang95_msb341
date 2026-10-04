@@ -129,16 +129,22 @@ def test_guided_journey_from_resume_to_tracker(app, tmp_path):
     assert at.session_state["profile_record"]["preferences"]["job_title"] == "Product Manager"
     assert "Choose a real role" in _markdown(at)
 
-    # Jobs: the saved goal is already in the search; a real (stubbed) result with fit evidence.
+    # Jobs: the saved search is summarised (no form, no stepper); one click searches.
     _go(at, "pages/2_Job_Search.py")
-    assert at.text_input(key="job_title").value == "Product Manager"
-    _click(at, "Search roles")
+    page = _markdown(at)
+    assert "Product Manager roles" in page
+    assert "Set goals" not in page and "Review a role" not in page
+    assert not [t for t in at.text_input if t.key == "job_title"]
+    _click(at, "Find matching jobs")
     page = _markdown(at)
     assert "Senior Product Manager, Analytics" in page
-    assert "Fit not assessed" not in page
-    _click(at, "Prepare application")
+    assert "Why this role may fit you" in page
+    assert at.radio(key="w_jobs_selected").value == "greenhouse_101"
+    _click(at, "Prepare this application")
     pending = at.session_state[PENDING_TAILOR_JOB_KEY]
     assert pending["job_id"] == "greenhouse_101"
+    assert "analytics roadmap" in pending["description"]
+    assert at.session_state["profile_record"]["active_job_id"] == "greenhouse_101"
 
     # Tailor: switches to this job and uses the stored resume.
     _go(at, "pages/5_Tailor.py")

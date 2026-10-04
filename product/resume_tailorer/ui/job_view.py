@@ -202,6 +202,14 @@ def build_detail(job: JobPosting, fit: Optional[FitResult], action: Optional[str
             ("Preferred skills", pct(fit.preferred_qualifications)),
             ("Evidence found", pct(fit.evidence_confidence)),
         )
+    stated = []
+    if job.salary_min is None and job.salary_max is None:
+        stated.append("Salary was not stated")
+    if job.sponsorship_available is None:
+        stated.append("Sponsorship was not stated")
+    if fit is None or fit.overall_fit is None:
+        stated.append("Fit couldn't be assessed from what the posting says")
+    unknowns = tuple(stated) + tuple(u for u in unknowns if u not in stated)
     if fit is None or fit.overall_fit is None:
         summary = "Fit not assessed. Import and confirm your resume in Career Profile to see how you match."
     elif hard:

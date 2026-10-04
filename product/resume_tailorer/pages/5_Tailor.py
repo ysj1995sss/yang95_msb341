@@ -44,9 +44,7 @@ from resume_tailorer.pdf.validator import PDFValidator
 from resume_tailorer.llm.settings import resolve_settings
 from resume_tailorer.llm.client import LLMClient
 from resume_tailorer.llm.ui import COMMON_MODELS, collect_sidebar_llm_fields
-from resume_tailorer.job_search.job_service import PENDING_TAILOR_JOB_KEY, build_tailor_snapshot
-from resume_tailorer.session_profile import get_career_profile
-from resume_tailorer.ui.auth_gate import job_service_for
+from resume_tailorer.job_search.job_service import PENDING_TAILOR_JOB_KEY
 from resume_tailorer.docx_export import run_docx_tailoring_pipeline
 from resume_tailorer.analyzers.gap_analyzer import find_unsupported_claims
 from resume_tailorer.artifacts.changes import build_freeform_changes
@@ -461,65 +459,77 @@ def _resume_source(owner_id: str):
     return None
 
 
-def _render_recent_choices(owner_id: str) -> None:
-    """Jobs the user chose to prepare in an earlier session, so nothing is re-entered."""
-    service = job_service_for(owner_id)
-    chosen = service.db.get_jobs_by_latest_action("apply", limit=5)
-    if not chosen:
-        return
-    st.caption("Continue with a job you chose earlier:")
-    for job in chosen:
-        if st.button(f"{job.title} at {job.company}", key=f"tailor_resume_{job.source.value}_{job.source_id}"):
-            profile = get_career_profile(st.session_state)
-            fit = service.fit_scorer.score_fit_detailed(profile, job) if profile else None
-            st.session_state[PENDING_TAILOR_JOB_KEY] = build_tailor_snapshot(job, fit)
+def _render_settings() -> None:
+    with st.expander("Settings"):
+        st.selectbox("Resume length", ["Preserve original length", "1 page", "2 pages"], key="tailor_length")
+        st.checkbox("Light touch: only add missing keywords, don't rewrite bullets", key="tailor_conservative")
+        one_off = st.file_uploader("Use a different resume file for this job only", type=["pdf", "docx"],
+                                   key="tailor_one_off_upload")
+        if one_off is not None:
+            st.session_state["tailor_one_off"] = {"name": one_off.name, "bytes": one_off.getvalue()}
+        if st.session_state.get("tailor_one_off") and st.button("Go back to my profile resume"):
+            st.session_state.pop("tailor_one_off", None)
             st.rerun()
+        st.caption("Writing model (leave blank to use the configured one)")
+        model_choice = st.selectbox("Common models", options=["(custom / env)"] + COMMON_MODELS, key="tailor_model_choice")
+        st.text_input("Model id", value="" if model_choice.startswith("(") else model_choice, key="tailor_model")
+        st.text_input("API key", type="password", key="tailor_api_key")
+        st.text_input("Base URL (optional)", key="tailor_api_base")
+
+
+def _resume_line(owner_id: str, source) -> bool:
+    if source:
+        st.markdown(f'<div class="jc-meta">Resume: {escape(source[2])}</div>', unsafe_allow_html=True)
+        return True
+    st.warning("No resume yet. Import it once in Career Profile and it is reused for every job.")
+    st.page_link("pages/1_Profile_Review.py", label="Import your resume →")
+    return False
 
 
 def _render_setup(owner_id: str, pending: dict) -> None:
     source = _resume_source(owner_id)
-    left, right = st.columns([2, 1], gap="large")
-    with left:
-        if pending:
-            st.markdown(f"### Tailor your resume for {pending.get('title', 'this role')}")
-            st.caption("Job Copilot proposes only changes your verified facts support. You review each one.")
-        else:
-            st.markdown("### Choose a job first")
-            _render_recent_choices(owner_id)
-            st.write("Pick a role in Jobs and choose **Prepare application**, or paste a job description below.")
-            st.page_link("pages/2_Job_Search.py", label="Find a job →")
-        with st.expander("Job description", expanded=not pending):
-            st.text_area("Job description text", height=220, key=_JD_SESSION_KEY)
-    with right:
-        st.markdown("**Resume**")
-        if source:
-            st.markdown(f'<span class="jc-meta">{escape(source[2])}</span>', unsafe_allow_html=True)
-        else:
-            st.warning("No resume yet. Import it once in Career Profile.")
-            st.page_link("pages/1_Profile_Review.py", label="Import your resume →")
-        with st.expander("Use a different file for this job only"):
-            one_off = st.file_uploader("Resume file (PDF or DOCX)", type=["pdf", "docx"], key="tailor_one_off_upload")
-            if one_off is not None:
-                st.session_state["tailor_one_off"] = {"name": one_off.name, "bytes": one_off.getvalue()}
-            if st.session_state.get("tailor_one_off") and st.button("Go back to my profile resume"):
-                st.session_state.pop("tailor_one_off", None)
-                st.rerun()
-        with st.expander("Settings"):
-            st.selectbox(
-                "Resume length", ["Preserve original length", "1 page", "2 pages"], key="tailor_length",
+    main, side = st.columns([2, 1], gap="large")
+    if pending:
+        with main:
+            with st.container(border=True):
+                st.markdown('<h2 class="jc-card-title">Create your tailored resume</h2>'
+                            '<p class="jc-meta">Job Copilot proposes only changes your verified facts support. '
+                            "You review each one before anything is used.</p>", unsafe_allow_html=True)
+                ready = _resume_line(owner_id, source)
+                if st.button("Create tailored resume", type="primary", disabled=not ready, key="tailor_create"):
+                    _run_tailoring(source, pending)
+                _render_settings()
+                with st.expander("Job description (from the posting)"):
+                    st.markdown(st.session_state.get(_JD_SESSION_KEY) or "No description was found for this job.")
+        with side:
+            st.markdown(
+                '<div class="jc-aside"><h3>What happens next</h3>'
+                "<p>About a minute to write and check changes against your Career Profile.</p>"
+                "<p>Then you review each change beside the exact resume, and continue to Apply.</p></div>",
+                unsafe_allow_html=True,
             )
-            st.checkbox(
-                "Light touch: only add missing keywords, don't rewrite bullets", key="tailor_conservative",
-            )
-            st.caption("Model (leave blank to use the configured one)")
-            model_choice = st.selectbox("Common models", options=["(custom / env)"] + COMMON_MODELS, key="tailor_model_choice")
-            st.text_input("Model id", value="" if model_choice.startswith("(") else model_choice, key="tailor_model")
-            st.text_input("API key", type="password", key="tailor_api_key")
-            st.text_input("Base URL (optional)", key="tailor_api_base")
+        return
 
-    run = st.button("Tailor my resume", type="primary", disabled=not source, use_container_width=False)
-    if run:
-        _run_tailoring(source, pending)
+    with main:
+        with st.container(border=True):
+            st.markdown('<h2 class="jc-card-title">No job selected</h2>'
+                        '<p class="jc-meta">Choose a role in Jobs and select <strong>Prepare this application</strong>. '
+                        "It opens here with the posting already loaded.</p>", unsafe_allow_html=True)
+            if st.button("Find a job", type="primary", key="tailor_find_job"):
+                st.switch_page("pages/2_Job_Search.py")
+        with st.expander("Tailor for a job that's not in your search results"):
+            st.text_area("Paste the job description", height=220, key=_JD_SESSION_KEY)
+            ready = _resume_line(owner_id, source)
+            if st.button("Create tailored resume", disabled=not ready, key="tailor_create_manual"):
+                _run_tailoring(source, pending)
+            _render_settings()
+    with side:
+        st.markdown(
+            '<div class="jc-aside"><h3>How Tailor works</h3>'
+            "<p>It rewords your existing bullets to match the posting, using only facts you've confirmed.</p>"
+            "<p>Requirements you don't meet are listed as missing and never added.</p></div>",
+            unsafe_allow_html=True,
+        )
 
 
 def _run_tailoring(source, pending: dict) -> None:

@@ -48,7 +48,7 @@ def test_detail_separates_evidence_gaps_hard_gates_and_unknowns():
     assert detail.gaps == ("kubernetes",)
     assert any("8+ years" in g for g in detail.hard_gates)
     assert any("sponsor" in g for g in detail.hard_gates)
-    assert detail.unknowns == ("Preferred, not in your profile: go",)
+    assert detail.unknowns == ("Salary was not stated", "Preferred, not in your profile: go")
     assert "hard" in detail.summary
 
 
@@ -56,3 +56,9 @@ def test_no_sponsorship_is_not_a_gate_when_the_user_does_not_need_it():
     detail = build_detail(job(sponsorship_available=False), None, None, {"sponsorship_required": False})
     assert detail.hard_gates == ()
     assert detail.summary.startswith("Fit not assessed")
+
+
+def test_unknown_salary_sponsorship_and_fit_are_named_as_unknowns():
+    detail = build_detail(job(), None, None, {})
+    assert detail.unknowns == ("Salary was not stated", "Sponsorship was not stated",
+                               "Fit couldn't be assessed from what the posting says")

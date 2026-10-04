@@ -27,7 +27,7 @@ def test_one_vocabulary_for_decisions():
 def test_progress_counts_reviewed_changes_and_blocks_continue_until_rebuilt():
     changes = [change("a"), change("b")]
     p = review_progress(changes, ["a"], dirty=False, status=ValidationStatus.PASS)
-    assert p.label == "1 of 2 changes reviewed" and not p.can_continue and "remaining 1" in p.blocker
+    assert p.label == "1 of 2 meaningful changes reviewed" and not p.can_continue and "remaining 1" in p.blocker
     p = review_progress(changes, ["a", "b"], dirty=True, status=ValidationStatus.PASS)
     assert not p.can_continue and "Rebuild" in p.blocker
     p = review_progress(changes, ["a", "b"], dirty=False, status=ValidationStatus.PASS)
