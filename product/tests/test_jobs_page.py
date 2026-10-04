@@ -193,3 +193,31 @@ def test_same_title_in_two_cities_stays_distinguishable(app):
     app.radio(key="w_jobs_selected").set_value("greenhouse_3").run()
     assert app.session_state["selected_job_id"] == "greenhouse_3"
     assert any("Austin, TX" in m.value for m in app.markdown if "jc-meta" in m.value)
+
+
+def test_tailor_offers_the_existing_tailored_resume_in_a_new_session(app, tmp_path):
+    import hashlib
+
+    from resume_tailorer.active_job import remember_handoff
+
+    _search(app)
+    _click(app, "Prepare this application")
+    job_id = app.session_state["selected_job_id"]
+    pdf = tmp_path / "tailored.pdf"
+    pdf.write_bytes(b"%PDF-1.4 synthetic")
+    store = store_for("local")
+    record = store.load()
+    remember_handoff(record, {"job_id": job_id, "pdf_path": str(pdf),
+                              "sha256": hashlib.sha256(pdf.read_bytes()).hexdigest(), "version": 3,
+                              "validation_status": "PASS", "resume_match_score": 0.8}, True)
+    store.save(record)
+
+    fresh = AppTest.from_file(APP, default_timeout=60)
+    fresh.switch_page("pages/5_Tailor.py")
+    fresh.run()
+    assert not fresh.exception, fresh.exception
+    text = _text(fresh)
+    assert "Your tailored resume is ready" in text and "Version 3" in text
+    assert "Create your tailored resume" not in text
+    _click(fresh, "Tailor again")
+    assert "Create your tailored resume" in _text(fresh)

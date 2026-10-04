@@ -501,9 +501,53 @@ def _resume_line(owner_id: str, source) -> bool:
     return False
 
 
+def _existing_handoff(pending: dict):
+    """The validated tailored resume already made for this job (kept across sessions), if any."""
+    handoff = st.session_state.get(HANDOFF_KEY) or {}
+    if not pending or handoff.get("job_id") != pending.get("job_id"):
+        return None
+    if str(handoff.get("validation_status", "")).upper() == "FAIL" or not os.path.isfile(handoff.get("pdf_path", "")):
+        return None
+    return handoff
+
+
+def _render_existing(handoff: dict, main, side) -> None:
+    """Don't offer to start over when a usable tailored resume already exists."""
+    status = str(handoff.get("validation_status", "")).upper()
+    reviewed = bool(handoff.get("review_complete"))
+    with main:
+        with st.container(border=True):
+            st.markdown(
+                '<h2 class="jc-card-title">Your tailored resume is ready</h2>'
+                f'<p class="jc-meta">Version {handoff.get("version")} · '
+                f'{"passed validation" if status == "PASS" else "passed with warnings to read"} · '
+                f'{"every change reviewed" if reviewed else "changes not fully reviewed"}</p>',
+                unsafe_allow_html=True,
+            )
+            with st.container(horizontal=True):
+                primary_action("Continue to application", "pages/3_Applications.py", "tailor_ready_continue")
+                with open(handoff["pdf_path"], "rb") as f:
+                    st.download_button("Download PDF", f.read(), file_name=f"tailored_resume_v{handoff.get('version')}.pdf",
+                                       mime="application/pdf", key="tailor_ready_download")
+                if st.button("Tailor again", key="tailor_ready_redo",
+                             help="Creates a new version. The current one stays until the new one passes validation."):
+                    st.session_state["tailor_redo"] = True
+                    st.rerun()
+            st.caption("The detailed change-by-change review is only available in the session that created it. "
+                       "Tailor again to review changes one by one.")
+    with side:
+        st.markdown('<div class="jc-aside"><h3>What happens next</h3>'
+                    "<p>Apply checks everything is ready and opens the employer's own application.</p>"
+                    "<p>Nothing is submitted for you.</p></div>", unsafe_allow_html=True)
+
+
 def _render_setup(owner_id: str, pending: dict) -> None:
     source = _resume_source(owner_id)
     main, side = st.columns([2, 1], gap="large")
+    ready_resume = _existing_handoff(pending)
+    if pending and ready_resume and not st.session_state.get("tailor_redo"):
+        _render_existing(ready_resume, main, side)
+        return
     if pending:
         with main:
             with st.container(border=True):
@@ -681,6 +725,7 @@ def _run_tailoring(source, pending: dict) -> None:
         tailored_alignment=tailored_alignment, version=1,
         folder=st.session_state.get("artifacts_dir"),
     )
+    st.session_state.pop("tailor_redo", None)
     st.rerun()
 
 
@@ -695,7 +740,8 @@ def main():
 
     pending = st.session_state.get(PENDING_TAILOR_JOB_KEY) or {}
     if pending:
-        sync_pending_job(st.session_state, pending, _JD_SESSION_KEY, _STATE_KEY)
+        if sync_pending_job(st.session_state, pending, _JD_SESSION_KEY, _STATE_KEY):
+            st.session_state.pop("tailor_redo", None)
 
     if _STATE_KEY in st.session_state:
         _render_review_room(pending)

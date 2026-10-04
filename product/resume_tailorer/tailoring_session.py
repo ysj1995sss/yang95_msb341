@@ -32,7 +32,9 @@ def sync_pending_job(
     session[ACTIVE_JOB_KEY] = job_key
     session[jd_key] = pending.get("description") or ""
     session.pop(state_key, None)
-    session.pop(HANDOFF_KEY, None)
+    # Keep a handoff only if it was made for this same job (e.g. restored in a new session).
+    if (session.get(HANDOFF_KEY) or {}).get("job_id") != job_key:
+        session.pop(HANDOFF_KEY, None)
     return True
 
 
