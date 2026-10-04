@@ -2,7 +2,7 @@
 
 Job Copilot helps job seekers find relevant roles, tailor truthful resumes, and finish applications with less repetitive work.
 
-**Where to see it:** Run `product/resume_tailorer/app.py` locally with Streamlit. A public deployment URL is not recorded until one is verified.
+**Where to see it:** the live demo below, or run `product/resume_tailorer/app.py` locally with Streamlit.
 **Built by:** yang95, MSB 341 Product Management, BYU
 
 ## Context
@@ -16,6 +16,13 @@ Fill this in during Sprint 1 and keep it current. Every sprint is read against i
 
 If your situation changes, revise this and note what changed. That is normal; a silent
 mismatch between this file and your work is not.
+
+## Where the work lives
+
+- **Repos:** [ysj1995sss/yang95_msb341](https://github.com/ysj1995sss/yang95_msb341) (this repo, public, shared with sdmurff). All the work is here; there is no second repo.
+- **Live:** https://yang95msb341-epxbfpbdegytjwcajjthay.streamlit.app/ (Streamlit Community Cloud; redeploys from `main`). It runs in single-user demo mode, so please don't share the link as a product.
+- **Docs:** none outside this repo. Plans, reviews and results are in `sprints/`, specs in `specs/`, and decisions in `decisions/`.
+- **Demo videos:** Loom links are submitted on Canvas.
 
 ## What is in this repo
 
