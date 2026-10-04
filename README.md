@@ -46,13 +46,14 @@ whether a change to a prompt helped or hurt.
 
 ## Running it
 
-The Streamlit product is organized into five evidence-first workspaces:
+The Streamlit product is organized into six destinations (spec 007, decision 025):
 
-- **Fact Vault** — upload a resume and distinguish resume-extracted facts from user edits.
-- **Job Discovery** — search permitted sources and inspect strong matches, partial evidence, and true gaps.
-- **Tailoring Studio** — review each supported resume edit beside validation and download evidence.
-- **Apply Launchpad** — stage the job link, resume, and profile; Manual mode is the reliable path today.
-- **Application Tracker** — review immutable submission snapshots, provenance, status, and next actions.
+- **Home** — a five-step setup for new users, then a daily command center: the next best action, follow-ups due, resumes awaiting decisions, applications ready to finish, saved jobs and weekly pace.
+- **Career Profile** — import a resume once; every fact shows whether it came from the resume, was edited or confirmed by you, or is missing. Also holds job goals, work authorization (only your own answers) and saved application answers.
+- **Jobs** — search live Greenhouse, Lever and Ashby boards; see strong evidence, partial evidence, genuine gaps, hard requirements and unknowns for each role; Save, Pass or Prepare application.
+- **Tailor** — review one proposed change at a time (job requirement → supporting fact → resume change) beside the exact resume; requirements you don't meet are never added.
+- **Apply** — a readiness checklist and the employer's own application link; Manual mode is the reliable path; Mark as applied when you're done.
+- **Tracker** — every application with the exact job, resume and answers used, saved views, next actions and a weekly goal.
 
 Start the local interface:
 
@@ -74,7 +75,7 @@ python -m pip install -e ".[dev]"
 uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 ```
 
-Health check: `http://localhost:8000/health`. Current baseline (2026-09-29): 786 product tests and 70 API tests, run in CI on every push.
+Health check: `http://localhost:8000/health`. Current baseline (2026-10-04): 874 product tests and 70 API tests, run in CI on every push.
 
 Key endpoints: `POST /profile/upload` (parses a real PDF/DOCX into a full career profile), `POST /jobs/upsert` (dedupe + candidate-fit scoring), `POST /tailor/preview` (job analysis → gap report → LLM tailoring → optimization loop → PDF, requires `LLM_MODEL`/`LLM_API_KEY` in `apps/api/.env`).
 

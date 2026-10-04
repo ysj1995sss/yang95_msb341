@@ -9,6 +9,20 @@ Read this file first, then `CLAUDE.md`, then the decisions listed below. Do not 
 
 ---
 
+## Latest update (2026-10-04) — guided workflow redesign
+
+- **Spec 007 and decision 025:** six destinations (Home, Career Profile, Jobs, Tailor, Apply,
+  Tracker) replace the five tool-named workspaces and the global ribbon.
+- **Career Profile storage:** one JSON file per user plus immutable resume versions, in the
+  user's data folder (`product/resume_tailorer/profile_store.py`, `profile_import.py`). The
+  Streamlit app no longer logs in to the FastAPI service; the API is unchanged for its own clients.
+- **Moved:** tailoring is `pages/5_Tailor.py`; `app.py` is Home. View logic is in pure modules
+  under `ui/` (`home_state`, `profile_readiness`, `job_view`, `tailor_progress`,
+  `apply_readiness`, `tracker_views`).
+- **Apply:** no typed job ID or PDF path; Manual is the only available mode; "Mark as applied"
+  records the user's own status change.
+- **Test baseline:** `product/` 874 passed, `apps/api/` 70 passed.
+
 ## Latest update (2026-09-29) — read this first
 
 This document's body predates the work below. Where they disagree, this section and the listed

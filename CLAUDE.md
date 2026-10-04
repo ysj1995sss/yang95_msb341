@@ -16,13 +16,16 @@ a brand new session act like a colleague who already knows what you are working 
 - **Where we are:** Sprint 2 (Steps 3–9 job discovery) is in progress, and all 24 spec steps
   exist on `main`. A 2026-09-29 external audit was worked through in full: tasks 1–4 are in
   `decisions/021`, task 6 in `decisions/022`, and task 5 in `decisions/023`.
-  - **Discovery:** real Greenhouse results only (36 company boards, no placeholder jobs), with
-    goal filters that actually filter (`decisions/020`).
+  - **Discovery:** real Greenhouse, Lever and Ashby results only (63 company boards, no
+    placeholder jobs), with goal filters that actually filter (`decisions/020`).
   - **Validation:** blank PDFs and unreviewed made-up claims fail; failed artifacts are never
     handed out.
   - **Regeneration** uses the run's exact resume version.
-  - **Connected workspaces:** the five share one career profile and hand the validated resume
-    to Launchpad.
+  - **Guided workflow (2026-10-04, spec 007 / decision 025):** six destinations (Home, Career
+    Profile, Jobs, Tailor, Apply, Tracker). The Career Profile is stored once per user
+    (`profile_store.py`, versioned resume files, per-fact provenance) and reused everywhere; the
+    Streamlit app no longer needs the separate API login. Tailoring moved to `pages/5_Tailor.py`;
+    `app.py` is Home.
   - **Manual mode** needs no ATS parsing; previews never save anything.
   - **Length:** one bounded length-correction pass, and a hard page limit on freeform.
   - **Custom application answers** come only from the user's approved answer bank.
@@ -37,8 +40,9 @@ a brand new session act like a colleague who already knows what you are working 
   - LinkedIn, Indeed and Handshake are demo data only.
 - **Biggest open risk:** nobody other than the builder has used the full search → tailor → apply
   loop. Next: supervised tests with 2–3 people, then the Sprint 2 review.
-- **Where to see it:** `product/resume_tailorer/app.py` (Tailoring Studio) and
-  `product/resume_tailorer/pages/` (Fact Vault, Job Search, Launchpad, Tracker).
+- **Where to see it:** `product/resume_tailorer/app.py` (Home) and
+  `product/resume_tailorer/pages/` (Career Profile, Jobs, Tailor, Apply, Tracker). View logic
+  lives in pure, tested modules under `product/resume_tailorer/ui/`.
 - **Handoff docs:** `HANDOFF-TO-CLAUDE-CODE.md` and `HANDOFF-TO-CODEX.md`, both pointing at the
   same `decisions/` history.
 
@@ -54,7 +58,7 @@ a brand new session act like a colleague who already knows what you are working 
 
 - **Stack:** Python (resume_tailorer package), Streamlit UI with built-in Google sign-in, any LiteLLM-supported model (`product/resume_tailorer/llm/`), pytest, reportlab/PyMuPDF for PDFs, python-docx for the DOCX splice pipeline, Greenhouse live job search (LinkedIn/Indeed/Handshake demo only), FastAPI backend in `apps/api/`.
 - **How work ships:** push to `main` → Streamlit Community Cloud redeploys `product/resume_tailorer/app.py`. Multi-user deployment needs the `decisions/023` checklist first (Google OAuth secrets, durable `JOB_COPILOT_DATA_DIR`).
-- **Testing and style:** pytest; CI (`.github/workflows/tests.yml`) runs both suites on every push, on Python 3.14 with the pinned versions in `product/requirements.txt`. Run both before claiming anything is done: `product/` currently 786 tests, `apps/api/` currently 70.
+- **Testing and style:** pytest; CI (`.github/workflows/tests.yml`) runs both suites on every push, on Python 3.14 with the pinned versions in `product/requirements.txt`. Run both before claiming anything is done: `product/` currently 874 tests, `apps/api/` currently 70.
 
 ## Working with me
 
