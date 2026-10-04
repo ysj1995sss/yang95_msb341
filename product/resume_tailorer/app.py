@@ -189,7 +189,7 @@ def _first_time(owner_id: str, view) -> None:
     main, side = st.columns([2, 1], gap="large")
     action = view.next_action
     with main:
-        _focus(action, f"Step {view.completed + 1} of 5 · {view.completed} done")
+        _focus(action, f"Step {next((i for i, s in enumerate(view.milestones, 1) if s.state == 'current'), view.completed + 1)} of 5 · {view.completed} done")
         if action.inline == "upload":
             _render_upload(owner_id)
         elif action.inline == "goals":
