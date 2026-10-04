@@ -21,6 +21,9 @@ a brand new session act like a colleague who already knows what you are working 
   - **Validation:** blank PDFs and unreviewed made-up claims fail; failed artifacts are never
     handed out.
   - **Regeneration** uses the run's exact resume version.
+  - **Jobs workspace (2026-10-04, spec 008 / decision 026):** Jobs is a stateful list/detail
+    browser driven by `ui/jobs_state.py`; the chosen job and its tailored resume persist across
+    sessions; Career Profile is a section summary with one editor.
   - **Guided workflow (2026-10-04, spec 007 / decision 025):** six destinations (Home, Career
     Profile, Jobs, Tailor, Apply, Tracker). The Career Profile is stored once per user
     (`profile_store.py`, versioned resume files, per-fact provenance) and reused everywhere; the
@@ -59,7 +62,7 @@ a brand new session act like a colleague who already knows what you are working 
 - **Stack:** Python (resume_tailorer package), Streamlit for UI, an LLM API for tailoring (see `product/resume_tailorer/llm/`), pytest for testing, reportlab for PDF generation, python-docx + docx2pdf for the DOCX splice pipeline, multiple job board scrapers (Greenhouse live; LinkedIn/Indeed/Handshake limited/demo).
 - **Two separate venvs:** `product/.venv` (core engine + Streamlit) and `apps/api/.venv` (FastAPI backend). Set `PYTHONPATH` to include `product/` when running Streamlit or product tests directly.
 - **How work ships:** push to `main` → Streamlit Community Cloud redeploys `product/resume_tailorer/app.py`. Multi-user deployment needs the `decisions/023` checklist first (Google OAuth secrets, durable `JOB_COPILOT_DATA_DIR`).
-- **Testing and style:** pytest; CI (`.github/workflows/tests.yml`) runs both suites on every push, on Python 3.14 with the pinned versions in `product/requirements.txt`. Run both before claiming anything is done: `product/` currently 874 tests, `apps/api/` currently 70.
+- **Testing and style:** pytest; CI (`.github/workflows/tests.yml`) runs both suites on every push, on Python 3.14 with the pinned versions in `product/requirements.txt`. Run both before claiming anything is done: `product/` currently 925 tests, `apps/api/` currently 70.
 
 ## Working with me
 

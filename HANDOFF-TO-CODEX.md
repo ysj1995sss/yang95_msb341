@@ -10,6 +10,18 @@ decisions 001, 006, 009, 012, 014, 015, 016, or 017 unless new evidence forces i
 
 ---
 
+## Latest update (2026-10-04, later) — Jobs workspace and site polish
+
+- **Spec 008 / decision 026.** Jobs has no stepper:
+  - state comes from `ui/jobs_state.py`;
+  - results use a list/detail workspace;
+  - the detail panel puts the evidence first.
+- **Persistence.** `active_job_id` and `active_handoff` in the Career Profile record let a new
+  session reopen the chosen job and its tailored resume (`active_job.py`).
+- **Home, Career Profile, Apply and Tracker:** a Home readiness checklist, a Career Profile
+  section summary, empty-state guidance on Apply and Tracker, and a compact local-demo status.
+- **Test baseline:** `product/` 925 passed, `apps/api/` 70 passed.
+
 ## Latest update (2026-10-04) — guided workflow redesign
 
 - **Spec 007 and decision 025:** six destinations (Home, Career Profile, Jobs, Tailor, Apply,

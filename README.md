@@ -50,7 +50,7 @@ The Streamlit product is organized into six destinations (spec 007, decision 025
 
 - **Home** — a five-step setup for new users, then a daily command center: the next best action, follow-ups due, resumes awaiting decisions, applications ready to finish, saved jobs and weekly pace.
 - **Career Profile** — import a resume once; every fact shows whether it came from the resume, was edited or confirmed by you, or is missing. Also holds job goals, work authorization (only your own answers) and saved application answers.
-- **Jobs** — search live Greenhouse, Lever and Ashby boards; see strong evidence, partial evidence, genuine gaps, hard requirements and unknowns for each role; Save, Pass or Prepare application.
+- **Jobs** — search live Greenhouse, Lever and Ashby boards, then browse results beside the selected role: why it may fit you, what's genuinely missing, what the posting doesn't say, and its key terms. Save, Pass or Prepare this application.
 - **Tailor** — review one proposed change at a time (job requirement → supporting fact → resume change) beside the exact resume; requirements you don't meet are never added.
 - **Apply** — a readiness checklist and the employer's own application link; Manual mode is the reliable path; Mark as applied when you're done.
 - **Tracker** — every application with the exact job, resume and answers used, saved views, next actions and a weekly goal.
@@ -75,7 +75,7 @@ python -m pip install -e ".[dev]"
 uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 ```
 
-Health check: `http://localhost:8000/health`. Current baseline (2026-10-04): 874 product tests and 70 API tests, run in CI on every push.
+Health check: `http://localhost:8000/health`. Current baseline (2026-10-04): 925 product tests and 70 API tests, run in CI on every push.
 
 Key endpoints: `POST /profile/upload` (parses a real PDF/DOCX into a full career profile), `POST /jobs/upsert` (dedupe + candidate-fit scoring), `POST /tailor/preview` (job analysis → gap report → LLM tailoring → optimization loop → PDF, requires `LLM_MODEL`/`LLM_API_KEY` in `apps/api/.env`).
 
