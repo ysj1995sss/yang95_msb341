@@ -7,7 +7,7 @@ No percentages: a section is either ready or it names what is missing.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Mapping
+from typing import Any, Mapping, Optional
 
 from resume_tailorer.profile_store import CONFIRMED, EDITED, FROM_RESUME, provenance_of
 
@@ -131,3 +131,119 @@ def readiness_line(session: Mapping[str, Any]) -> str:
 def provenance_label(record: Mapping[str, Any], path: str) -> tuple[str, str]:
     state = provenance_of(dict(record), path)
     return PROVENANCE_LABELS[state], PROVENANCE_TONES[state]
+
+
+# --- spec 008: section summary list and review-by-exception ----------------
+
+@dataclass(frozen=True)
+class SectionRow:
+    key: str
+    name: str
+    detail: str  # "4 roles", "Not added", ...
+    status: str  # "Ready", "Incomplete", "2 to review", "Optional"
+    tone: str  # verified, review, "" (neutral)
+    action: str  # Edit, Review, Add, Manage
+    issues: tuple[str, ...] = ()
+
+
+SECTION_PATHS = {
+    "contact": ("contact_info.",),
+    "summary": ("summary",),
+    "work": ("work_experience[",),
+    "education": ("education[",),
+    "skills": ("skills", "tools"),
+    "certifications": ("certifications",),
+}
+
+
+def review_items(profile: Mapping[str, Any]) -> dict[str, tuple[str, ...]]:
+    """Likely parse problems worth a look, by section. Never blocks anything."""
+    out: dict[str, list[str]] = {"work": [], "education": [], "skills": []}
+    for job in profile.get("work_experience") or []:
+        title = (job.get("title") or "").strip()
+        if len(title) > 80:
+            out["work"].append(f"“{title[:40]}…” looks like a sentence, not a job title")
+    for entry in profile.get("education") or []:
+        if (entry.get("degree") or "").strip() and not (entry.get("field") or "").strip():
+            out["education"].append(f"{entry.get('institution') or 'An entry'}: field of study is empty")
+    skills = [s.strip() for s in profile.get("skills") or [] if s.strip()]
+    seen, dupes = set(), []
+    for skill in skills:
+        if skill.lower() in seen and skill not in dupes:
+            dupes.append(skill)
+        seen.add(skill.lower())
+    out["skills"] += [f"“{d}” is listed twice" for d in dupes]
+    tools = {t.strip().lower() for t in profile.get("tools") or []}
+    out["skills"] += [f"“{s}” is in both skills and tools" for s in dict.fromkeys(skills) if s.lower() in tools]
+    return {k: tuple(v) for k, v in out.items() if v}
+
+
+def provenance_summary(record: Mapping[str, Any], section: str) -> str:
+    """One line per section instead of a badge on every field."""
+    prefixes = SECTION_PATHS.get(section, ())
+    states = [state for path, state in (record.get("provenance") or {}).items()
+              if any(path.startswith(p) for p in prefixes)]
+    if not states:
+        return ""
+    parts = []
+    if states.count(FROM_RESUME):
+        parts.append("from your resume")
+    if states.count(EDITED):
+        parts.append(f"{states.count(EDITED)} edited by you")
+    if states.count(CONFIRMED):
+        parts.append("confirmed by you" if states.count(CONFIRMED) == len(states) else
+                     f"{states.count(CONFIRMED)} confirmed by you")
+    text = ", ".join(parts)
+    return text[0].upper() + text[1:]
+
+
+def section_rows(record: Mapping[str, Any], answers: int = 0) -> tuple[SectionRow, ...]:
+    record = record or {}
+    profile = record.get("profile") or {}
+    readiness = build_readiness(record)
+    by_key = {s.key: s for s in readiness.sections}
+    extra = review_items(profile)
+
+    def row(key, name, detail, required_ready=None, optional_done=None, action_done="Edit", action_new="Add"):
+        issues = (by_key[key].issues if key in by_key and by_key[key].required else ()) + extra.get(key, ())
+        if issues:
+            n = len(issues)
+            return SectionRow(key, name, detail, f"{n} to review", "review", "Review", issues)
+        if required_ready is not None:
+            return SectionRow(key, name, detail, "Ready" if required_ready else "Incomplete",
+                              "verified" if required_ready else "review", action_done if required_ready else "Add")
+        return SectionRow(key, name, detail, "Added" if optional_done else "Optional",
+                          "verified" if optional_done else "", action_done if optional_done else action_new)
+
+    jobs = profile.get("work_experience") or []
+    edu = profile.get("education") or []
+    skills = profile.get("skills") or []
+    tools = profile.get("tools") or []
+    certs = profile.get("certifications") or []
+    links = [v for v in (record.get("links") or {}).values() if (v or "").strip()]
+    prefs = record.get("preferences") or {}
+    auth = record.get("authorization") or {}
+    contact = profile.get("contact_info") or {}
+    return (
+        row("contact", "Contact", contact.get("email") or "No email yet", by_key["contact"].ready),
+        row("summary", "Professional summary", "Added" if (profile.get("summary") or "").strip() else "Not added",
+            optional_done=bool((profile.get("summary") or "").strip())),
+        row("work", "Work history", f"{len(jobs)} {'role' if len(jobs) == 1 else 'roles'}", by_key["work"].ready,
+            action_done="Review"),
+        row("education", "Education",
+            f"{len(edu)} {'school' if len(edu) == 1 else 'schools'}" if edu else
+            ("No degree to list" if record.get("no_education") else "None yet"), by_key["education"].ready,
+            action_done="Review"),
+        row("skills", "Skills and tools", f"{len(skills)} skills · {len(tools)} tools", by_key["skills"].ready),
+        row("certifications", "Certifications", f"{len(certs)}" if certs else "None", optional_done=bool(certs)),
+        row("links", "Links", f"{len(links)} added" if links else "Not added", optional_done=bool(links)),
+        row("goals", "Job goals", prefs.get("job_title") or "Not set", optional_done=bool(prefs.get("job_title"))),
+        row("authorization", "Work authorization",
+            "Answered" if by_key["authorization"].ready else "Not answered", optional_done=by_key["authorization"].ready),
+        SectionRow("answers", "Saved answers", f"{answers} {'answer' if answers == 1 else 'answers'}",
+                   "Added" if answers else "Optional", "verified" if answers else "", "Manage"),
+    )
+
+
+def first_section_needing_review(rows: tuple[SectionRow, ...]) -> Optional[str]:
+    return next((r.key for r in rows if r.issues), None)

@@ -51,3 +51,38 @@ def test_optional_sections_never_block_readiness():
 def test_rail_line_reads_the_session():
     assert readiness_line({"profile_record": {"profile": GOOD}}) == "4 of 4 required sections ready"
     assert readiness_line({}) == "Not started: import a resume"
+
+
+def test_section_rows_summarise_instead_of_opening_every_field():
+    from resume_tailorer.ui.profile_readiness import section_rows
+
+    rows = {r.key: r for r in section_rows({"profile": GOOD, "resume": {}}, answers=3)}
+    assert rows["work"].detail == "1 role" and rows["work"].status == "Ready"
+    assert rows["contact"].status == "Ready" and rows["contact"].action == "Edit"
+    assert rows["authorization"].status == "Optional" and rows["authorization"].action == "Add"
+    assert rows["answers"].detail == "3 answers" and rows["answers"].action == "Manage"
+
+
+def test_likely_parse_problems_are_flagged_for_review():
+    from resume_tailorer.ui.profile_readiness import first_section_needing_review, review_items, section_rows
+
+    profile = dict(GOOD, skills=["SQL", "sql", "Tableau"], tools=["Tableau"],
+                   education=[{"institution": "State U", "degree": "MBA", "field": "", "year": 2020}],
+                   work_experience=[dict(GOOD["work_experience"][0], title="Developed a growth strategy " * 4)])
+    items = review_items(profile)
+    assert any("listed twice" in i for i in items["skills"])
+    assert any("both skills and tools" in i for i in items["skills"])
+    assert any("field of study is empty" in i for i in items["education"])
+    assert any("looks like a sentence" in i for i in items["work"])
+    rows = section_rows({"profile": profile})
+    assert first_section_needing_review(rows) == "work"
+    assert {r.key: r.action for r in rows}["skills"] == "Review"
+
+
+def test_provenance_is_summarised_once_per_section():
+    from resume_tailorer.ui.profile_readiness import provenance_summary
+
+    record = {"provenance": {"skills": "resume", "tools": "edited", "contact_info.name": "confirmed"}}
+    assert provenance_summary(record, "skills") == "From your resume, 1 edited by you"
+    assert provenance_summary(record, "contact") == "Confirmed by you"
+    assert provenance_summary(record, "links") == ""
