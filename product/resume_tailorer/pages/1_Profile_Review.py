@@ -257,15 +257,15 @@ def _attention(owner_id: str, record: dict, readiness, rows) -> None:
 def _summary_list(rows, open_key) -> None:
     with st.container(border=True, key="cp_summary_list"):
         for r in rows:
-            c1, c2, c3 = st.columns([2.2, 1.2, 0.9], vertical_alignment="center")
-            current = " ▸" if r.key == open_key else ""
-            c1.markdown(f"**{escape(r.name)}**{current}<br><span class='jc-meta'>{escape(r.detail)}</span>",
-                        unsafe_allow_html=True)
-            c2.markdown(chip(r.status, r.tone), unsafe_allow_html=True)
-            if c3.button(r.action, key=f"cp_open_{r.key}", use_container_width=True,
-                         type="primary" if r.key == open_key else "secondary"):
-                st.session_state[OPEN_KEY] = r.key
-                st.rerun()
+            # One line per section on every screen size (columns would stack on phones).
+            with st.container(horizontal=True, vertical_alignment="center", gap="small", key=f"cp_row_{r.key}"):
+                current = " ▸" if r.key == open_key else ""
+                st.markdown(f"**{escape(r.name)}**{current}<br><span class='jc-meta'>{escape(r.detail)}</span> "
+                            f"{chip(r.status, r.tone)}", unsafe_allow_html=True, width="stretch")
+                if st.button(r.action, key=f"cp_open_{r.key}", width="content",
+                             type="primary" if r.key == open_key else "secondary"):
+                    st.session_state[OPEN_KEY] = r.key
+                    st.rerun()
 
 
 def _resume_source(owner_id: str, record: dict) -> None:

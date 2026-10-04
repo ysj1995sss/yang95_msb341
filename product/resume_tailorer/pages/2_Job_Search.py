@@ -131,12 +131,12 @@ def _render_form(compact: bool) -> None:
         f2.text_input("Skip these companies (comma-separated)", key="exclude_companies")
         st.multiselect("Sources", [SOURCE_LABELS[s] for s in LIVE_SOURCES + DEMO_SOURCES], key="selected_sources",
                        help="Greenhouse, Lever and Ashby list real openings. Demo sources show sample listings only.")
-    b1, b2, _ = st.columns([1.2, 0.8, 2])
-    if b1.button("Find matching jobs", type="primary", key="jobs_find", use_container_width=True):
-        _queue_search_from_form()
-    if compact and b2.button("Cancel", key="jobs_cancel_edit", use_container_width=True):
-        st.session_state[EDITING_KEY] = False
-        st.rerun()
+    with st.container(horizontal=True):
+        if st.button("Find matching jobs", type="primary", key="jobs_find"):
+            _queue_search_from_form()
+        if compact and st.button("Cancel", key="jobs_cancel_edit"):
+            st.session_state[EDITING_KEY] = False
+            st.rerun()
 
 
 def _current_form() -> dict:
@@ -244,13 +244,13 @@ def _render_workspace_header(view_state, view_choice: str, count: int) -> None:
         cls = "jc-warn-line" if view_state.partial_failure else "jc-meta"
         st.markdown(f'<div class="{cls}">{escape(" · ".join(m for m in meta if m))}</div>', unsafe_allow_html=True)
     with right:
-        b1, b2 = st.columns(2)
-        if b1.button("Edit search", key="jobs_edit", use_container_width=True):
-            st.session_state[EDITING_KEY] = True
-            st.rerun()
-        if b2.button("Search again", key="jobs_again", use_container_width=True,
-                     disabled=not (st.session_state.get(LAST_FORM_KEY) or _saved_goals()).get("job_title")):
-            _queue_search_again()
+        with st.container(horizontal=True, horizontal_alignment="right"):
+            if st.button("Edit search", key="jobs_edit"):
+                st.session_state[EDITING_KEY] = True
+                st.rerun()
+            if st.button("Search again", key="jobs_again",
+                         disabled=not (st.session_state.get(LAST_FORM_KEY) or _saved_goals()).get("job_title")):
+                _queue_search_again()
 
 
 def _render_list(jobs, fits, actions, ids) -> None:
@@ -318,15 +318,15 @@ def _render_detail(job, fit, action, quality) -> None:
             f'{chip(row.status) if row.status != "New" else ""}</div>',
             unsafe_allow_html=True,
         )
-        a1, a2, a3 = st.columns([1.8, 1, 1])
-        if a1.button("Prepare this application", type="primary", key=f"{row.job_id}_apply", use_container_width=True,
-                     disabled=row.is_demo, help="Demo listings aren't real jobs." if row.is_demo else
-                     "Opens Tailor with this job loaded. Nothing is submitted."):
-            _record_action(job, TriageAction.APPLY.value, fit)
-        if a2.button("Save", key=f"detail_{row.job_id}_save", use_container_width=True):
-            _record_action(job, TriageAction.SAVE.value, fit)
-        if a3.button("Pass", key=f"detail_{row.job_id}_pass", use_container_width=True):
-            _record_action(job, TriageAction.PASS.value, fit)
+        with st.container(horizontal=True):
+            if st.button("Prepare this application", type="primary", key=f"{row.job_id}_apply",
+                         disabled=row.is_demo, help="Demo listings aren't real jobs." if row.is_demo else
+                         "Opens Tailor with this job loaded. Nothing is submitted."):
+                _record_action(job, TriageAction.APPLY.value, fit)
+            if st.button("Save", key=f"detail_{row.job_id}_save"):
+                _record_action(job, TriageAction.SAVE.value, fit)
+            if st.button("Pass", key=f"detail_{row.job_id}_pass"):
+                _record_action(job, TriageAction.PASS.value, fit)
 
         html = ""
         if detail.hard_gates:
@@ -414,13 +414,13 @@ def _render_ready_card() -> None:
                         f"{escape(goals_summary_line(goals))}</div>"
                         '<p class="jc-meta">Live openings from 63 company boards on Greenhouse, Lever and Ashby.</p>',
                         unsafe_allow_html=True)
-            b1, b2, _ = st.columns([1.2, 0.9, 2])
-            if b1.button("Find matching jobs", type="primary", key="jobs_find_saved", use_container_width=True):
-                st.session_state[LAST_FORM_KEY] = dict(goals)
-                _queue_search_again()
-            if b2.button("Edit search", key="jobs_edit_saved", use_container_width=True):
-                st.session_state[EDITING_KEY] = True
-                st.rerun()
+            with st.container(horizontal=True):
+                if st.button("Find matching jobs", type="primary", key="jobs_find_saved"):
+                    st.session_state[LAST_FORM_KEY] = dict(goals)
+                    _queue_search_again()
+                if st.button("Edit search", key="jobs_edit_saved"):
+                    st.session_state[EDITING_KEY] = True
+                    st.rerun()
         saved = _service().db.get_jobs_by_latest_action("save", limit=100)
         if saved and st.button(f"View {len(saved)} saved {'job' if len(saved) == 1 else 'jobs'}", key="jobs_open_saved"):
             st.session_state[VIEW_KEY] = SAVED_VIEW
@@ -477,7 +477,7 @@ def _render_results(status_slot, has_goals: bool, searched: bool) -> None:
                     st.rerun()
         return
 
-    list_col, detail_col = st.columns([0.95, 1.55], gap="large")
+    list_col, detail_col = st.columns([1, 1.45], gap="medium")
     with list_col:
         chosen_view = st.segmented_control("Show", VIEWS, key="w_jobs_view", label_visibility="collapsed")
         st.session_state[VIEW_KEY] = chosen_view or VIEWS[0]

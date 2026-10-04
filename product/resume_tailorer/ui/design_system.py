@@ -219,6 +219,11 @@ a:focus-visible, button:focus-visible, input:focus-visible, textarea:focus-visib
 .jc-check:last-child { border-bottom: 0; }
 .jc-srow { display: grid; grid-template-columns: 1.4fr 1fr; gap: .5rem; align-items: center; padding: .55rem 0; border-bottom: 1px solid var(--jc-line); }
 .jc-list-title { font-size: 1rem; font-weight: 700; margin: 1rem 0 .3rem; padding-bottom: .3rem; border-bottom: 1px solid var(--jc-line); }
+[class*="st-key-cp_row_"] { border-bottom: 1px solid var(--jc-line); padding: .4rem 0 .5rem; }
+[class*="st-key-cp_row_"]:last-child { border-bottom: 0; }
+[class*="st-key-cp_row_"] .jc-chip { margin-top: .3rem; }
+/* View selectors wrap instead of hiding options on narrow columns. */
+[data-testid="stButtonGroup"] > div { flex-wrap: wrap; overflow: visible !important; row-gap: .35rem; }
 .st-key-tracker_cards { display: none; }
 @media (max-width: 780px) {
   .st-key-tracker_table { display: none; }
