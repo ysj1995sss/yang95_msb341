@@ -71,10 +71,14 @@ def _education(profile: Mapping[str, Any], no_education: bool) -> SectionReadine
         if no_education:
             return SectionReadiness("education", "Education", True, True, ())
         return SectionReadiness("education", "Education", True, False, ("Add a degree, or mark that you have none to list",))
-    issues = tuple(
-        f"{e.get('institution') or 'An entry'}: graduation year is missing" for e in entries if not e.get("year")
-    )
-    return SectionReadiness("education", "Education", True, True, issues)
+    issues = []
+    for e in entries:
+        who = e.get("institution") or "An education entry"
+        if not (e.get("degree") or "").strip():
+            issues.append(f"{who}: the degree wasn't recognized")
+        if not e.get("year"):
+            issues.append(f"{who}: graduation year is missing")
+    return SectionReadiness("education", "Education", True, not issues, tuple(issues))
 
 
 def _skills(profile: Mapping[str, Any]) -> SectionReadiness:

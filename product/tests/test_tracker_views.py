@@ -68,3 +68,8 @@ def test_weekly_summary_counts_only_this_weeks_applications():
                (S.READY_TO_APPLY, None), (S.INTERESTED, None)]
     w = build_weekly_summary(entries, TODAY)
     assert (w.applied, w.interviews, w.saved) == (1, 1, 1)
+
+
+def test_hash_named_resumes_get_a_readable_label():
+    r = build_row(ApplicationTracker("a", "greenhouse_1", S.APPLIED), sub(resume_used="/x/f18c187374455a7c.pdf"), [])
+    assert r.resume_version == "Tailored resume (f18c1873)"

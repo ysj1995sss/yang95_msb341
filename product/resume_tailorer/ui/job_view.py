@@ -117,6 +117,13 @@ _QUALITY_TONES = {
 }
 
 
+def _work_mode_text(value: Optional[str]) -> str:
+    value = (value or "").strip().lower()
+    if not value or value in ("unknown", "not specified", "not stated"):
+        return "Work mode not stated"
+    return {"onsite": "On-site", "on-site": "On-site"}.get(value, value.capitalize())
+
+
 def build_row(job: JobPosting, fit: Optional[FitResult], action: Optional[str],
               quality: Optional[JobQualityStatus] = None, now: Optional[datetime] = None) -> JobRow:
     quality = quality or evaluate_job_quality(job)
@@ -124,10 +131,10 @@ def build_row(job: JobPosting, fit: Optional[FitResult], action: Optional[str],
     source, is_demo = source_text(job)
     return JobRow(
         job_id=job_id_for(job),
-        title=job.title or "Untitled role",
+        title=(job.title or "Untitled role").strip(),
         company=job.company or "Company not stated",
         location=job.location or "Location not stated",
-        work_mode=(job.work_mode or "Work mode not stated").replace("onsite", "on-site").capitalize(),
+        work_mode=_work_mode_text(job.work_mode),
         salary=salary_text(job),
         source=source,
         is_demo=is_demo,

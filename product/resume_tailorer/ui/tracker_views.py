@@ -67,6 +67,17 @@ class TrackerRow:
         }
 
 
+def _resume_label(path: str) -> str:
+    """Tailored files are named by content hash; show that plainly and briefly."""
+    if not path:
+        return "Not recorded"
+    name = os.path.basename(path)
+    stem, ext = os.path.splitext(name)
+    if len(stem) == 16 and all(ch in "0123456789abcdef" for ch in stem.lower()):
+        return f"Tailored resume ({stem[:8]})"
+    return name
+
+
 def _parse_due(value: Optional[str]) -> Optional[date]:
     try:
         return date.fromisoformat(str(value)[:10]) if value else None
@@ -89,7 +100,7 @@ def build_row(tracker: ApplicationTracker, submission: Optional[ApplicationSubmi
     job = (submission.job_snapshot if submission else {}) or {}
     fit = (submission.candidate_fit_snapshot if submission else {}) or {}
     overall = fit.get("overall_fit")
-    resume = os.path.basename(submission.resume_used) if submission and submission.resume_used else "Not recorded"
+    resume = _resume_label(submission.resume_used if submission else "")
     source = (tracker.job_posting_id.split("_", 1)[0] or "").title() if tracker.job_posting_id else "Not recorded"
     return TrackerRow(
         application_id=tracker.application_id,

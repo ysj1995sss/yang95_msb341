@@ -58,3 +58,8 @@ def test_unknown_value_is_not_zero():
     assert display_optional(None, "Not assessed") == "Not assessed"
     assert display_optional("", "Not stated") == "Not stated"
     assert display_optional(0, "Not assessed") == "0"
+
+
+def test_primary_buttons_use_white_text_on_action_blue():
+    assert _contrast("#FFFFFF", TOKENS["action"]) >= 4.5
+    assert 'stBaseButton-primary"] * { color: #FFFFFF' in THEME_CSS.replace("\n", " ") or "color: #FFFFFF !important" in THEME_CSS

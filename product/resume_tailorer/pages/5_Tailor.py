@@ -44,7 +44,9 @@ from resume_tailorer.pdf.validator import PDFValidator
 from resume_tailorer.llm.settings import resolve_settings
 from resume_tailorer.llm.client import LLMClient
 from resume_tailorer.llm.ui import COMMON_MODELS, collect_sidebar_llm_fields
-from resume_tailorer.job_search.job_service import PENDING_TAILOR_JOB_KEY
+from resume_tailorer.job_search.job_service import PENDING_TAILOR_JOB_KEY, build_tailor_snapshot
+from resume_tailorer.session_profile import get_career_profile
+from resume_tailorer.ui.auth_gate import job_service_for
 from resume_tailorer.docx_export import run_docx_tailoring_pipeline
 from resume_tailorer.analyzers.gap_analyzer import find_unsupported_claims
 from resume_tailorer.artifacts.changes import build_freeform_changes
@@ -62,6 +64,7 @@ from resume_tailorer.artifacts.regeneration import (
 from resume_tailorer.artifacts.report import build_final_report
 from resume_tailorer.ui.artifact_review import visible_changes
 from resume_tailorer.ui import chip, render_app_shell, render_page_header, render_progress
+from resume_tailorer.ui.shell import primary_action
 from resume_tailorer.ui.design_system import ProgressStep
 from resume_tailorer.ui.pdf_preview import pdf_page_images
 from resume_tailorer.ui.tailor_progress import (
@@ -69,6 +72,8 @@ from resume_tailorer.ui.tailor_progress import (
     VERBS,
     artifact_status_text,
     artifact_tone,
+    empty_queue_message,
+    rejected_by_checks,
     next_undecided,
     readable_requirement,
     review_progress,
@@ -336,7 +341,14 @@ def _render_review_room(pending: dict) -> None:
             change = next(c for c in groups.reviewable if c.change_id == chosen)
             _render_change_focus(state, change, state["profile"])
         else:
-            st.info("No supported changes need your review. Your resume already covers what this posting asks for, as far as your verified facts allow.")
+            st.info(empty_queue_message(state["changes"]))
+
+        turned_down = rejected_by_checks(state["changes"])
+        if turned_down:
+            with st.expander(f"Turned down by our checks ({len(turned_down)})"):
+                st.caption("These proposals were not used. Your original wording stays.")
+                for change in turned_down:
+                    st.markdown(f"- **{escape(change.original_text[:90])}** — {escape(change.reason or 'did not pass the checks')}")
 
         state["show_all"] = st.checkbox(
             "Show unchanged and punctuation-only edits", value=state.get("show_all", False),
@@ -351,7 +363,8 @@ def _render_review_room(pending: dict) -> None:
                 unsafe_allow_html=True,
             )
             for gap in groups.true_gaps:
-                st.markdown(f"- Missing from your experience: {gap}")
+                text = gap if len(gap) <= 140 else gap[:137].rsplit(" ", 1)[0] + "…"
+                st.markdown(f"- Missing from your experience: {text}")
             for change in groups.blocked:
                 st.markdown(
                     f"- Blocked a proposed line that claimed *{change.job_requirement or 'an unsupported requirement'}*; "
@@ -369,10 +382,10 @@ def _render_preview(state: dict) -> None:
     report = state["report"]
     status = report.validation.status
     st.markdown("### Resume preview")
-    pages = report.tailored_page_count or "?"
+    pages = f"{report.tailored_page_count} page(s)" if report.tailored_page_count else "Page count not checked"
     fidelity = "Original layout kept" if report.fidelity_mode is FidelityMode.PRESERVED else "Rebuilt layout; details may differ"
     st.markdown(
-        f'{chip(artifact_status_text(status), artifact_tone(status))}{chip(f"{pages} page(s)")}'
+        f'{chip(artifact_status_text(status), artifact_tone(status))}{chip(pages)}'
         f'{chip("Version " + str(state.get("version", 1)))}{chip(fidelity)}',
         unsafe_allow_html=True,
     )
@@ -429,7 +442,8 @@ def _render_action_bar(state: dict, progress) -> None:
             st.toast("Resume rebuilt with your decisions.")
             st.rerun()
     if progress.can_continue:
-        right.page_link("pages/3_Applications.py", label="Continue to application →", use_container_width=True)
+        with right:
+            primary_action("Continue to application", "pages/3_Applications.py", "tailor_continue")
     else:
         right.button("Continue to application", disabled=True, use_container_width=True, help=progress.blocker)
 
@@ -447,6 +461,21 @@ def _resume_source(owner_id: str):
     return None
 
 
+def _render_recent_choices(owner_id: str) -> None:
+    """Jobs the user chose to prepare in an earlier session, so nothing is re-entered."""
+    service = job_service_for(owner_id)
+    chosen = service.db.get_jobs_by_latest_action("apply", limit=5)
+    if not chosen:
+        return
+    st.caption("Continue with a job you chose earlier:")
+    for job in chosen:
+        if st.button(f"{job.title} at {job.company}", key=f"tailor_resume_{job.source.value}_{job.source_id}"):
+            profile = get_career_profile(st.session_state)
+            fit = service.fit_scorer.score_fit_detailed(profile, job) if profile else None
+            st.session_state[PENDING_TAILOR_JOB_KEY] = build_tailor_snapshot(job, fit)
+            st.rerun()
+
+
 def _render_setup(owner_id: str, pending: dict) -> None:
     source = _resume_source(owner_id)
     left, right = st.columns([2, 1], gap="large")
@@ -456,6 +485,7 @@ def _render_setup(owner_id: str, pending: dict) -> None:
             st.caption("Job Copilot proposes only changes your verified facts support. You review each one.")
         else:
             st.markdown("### Choose a job first")
+            _render_recent_choices(owner_id)
             st.write("Pick a role in Jobs and choose **Prepare application**, or paste a job description below.")
             st.page_link("pages/2_Job_Search.py", label="Find a job →")
         with st.expander("Job description", expanded=not pending):

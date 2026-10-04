@@ -210,12 +210,18 @@ def _render_results_and_detail(results_col, detail_col) -> None:
         except Exception as exc:
             st.error(f"Couldn't load jobs: {exc}. Try searching again.")
             return
-        if jobs is None:
-            st.info("Set your goals on the left and choose **Search roles**. Results stay here while you adjust filters.")
-            return
-        if not jobs:
-            st.info("No saved jobs yet." if view == "Saved jobs" else
-                    "No open postings matched. Try fewer or broader words in the job title.")
+        if jobs is None or not jobs:
+            if jobs is None:
+                st.info("Set your goals on the left and choose **Search roles**. Results stay here while you adjust filters.")
+            else:
+                st.info("No saved jobs yet. Choose **Save** on a result to keep it here." if view == "Saved jobs" else
+                        "No open postings matched. Try fewer or broader words in the job title, or a different work mode.")
+            with detail_col:
+                st.markdown(
+                    '<div class="jc-panel"><h3>Job details</h3><p class="jc-muted">Choose a job to see why it matches, '
+                    "what's genuinely missing, and what the posting doesn't say.</p></div>",
+                    unsafe_allow_html=True,
+                )
             return
         service = _service()
         ids = [job_id_for(j) for j in jobs]
@@ -245,7 +251,7 @@ def _render_results_and_detail(results_col, detail_col) -> None:
                 with st.container(border=True):
                     marker = "▶ " if job_id == selected else ""
                     st.markdown(
-                        f"**{marker}{escape(row.title)}**  \n"
+                        f"<strong>{marker}{escape(row.title)}</strong><br>"
                         f'<span class="jc-meta">{escape(row.company)} · {escape(row.location)} · {escape(row.work_mode)}</span><br>'
                         f"{chip(row.fit, row.fit_tone)}{chip(row.salary)}{chip(row.freshness)}"
                         f"{chip(row.source, 'review' if row.is_demo else '')}{chip(row.status)}",
@@ -334,6 +340,7 @@ def main():
         "Jobs",
         "Search real openings, see exactly why each one matches, and choose one to prepare. Nothing is submitted from here.",
     )
+    apply_goals_to_search_form(st.session_state, st.session_state.get(RECORD_KEY) or {})
     searched = st.session_state.get("last_search_goals") is not None
     selected = bool(st.session_state.get(SELECTED_KEY))
     render_progress(

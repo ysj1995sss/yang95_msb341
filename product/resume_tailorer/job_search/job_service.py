@@ -386,12 +386,17 @@ class JobService:
         Returns:
             Scraper instance or None if source not supported
         """
-        if source in self._scraper_cache:
-            return self._scraper_cache[source]
+        # Look up by value, not enum identity: Streamlit's dev server can reload
+        # the models module, leaving two JobSource classes alive (decision 021).
+        key = getattr(source, "value", source)
+        if key in self._scraper_cache:
+            return self._scraper_cache[key]
 
-        scraper_class = self.scraper_map.get(source)
+        scraper_class = next(
+            (cls for src, cls in self.scraper_map.items() if getattr(src, "value", src) == key), None
+        )
         if scraper_class:
             scraper = scraper_class()
-            self._scraper_cache[source] = scraper
+            self._scraper_cache[key] = scraper
             return scraper
         return None

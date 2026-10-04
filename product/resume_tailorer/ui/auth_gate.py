@@ -59,7 +59,14 @@ def job_service_for(owner_id: str):
     from resume_tailorer.job_search.job_service import JobService
 
     service = st.session_state.get("job_service")
-    if service is None or st.session_state.get("job_service_owner") != owner_id:
+    # Rebuild when the class was reloaded (Streamlit's dev server re-imports
+    # edited modules): a service from the old module would compare enums from
+    # two different classes and quietly take the wrong branch (decision 021).
+    if (
+        service is None
+        or type(service) is not JobService
+        or st.session_state.get("job_service_owner") != owner_id
+    ):
         service = JobService(
             db_path=job_db_path(owner_id),
             applications_db_path=applications_db_path(owner_id),

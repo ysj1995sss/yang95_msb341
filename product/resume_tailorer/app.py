@@ -37,6 +37,7 @@ from resume_tailorer.job_search.job_service import PENDING_TAILOR_JOB_KEY
 from resume_tailorer.profile_import import RECORD_KEY, import_resume, load_into_session, store_for
 from resume_tailorer.tailoring_session import HANDOFF_KEY, handoff_for_job
 from resume_tailorer.ui import render_app_shell
+from resume_tailorer.ui.shell import primary_action
 from resume_tailorer.ui.auth_gate import job_service_for, require_identity
 from resume_tailorer.ui.goals_wizard import render_goals_wizard
 from resume_tailorer.ui.home_state import (
@@ -67,6 +68,10 @@ def _gather(owner_id: str):
 
     pending = st.session_state.get(PENDING_TAILOR_JOB_KEY) or {}
     active = Item(pending["title"], pending.get("company", ""), TAILOR_PAGE) if pending.get("title") else None
+    if active is None:
+        earlier = service.db.get_jobs_by_latest_action("apply", limit=1)
+        if earlier:
+            active = Item(earlier[0].title, earlier[0].company, TAILOR_PAGE)
     state = st.session_state.get("artifact_run_state") or {}
     report = state.get("report")
     artifact_status = report.validation.status.value if report else None
@@ -123,6 +128,32 @@ def _focus(action, eyebrow: str) -> None:
     )
 
 
+def identity_owner() -> str:
+    from resume_tailorer.ui.auth_gate import OWNER_KEY
+
+    return st.session_state[OWNER_KEY]
+
+
+def _resume_chosen_job(owner_id: str, action):
+    """When Home sends the user to Tailor or Apply without an active job, hand
+    over the job they chose most recently, so nothing has to be picked again."""
+    if action.page not in (TAILOR_PAGE, APPLY_PAGE) or st.session_state.get(PENDING_TAILOR_JOB_KEY):
+        return None
+
+    def load():
+        from resume_tailorer.job_search.job_service import build_tailor_snapshot
+        from resume_tailorer.session_profile import get_career_profile
+
+        service = job_service_for(owner_id)
+        earlier = service.db.get_jobs_by_latest_action("apply", limit=1)
+        if earlier:
+            profile = get_career_profile(st.session_state)
+            fit = service.fit_scorer.score_fit_detailed(profile, earlier[0]) if profile else None
+            st.session_state[PENDING_TAILOR_JOB_KEY] = build_tailor_snapshot(earlier[0], fit)
+
+    return load
+
+
 def _render_upload(owner_id: str) -> None:
     upload = st.file_uploader("Your resume (Word or PDF)", type=["docx", "pdf"], key="home_resume_upload")
     st.caption("Word (.docx) keeps your exact layout in tailored versions. Your file stays in your private folder.")
@@ -165,7 +196,7 @@ def _first_time(owner_id: str, view) -> None:
             if render_goals_wizard(owner_id, "Save goals and continue"):
                 st.rerun()
         else:
-            st.page_link(action.page, label=f"{action.label} →", icon=":material/arrow_forward:")
+            primary_action(action.label, action.page, "home_next_action", before=_resume_chosen_job(identity_owner(), action))
     with side:
         _render_milestones(view)
         st.markdown(
@@ -201,7 +232,7 @@ def _returning(owner_id: str, view, record, weekly, recent) -> None:
     action = view.next_action
     with main:
         _focus(action, "Your next best action")
-        st.page_link(action.page, label=f"{action.label} →", icon=":material/arrow_forward:")
+        primary_action(action.label, action.page, "home_next_action", before=_resume_chosen_job(owner_id, action))
         st.write("")
         a, b = st.columns(2)
         with a:

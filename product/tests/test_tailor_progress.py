@@ -61,3 +61,35 @@ def test_supporting_fact_falls_back_to_recorded_evidence_then_the_original():
     assert supporting_fact(c, PROFILE) == "Presented findings to the leadership team"
     c = change("b", proposed="Built weekly reports for leadership", requirement="executive communication")
     assert supporting_fact(c, PROFILE).startswith("Your original bullet:")
+
+
+def test_empty_queue_never_claims_more_than_is_known():
+    from dataclasses import replace
+
+    from resume_tailorer.ui.tailor_progress import empty_queue_message, rejected_by_checks
+
+    assert "didn't propose any changes" in empty_queue_message([])
+    rejected = replace(change("a", proposed="Built weekly reports"), category=ChangeCategory.REJECTED,
+                       reason="162 chars exceeds the 121-char limit")
+    assert rejected_by_checks([rejected, change("b")]) == (rejected,)
+    message = empty_queue_message([rejected])
+    assert "proposed 1 change" in message and "original wording was kept" in message
+    assert "already covers" not in message
+
+
+def test_a_skill_supports_a_change_only_when_the_change_adds_it():
+    c = change("a", original="Wrote positioning across the website", proposed="Wrote positioning across website",
+               requirement="go-to-market strategy and SQL")
+    assert supporting_fact(c, PROFILE).startswith("Your original bullet:")
+
+
+def test_long_requirements_are_shortened():
+    from resume_tailorer.ui.tailor_progress import readable_requirement
+
+    text = readable_requirement(change("a", requirement="word " * 60))
+    assert len(text) <= 160 and text.endswith("…")
+
+
+def test_a_placeholder_evidence_string_is_not_shown_as_a_fact():
+    c = change("a", original="Wrote positioning", proposed="Wrote positioning copy", requirement="x", evidence="None")
+    assert supporting_fact(c, PROFILE).startswith("Your original bullet:")

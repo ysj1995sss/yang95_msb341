@@ -7,7 +7,7 @@ import re
 from dataclasses import dataclass
 from typing import Any, Iterable, Mapping, Optional
 
-from resume_tailorer.artifacts.models import ResumeChange, ValidationStatus
+from resume_tailorer.artifacts.models import ChangeCategory, ResumeChange, ValidationStatus
 
 # One vocabulary everywhere (spec 007).
 VERBS = {"ACCEPTED": "Accept change", "MANUALLY_EDITED": "Edit manually", "REJECTED": "Keep original"}
@@ -66,27 +66,31 @@ def _words(text: str) -> set[str]:
 def supporting_fact(change: ResumeChange, profile: Any) -> str:
     """The verified fact that justifies a change, in plain words.
 
-    Prefers a skills, tools or certifications entry that names the requirement
-    (decision 021's open item: the evidence line used to repeat the bullet).
+    A skills, tools or certifications entry counts only when the change
+    actually adds it (decision 021's open item: the evidence line used to
+    repeat the bullet). Otherwise the recorded evidence or the original line.
     """
     data = profile.to_dict() if hasattr(profile, "to_dict") else (profile or {})
-    requirement = (change.job_requirement or "").strip()
-    added = _words(change.proposed_text) - _words(change.original_text)
+    proposed = (change.proposed_text or "").lower()
+    original = (change.original_text or "").lower()
     for label, key in (("your skills", "skills"), ("your tools", "tools"), ("your certifications", "certifications")):
         for entry in data.get(key) or []:
-            entry_words = _words(entry)
-            if not entry_words:
-                continue
-            if (requirement and entry.lower() in requirement.lower()) or (entry_words <= added and entry_words):
+            needle = entry.strip().lower()
+            if needle and needle in proposed and needle not in original:
                 return f"Listed in {label}: {entry}"
     evidence = (change.evidence_text or "").strip()
+    if evidence.lower() in ("none", "null", "n/a"):
+        evidence = ""
     if evidence and evidence != (change.original_text or "").strip():
         return evidence
     return f"Your original bullet: {change.original_text}" if change.original_text else "No supporting fact recorded"
 
 
-def readable_requirement(change: ResumeChange) -> str:
-    return change.job_requirement.strip() if change.job_requirement else "General fit with the posting"
+def readable_requirement(change: ResumeChange, limit: int = 160) -> str:
+    text = (change.job_requirement or "").strip()
+    if not text:
+        return "General fit with the posting"
+    return text if len(text) <= limit else text[: limit - 3].rsplit(" ", 1)[0] + "…"
 
 
 def validation_word(status: Any) -> str:
@@ -106,3 +110,19 @@ def artifact_status_text(status: Any) -> str:
         "WARNING": "Passed with warnings to review",
         "FAIL": "Failed validation: not usable",
     }.get(value, "Not built yet")
+
+
+def rejected_by_checks(changes: Iterable[ResumeChange]) -> tuple[ResumeChange, ...]:
+    """Proposals the truth or length checks turned down; the original wording was kept."""
+    return tuple(c for c in changes if getattr(c.category, "value", c.category) == ChangeCategory.REJECTED.value)
+
+
+def empty_queue_message(changes: Iterable[ResumeChange]) -> str:
+    """What to say when nothing needs review, without claiming more than is known."""
+    rejected = rejected_by_checks(changes)
+    if rejected:
+        n = len(rejected)
+        return (f"Job Copilot proposed {n} {'change' if n == 1 else 'changes'}, but "
+                f"{'it' if n == 1 else 'none'} {'did not pass' if n == 1 else 'passed'} the truth and length checks, "
+                "so your original wording was kept. See what was turned down below.")
+    return "The writing model didn't propose any changes for this job. Your original wording is unchanged."

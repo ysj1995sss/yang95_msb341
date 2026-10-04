@@ -71,11 +71,22 @@ def render_progress(steps: Iterable[ProgressStep], label: str) -> None:
     import streamlit as st
 
     items = "".join(
-        f'<div class="jc-step {escape(step.state)}">{escape(step.label)}'
+        f'<div class="jc-step {escape(step.state)}" role="listitem">{escape(step.label)}'
         f'<span class="jc-sr-only"> — {escape(step.state)}</span></div>'
         for step in steps
     )
     st.markdown(f'<div class="jc-progress" role="list" aria-label="{escape(label)}">{items}</div>', unsafe_allow_html=True)
+
+
+def primary_action(label: str, page: str, key: str, before=None) -> None:
+    """The one dominant action of a region: a primary button that opens a destination.
+    `before` runs first, e.g. to hand the destination the job it should open."""
+    import streamlit as st
+
+    if st.button(label, type="primary", key=key):
+        if before is not None:
+            before()
+        st.switch_page(page)
 
 
 def chip(text: str, tone: str = "") -> str:

@@ -140,7 +140,7 @@ p, li { font-size: 1rem; line-height: 1.55; }
 .jc-panel { background: var(--jc-paper); border: 1px solid var(--jc-line); padding: 1.1rem 1.25rem; height: 100%; }
 .jc-panel h3, .jc-panel h4 { margin-top: 0; }
 .jc-panel p { margin-bottom: 0; }
-.jc-focus { background: var(--jc-paper); border: 1px solid var(--jc-line); border-left: 4px solid var(--jc-action); padding: 1.25rem 1.5rem; box-shadow: 0 2px 10px rgba(23,32,51,.06); }
+.jc-focus { margin-bottom: .9rem; background: var(--jc-paper); border: 1px solid var(--jc-line); border-left: 4px solid var(--jc-action); padding: 1.25rem 1.5rem; box-shadow: 0 2px 10px rgba(23,32,51,.06); }
 .jc-focus h2 { margin: .1rem 0 .4rem; }
 .jc-focus .jc-value { color: var(--jc-muted); margin: 0 0 .25rem; }
 .jc-eyebrow { font-size: .875rem; color: var(--jc-muted); font-weight: 700; }
@@ -168,7 +168,13 @@ p, li { font-size: 1rem; line-height: 1.55; }
 .jc-table { width: 100%; border-collapse: collapse; background: var(--jc-paper); }
 .jc-table th, .jc-table td { text-align: left; padding: .45rem .6rem; border-bottom: 1px solid var(--jc-line); vertical-align: top; font-size: .95rem; }
 .jc-sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
-div.stButton > button[kind="primary"], a[data-testid="stBaseLinkButton-primary"] { background: var(--jc-action); border-color: var(--jc-action); border-radius: 4px; font-weight: 700; }
+div.stButton > button[kind="primary"], button[data-testid="stBaseButton-primary"],
+button[data-testid="stBaseButton-primaryFormSubmit"], a[data-testid="stBaseLinkButton-primary"] { background: var(--jc-action); border-color: var(--jc-action); border-radius: 4px; font-weight: 700; }
+button[data-testid="stBaseButton-primary"], button[data-testid="stBaseButton-primary"] *,
+button[data-testid="stBaseButton-primaryFormSubmit"], button[data-testid="stBaseButton-primaryFormSubmit"] *,
+a[data-testid="stBaseLinkButton-primary"], a[data-testid="stBaseLinkButton-primary"] * { color: #FFFFFF !important; }
+[data-testid="stHeaderActionElements"] { display: none !important; }
+button:disabled, button[disabled] { opacity: .45 !important; cursor: not-allowed !important; }
 div.stButton > button:not([kind="primary"]) { border-radius: 4px; border-color: #AAB4C0; }
 [data-testid="stVerticalBlockBorderWrapper"] { border-radius: 4px; }
 a:focus-visible, button:focus-visible, input:focus-visible, textarea:focus-visible, [tabindex]:focus-visible { outline: 3px solid #FFBF47 !important; outline-offset: 2px !important; }
