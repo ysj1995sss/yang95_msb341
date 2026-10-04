@@ -59,15 +59,23 @@ class LLMClient:
             # Editing a bullet needs no step-by-step thinking. Reasoning models
             # otherwise spend the whole output budget (and minutes) on it.
             kwargs["extra_body"] = {"reasoning": {"enabled": False}}
+        elif self.settings.model.startswith("gemini/"):
+            # Same for Gemini: current Flash models think by default, and the
+            # thinking can use the whole budget, leaving an empty reply.
+            kwargs["reasoning_effort"] = "disable"
 
         for attempt in range(self.MAX_RETRIES + 1):
             try:
                 response = litellm.completion(**kwargs)
                 break
             except Exception as exc:
-                if "extra_body" in kwargs and "reasoning" in str(exc).lower():
+                lowered = str(exc).lower()
+                if "extra_body" in kwargs and "reasoning" in lowered:
                     # This model can't run without reasoning; use it as it is.
                     kwargs.pop("extra_body")
+                    continue
+                if "reasoning_effort" in kwargs and ("thinking" in lowered or "reasoning" in lowered or "budget" in lowered):
+                    kwargs.pop("reasoning_effort")
                     continue
                 if attempt == self.MAX_RETRIES or not self._is_transient(exc):
                     raise self._map_error(exc) from exc
@@ -76,8 +84,15 @@ class LLMClient:
 
         choice = response.choices[0]
         content = choice.message.content
-        if content is None:
-            raise RuntimeError("Model provider error: empty response")
+        finish = getattr(choice, "finish_reason", None)
+        if not content and finish == "length":
+            return "", True  # all output went to thinking: retry with more room
+        if not content:
+            raise RuntimeError(
+                "The model returned an empty reply"
+                + (f" (stopped: {finish})" if finish and finish != "stop" else "")
+                + ". Try again, or choose a different model."
+            )
         content = _THINK_BLOCK.sub("", content).strip()
         return content, getattr(choice, "finish_reason", None) == "length"
 

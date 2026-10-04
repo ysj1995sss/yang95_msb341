@@ -179,3 +179,41 @@ def test_a_busy_provider_is_waited_out_longer_and_reported_plainly():
             client.complete("s", "u")
     assert mock_completion.call_count == 1 + LLMClient.MAX_RETRIES
     assert sleeps == [10.0, 20.0, 30.0]
+
+
+def test_gemini_calls_turn_thinking_off():
+    client = LLMClient(LLMSettings(model="gemini/gemini-flash-latest", api_key="k"))
+    with patch("resume_tailorer.llm.client.litellm.completion", return_value=_reply("ok")) as mock_completion:
+        client.complete("s", "u")
+    assert mock_completion.call_args.kwargs["reasoning_effort"] == "disable"
+    assert "extra_body" not in mock_completion.call_args.kwargs
+
+
+def test_a_gemini_model_that_must_think_is_called_again_without_the_switch():
+    client = LLMClient(LLMSettings(model="gemini/gemini-pro-latest", api_key="k"), sleep=lambda s: None)
+    calls = []
+
+    def fake(**kwargs):
+        calls.append("reasoning_effort" in kwargs)
+        if "reasoning_effort" in kwargs:
+            raise Exception("Budget 0 is invalid. This model only works in thinking mode.")
+        return _reply("done")
+
+    with patch("resume_tailorer.llm.client.litellm.completion", side_effect=fake):
+        assert client.complete("s", "u") == "done"
+    assert calls == [True, False]
+
+
+def test_an_empty_reply_that_hit_the_limit_is_retried_with_more_room():
+    client = LLMClient(_settings(), sleep=lambda s: None)
+    replies = [_reply(None, "length"), _reply("[1]")]
+    with patch("resume_tailorer.llm.client.litellm.completion", side_effect=replies) as mock_completion:
+        assert client.complete("s", "u", max_tokens=2000) == "[1]"
+    assert [c.kwargs["max_tokens"] for c in mock_completion.call_args_list] == [2000, 8000]
+
+
+def test_an_empty_reply_for_another_reason_is_reported_plainly():
+    client = LLMClient(_settings(), sleep=lambda s: None)
+    with patch("resume_tailorer.llm.client.litellm.completion", return_value=_reply(None, "content_filter")):
+        with pytest.raises(RuntimeError, match="empty reply \(stopped: content_filter\)"):
+            client.complete("s", "u")

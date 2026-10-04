@@ -9,10 +9,12 @@ unknown salary/sponsorship/fit shown as unknown. "Prepare application" records
 the APPLY triage and hands the job and its fit snapshot to Tailor.
 """
 
+import re
 from html import escape
 
 import streamlit as st
 
+from resume_tailorer.analyzers.ats_keywords import check_keywords, profile_text
 from resume_tailorer.job_search.dashboard import SORT_OPTIONS, filter_and_sort_jobs
 from resume_tailorer.job_search.job_attributes import (
     EMPLOYMENT_TYPE_OPTIONS,
@@ -288,6 +290,30 @@ def _evidence_list(title: str, lines, tone: str, empty: str) -> None:
             st.markdown(f"{chip('•', tone)} {escape(line)}", unsafe_allow_html=True)
 
 
+def _posting_markdown(description: str) -> str:
+    """The posting as readable text; markdown symbols in it are shown literally."""
+    text = (description or "").strip() or "This posting has no description."
+    text = re.sub(r"([\\`*_{}\[\]<>#|])", r"\\\1", text)
+    return "  \n".join(line.strip() for line in text.splitlines())
+
+
+def _render_keywords(job) -> None:
+    st.markdown("#### Key terms this posting screens for")
+    profile = get_career_profile(st.session_state)
+    if profile is None:
+        st.caption("Import your resume in Career Profile to see which terms it already covers.")
+        return
+    check = check_keywords(job.title + " " + (job.description or ""), profile_text(profile))
+    st.markdown(f'<div class="jc-meta">{escape(check.summary)}</div>', unsafe_allow_html=True)
+    if check.missing:
+        st.markdown("**Missing from your resume** " + "".join(chip(t, "blocked") for t in check.missing),
+                    unsafe_allow_html=True)
+        st.caption("Tailor adds a term only when your verified experience supports it. Otherwise it stays missing.")
+    if check.present:
+        st.markdown("**Already on your resume** " + "".join(chip(t, "verified") for t in check.present),
+                    unsafe_allow_html=True)
+
+
 def _render_detail(job, fit, action, quality) -> None:
     record = st.session_state.get(RECORD_KEY) or {}
     detail = build_detail(job, fit, action, record.get("authorization"), quality)
@@ -313,22 +339,24 @@ def _render_detail(job, fit, action, quality) -> None:
         st.markdown("#### Hard requirements to check")
         for gate in detail.hard_gates:
             st.markdown(f'<div class="jc-status blocked">{escape(gate)}</div>', unsafe_allow_html=True)
-    st.markdown("#### Why it matches")
-    _evidence_list("Strong evidence", detail.strong, "verified", "None found yet.")
-    _evidence_list("Partial evidence", detail.partial, "review", "None.")
-    st.markdown("#### What's missing")
-    _evidence_list("Genuine gaps (never added to your resume)", detail.gaps, "blocked", "No gaps against the stated requirements.")
-    _evidence_list("Unknown", detail.unknowns, "", "Nothing unknown.")
-    if detail.fit_parts:
-        with st.expander("How the fit score is made"):
-            for name, value in detail.fit_parts:
-                st.markdown(f"- {name}: {value}")
-            st.caption("Candidate fit measures your background against the posting. It is separate from how well a resume shows it.")
-    st.markdown("#### Details")
-    rows = "".join(f"<tr><th>{escape(k)}</th><td>{escape(v)}</td></tr>" for k, v in detail.facts)
-    st.markdown(f'<table class="jc-table">{rows}</table>', unsafe_allow_html=True)
+    _render_keywords(job)
+
+    st.markdown("#### The posting")
+    facts = " · ".join(f"{k}: {v}" for k, v in detail.facts if k in ("Salary", "Work mode", "Sponsorship", "Level"))
+    st.markdown(f'<div class="jc-meta">{escape(facts)}</div>', unsafe_allow_html=True)
+    with st.container(height=520, border=True):
+        st.markdown(_posting_markdown(job.description))
     if detail.url:
-        st.link_button("Read the full posting", detail.url)
+        st.link_button("Open the original posting", detail.url)
+
+    with st.expander("Why the fit score is " + row.fit.replace("Fit ", "")):
+        _evidence_list("Strong evidence", detail.strong, "verified", "None found yet.")
+        _evidence_list("Partial evidence", detail.partial, "review", "None.")
+        _evidence_list("Genuine gaps (never added to your resume)", detail.gaps, "blocked", "No gaps against the stated requirements.")
+        _evidence_list("Unknown", detail.unknowns, "", "Nothing unknown.")
+        for name, value in detail.fit_parts:
+            st.markdown(f"- {name}: {value}")
+        st.caption("Candidate fit measures your background against the posting. It is separate from how well a resume shows it.")
     if job.alternative_sources:
         st.caption("Also posted on: " + ", ".join(job.alternative_sources))
 
