@@ -235,26 +235,3 @@ def filter_jobs_by_action(
         if canonicalize_triage_action(action) == wanted
     ]
 
-
-def fit_tone(fit_label: str) -> tuple[str, str]:
-    """(emoji, tone) for a card's fit label such as '72%' or 'Not assessed'."""
-    try:
-        value = float(str(fit_label).rstrip("%"))
-    except ValueError:
-        return "⚪", "neutral"
-    if value >= 70:
-        return "🟢", "strong"
-    if value >= 40:
-        return "🟡", "partial"
-    return "🔴", "weak"
-
-
-def missing_line(card: "JobCardView") -> str:
-    """One honest sentence about what the posting wants that the profile lacks."""
-    if card.fit == "Not assessed":
-        return "Fit not assessed yet. Verify your facts in Fact Vault to see what is missing."
-    if not card.true_gaps:
-        return "No gaps found against the stated requirements."
-    shown = ", ".join(card.true_gaps[:3])
-    extra = len(card.true_gaps) - 3
-    return f"Missing: {shown}" + (f" (+{extra} more)" if extra > 0 else "")

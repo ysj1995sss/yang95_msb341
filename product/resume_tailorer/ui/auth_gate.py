@@ -41,15 +41,14 @@ def require_identity() -> Identity:
             del st.session_state[key]
     st.session_state[OWNER_KEY] = identity.owner_id
 
-    with st.sidebar:
-        if identity.signed_in:
-            st.caption(f"Signed in as {identity.display_name}")
-            st.button("Sign out", on_click=st.logout)
-        else:
-            st.warning(
-                "Local single-user mode: sign-in is not configured, so everyone using this "
-                "address shares one workspace. Don't share this link."
-            )
+    st.session_state["identity_view"] = {"signed_in": identity.signed_in, "name": identity.display_name}
+    try:
+        from resume_tailorer.profile_import import load_into_session
+
+        load_into_session(st.session_state, identity.owner_id)
+        st.session_state.pop("profile_load_error", None)
+    except Exception as exc:  # a damaged profile file must not lock the user out
+        st.session_state["profile_load_error"] = str(exc)
     return identity
 
 

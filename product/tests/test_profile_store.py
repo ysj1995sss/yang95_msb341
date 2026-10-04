@@ -1,0 +1,103 @@
+import pytest
+
+from resume_tailorer.models import CareerTruthProfile
+from resume_tailorer.profile_import import RECORD_KEY, import_resume, load_into_session, store_for
+from resume_tailorer.profile_store import (
+    CONFIRMED,
+    EDITED,
+    FROM_RESUME,
+    ProfileStore,
+    apply_edits,
+    confirm_remaining,
+    provenance_of,
+)
+from resume_tailorer.session_profile import CAREER_PROFILE_KEY, FACT_VAULT, PROFILE_SOURCE_KEY
+
+PROFILE = {
+    "contact_info": {"name": "Sam Rivera", "email": "sam@example.com", "phone": "", "location": ""},
+    "education": [{"degree": "BS", "field": "Economics", "institution": "State U", "year": 2018, "gpa": None, "notes": []}],
+    "work_experience": [{"employer": "Northwind", "title": "Analyst", "dates": "2019-2023",
+                         "responsibilities": ["Built weekly SQL reports"], "accomplishments": []}],
+    "skills": ["SQL"], "tools": ["Tableau"], "certifications": [], "accomplishments": [], "summary": "",
+}
+
+
+class FakeParser:
+    def parse(self, path):
+        return CareerTruthProfile.from_dict(PROFILE)
+
+
+@pytest.fixture
+def data_dir(tmp_path, monkeypatch):
+    monkeypatch.setenv("JOB_COPILOT_DATA_DIR", str(tmp_path))
+    return tmp_path
+
+
+def test_empty_store_loads_a_blank_record(tmp_path):
+    record = ProfileStore(tmp_path).load()
+    assert record["profile"] == {} and record["resume"] is None
+    assert record["authorization"] == {"authorized_to_work": None, "sponsorship_required": None}
+
+
+def test_resume_versions_are_kept_and_never_overwritten(tmp_path):
+    store = ProfileStore(tmp_path)
+    record = store.load()
+    first = store.save_resume_file(record, "cv.docx", b"one")
+    second = store.save_resume_file(record, "cv.docx", b"two")
+    assert (first["version"], second["version"]) == (1, 2)
+    assert store.resume_bytes(first) == b"one" and store.resume_bytes(second) == b"two"
+    assert len(record["resume_history"]) == 2 and record["resume"] == second
+
+
+def test_a_changed_resume_file_is_not_used(tmp_path):
+    store = ProfileStore(tmp_path)
+    meta = store.save_resume_file(store.load(), "cv.pdf", b"original")
+    (tmp_path / meta["stored_as"]).write_bytes(b"changed")
+    assert store.resume_bytes(meta) is None
+
+
+def test_save_and_load_round_trip(tmp_path):
+    store = ProfileStore(tmp_path)
+    record = store.load()
+    record["preferences"] = {"job_title": "Analyst"}
+    store.save(record)
+    assert ProfileStore(tmp_path).load()["preferences"] == {"job_title": "Analyst"}
+
+
+def test_import_marks_facts_from_resume_and_keeps_goals(data_dir):
+    store = store_for("local")
+    record = store.load()
+    record["preferences"] = {"job_title": "Analyst"}
+    record["authorization"] = {"authorized_to_work": True, "sponsorship_required": False}
+    store.save(record)
+    record = import_resume(store, "cv.docx", b"bytes", parser=FakeParser())
+    assert record["preferences"] == {"job_title": "Analyst"}
+    assert record["authorization"]["sponsorship_required"] is False
+    assert provenance_of(record, "contact_info.name") == FROM_RESUME
+    assert provenance_of(record, "contact_info.phone") == "missing"
+    assert record["facts_confirmed_at"] is None
+
+
+def test_edits_are_marked_and_confirm_covers_the_rest(data_dir):
+    record = import_resume(store_for("local"), "cv.docx", b"x", parser=FakeParser())
+    edited = dict(record["profile"], skills=["SQL", "Python"])
+    assert apply_edits(record, edited) == ["skills"]
+    assert provenance_of(record, "skills") == EDITED
+    count = confirm_remaining(record)
+    assert provenance_of(record, "skills") == EDITED  # an edit is never downgraded
+    assert provenance_of(record, "tools") == CONFIRMED
+    assert count >= 1 and record["facts_confirmed_at"]
+
+
+def test_load_into_session_makes_it_the_shared_verified_profile(data_dir):
+    import_resume(store_for("local"), "cv.docx", b"x", parser=FakeParser())
+    session = {}
+    load_into_session(session, "local")
+    assert session[PROFILE_SOURCE_KEY] == FACT_VAULT
+    assert session[CAREER_PROFILE_KEY].name == "Sam Rivera"
+    assert session[RECORD_KEY]["resume"]["filename"] == "cv.docx"
+
+
+def test_each_owner_has_their_own_profile(data_dir):
+    import_resume(store_for("alice"), "cv.docx", b"x", parser=FakeParser())
+    assert store_for("bob").load()["profile"] == {}

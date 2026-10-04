@@ -1,247 +1,259 @@
+"""Apply: readiness and an honest handoff to the employer's site (spec 007).
+
+Manual mode is the default and the reliable path: it needs only a valid
+employer link and never parses the application form (decision 021). Assist
+and Auto stay unavailable until a platform proves real submission (decisions
+012, 016; spec 006). Opening the employer page is never called submitting;
+the user marks an application as applied themselves.
+
+The job and the tailored resume arrive through the existing handoffs
+(PENDING_TAILOR_JOB_KEY and tailoring_session); nothing is typed by hand.
+Preview (a dry run) never creates an application record.
 """
-Streamlit Applications page (Sprint 3, Task 7).
 
-Lets the user submit a job application (Manual/Assist/Auto mode, with a
-safe dry-run Preview always available) and track every application's
-status through the hiring funnel on a dashboard.
-
-All non-trivial logic (formatting an ApplicationTracker for table display)
-lives in `resume_tailorer.applications.ui_helpers`, which contains no
-Streamlit calls and is covered by tests in
-tests/test_application_ui_helpers.py. This file is responsible only for
-rendering and wiring up Streamlit widgets — it is not unit tested
-directly, by design (Streamlit UI requires a browser to exercise
-meaningfully), matching the pattern established in `2_Job_Search.py`.
-
-Safety: nothing in this page ever submits a real application without the
-user explicitly clicking "Confirm & Submit". Preview always passes
-dry_run=True. See the warning banner below for the current, honest state
-of the real-submission path.
-"""
+import os
+from html import escape
 
 import streamlit as st
 
-from resume_tailorer.ui.auth_gate import OWNER_KEY, job_service_for, require_identity
-
+from resume_tailorer.applications.answer_bank import question_key
+from resume_tailorer.applications.capabilities import get_capability
+from resume_tailorer.applications.models import ApplicationMode, ApplicationStatus, StatusSource
+from resume_tailorer.applications.status_tracker import StatusTracker
+from resume_tailorer.applications.streamlit_views import preview_token
+from resume_tailorer.job_search.job_service import PENDING_TAILOR_JOB_KEY, JobService
+from resume_tailorer.profile_import import RECORD_KEY
 from resume_tailorer.session_profile import get_career_profile
 from resume_tailorer.tailoring_session import handoff_for_job
+from resume_tailorer.ui import chip, render_app_shell, render_page_header, render_progress
+from resume_tailorer.ui.apply_readiness import build_apply_view
+from resume_tailorer.ui.auth_gate import OWNER_KEY, job_service_for, require_identity
+from resume_tailorer.ui.design_system import ProgressStep
+from resume_tailorer.ui.profile_readiness import build_readiness
+from resume_tailorer.ui.tailor_progress import review_progress
+from resume_tailorer.ui.tailoring_view import group_changes
+from resume_tailorer.ui.artifact_review import visible_changes
 
-from resume_tailorer.applications.capabilities import get_capability
-from resume_tailorer.applications.answer_bank import question_key
-from resume_tailorer.applications.streamlit_views import build_launchpad_state, preview_token
-from resume_tailorer.applications.models import ApplicationMode
-from resume_tailorer.job_search.job_service import JobService, PENDING_TAILOR_JOB_KEY
-from resume_tailorer.ui import build_workflow_state, render_app_shell, render_page_header
+st.set_page_config(page_title="Apply · Job Copilot", page_icon="\U0001F4E8", layout="wide")
 
-st.set_page_config(page_title="Applications", page_icon="\U0001F4E8", layout="wide")
-
-
-MODE_OPTIONS = {
-    "Manual (I'll apply myself)": ApplicationMode.MANUAL,
-    "Assist (pre-fill, I review before submitting)": ApplicationMode.ASSIST,
-    "Auto (auto-submit known fields)": ApplicationMode.AUTO,
-}
+_STATE_ICONS = {"ok": ("✓", "verified"), "review": ("!", "review"), "blocked": ("✕", "blocked"), "neutral": ("–", "")}
 
 
-def _get_job_service() -> JobService:
+def _service() -> JobService:
     return job_service_for(st.session_state[OWNER_KEY])
 
 
-def _render_disclosure_banner() -> None:
-    st.info(
-        "Manual mode is the reliable path today. Preview is always a dry run; Assist and Auto remain disabled for real submission unless a platform capability explicitly proves otherwise."
+def _current_application(service: JobService, job_id: str):
+    """The latest application record for this job and its status, or (None, None)."""
+    subs = service.applications_db.get_submissions_by_job(job_id) if job_id else []
+    if not subs:
+        return None, None
+    latest = sorted(subs, key=lambda s: s.submission_timestamp)[-1]
+    return latest, service.applications_db.get_current_status(latest.application_id)
+
+
+def _review_complete() -> bool:
+    state = st.session_state.get("artifact_run_state")
+    if not state:
+        return False
+    report = state["report"]
+    reviewable = group_changes(visible_changes(state["changes"]), report.true_gaps).reviewable
+    progress = review_progress(reviewable, state.get("decided", set()), state.get("dirty", False), report.validation.status)
+    return progress.can_continue
+
+
+def _pick_staged(service: JobService) -> None:
+    """No active job: offer staged applications waiting to be finished."""
+    tracker = StatusTracker(service.applications_db)
+    staged = [t for t in tracker.get_all_applications() if t.status == ApplicationStatus.READY_TO_APPLY]
+    st.markdown(
+        '<section class="jc-focus"><div class="jc-eyebrow">Nothing selected</div><h2>Choose a job to apply for</h2>'
+        "<p>Pick a role in Jobs and prepare your resume in Tailor. It arrives here ready to go.</p></section>",
+        unsafe_allow_html=True,
     )
+    st.page_link("pages/2_Job_Search.py", label="Find a job →")
+    if staged:
+        st.markdown("### Or finish one you've already staged")
+        for t in staged:
+            sub = service.applications_db.get_submission(t.application_id)
+            job = (sub.job_snapshot or {}) if sub else {}
+            label = f"{job.get('title', 'Role')} at {job.get('company', '')}"
+            if st.button(label, key=f"pick_{t.application_id}"):
+                st.session_state[PENDING_TAILOR_JOB_KEY] = {
+                    "job_id": t.job_posting_id, "title": job.get("title", ""), "company": job.get("company", ""),
+                    "url": job.get("url", ""), "description": "", "candidate_fit": sub.candidate_fit_snapshot or {},
+                }
+                st.rerun()
 
 
-def _render_submit_tab(service: JobService) -> None:
-    """Render the application submission form and handle Preview/Confirm & Submit."""
-    st.subheader("Stage this application")
-
-    # Pre-filled from the Job Search page's "Apply" handoff when available
-    # (same pending_tailor_job snapshot used to prefill the Resume Tailorer),
-    # so the job ID doesn't have to be copy-pasted by hand.
-    pending_job = st.session_state.get(PENDING_TAILOR_JOB_KEY) or {}
-    job_id_input = st.text_input(
-        "Job ID",
-        value=pending_job.get("job_id", ""),
-        help="The job ID from the Job Search dashboard (format: source_sourceid). "
-        "Pre-filled automatically after clicking Apply on the Job Search page.",
-        key="apply_job_id",
-    )
-
-    mode_choice_ui = st.selectbox(
-        "Application Mode", options=list(MODE_OPTIONS.keys()), key="apply_mode"
-    )
-    mode = MODE_OPTIONS[mode_choice_ui]
-
-    # Tailoring Studio hands over the validated artifact for this job; a newer
-    # version replaces whatever was filled in for an older one.
-    handoff = handoff_for_job(st.session_state, job_id_input)
-    if handoff and st.session_state.get("apply_handoff_sha") != handoff["sha256"]:
-        st.session_state["apply_handoff_sha"] = handoff["sha256"]
-        st.session_state["apply_resume_pdf_path"] = handoff["pdf_path"]
-        score = handoff.get("resume_match_score")
-        st.session_state["apply_resume_match_score"] = (
-            min(float(score) * 100, 100.0) if isinstance(score, (int, float)) else 0.0
+def _render_checklist(view) -> None:
+    rows = []
+    for item in view.checklist:
+        mark, tone = _STATE_ICONS[item.state]
+        rows.append(
+            f"<tr><td style='width:2.2rem'>{chip(mark, tone)}</td><th>{escape(item.label)}</th>"
+            f"<td>{escape(item.detail)}</td></tr>"
         )
-    resume_pdf_path = st.text_input(
-        "Tailored resume PDF path",
-        help="Filled in from Tailoring Studio when a validated resume exists for this job.",
-        key="apply_resume_pdf_path",
-    )
-    resume_match_score = st.number_input(
-        "Resume Match score for this job",
-        min_value=0.0,
-        max_value=100.0,
-        key="apply_resume_match_score",
-    )
-    if handoff:
-        st.caption(
-            f"Using tailored resume version {handoff['version']} "
-            f"(validation: {handoff['validation_status']})."
-        )
-    else:
-        st.caption("No validated tailored resume for this job yet. 0 means unknown, not a real 0% match.")
+    st.markdown(f'<table class="jc-table" aria-label="Readiness checklist">{"".join(rows)}</table>', unsafe_allow_html=True)
 
-    # Look up the platform's declared capability BEFORE rendering the submit
-    # button, so a platform that can't complete a real submission (every
-    # platform today -- decision 016) gets a hard-disabled button with a
-    # clear reason, not just a checkbox + hope the engine's own safety gate
-    # catches it after the click.
-    job_lookup = service.db.get_job_posting(job_id_input) if job_id_input else None
-    ats_platform = (job_lookup.ats_platform if job_lookup else "") or ""
-    capability = get_capability(ats_platform)
-    launchpad = build_launchpad_state(mode, capability)
-    real_submit_possible = mode == ApplicationMode.MANUAL or capability.final_submission
 
-    checklist = st.columns(3)
-    checklist[0].metric("Job", "Ready" if job_lookup else "Missing")
-    checklist[1].metric("Resume", "Ready" if resume_pdf_path else "Missing")
-    checklist[2].metric("Profile", "Ready" if get_career_profile(st.session_state) else "Missing")
-    st.markdown(f'<div class="jc-status review">{launchpad.disclosure}</div>', unsafe_allow_html=True)
-
-    preview_clicked = st.button("Preview (dry run — never submits)")
-    confirm_understanding = st.checkbox(
-        "I reviewed the staged application and want to continue.",
-        disabled=not real_submit_possible,
-    )
-    profile = get_career_profile(st.session_state)
-    current_token = preview_token(
-        job_id_input, resume_pdf_path, profile, mode, service.applications_db.get_answers()
-    )
-    preview_done = st.session_state.get("apply_preview_token") == current_token
-    if job_lookup and job_lookup.url:
-        st.link_button(
-            launchpad.primary_action,
-            job_lookup.url,
-            type="primary",
-            use_container_width=True,
-        )
-    stage_clicked = st.button(
-        launchpad.tracker_action,
-        disabled=not (real_submit_possible and confirm_understanding and preview_done),
-    )
-    if mode != ApplicationMode.MANUAL and not capability.final_submission:
-        st.info(
-            f"Confirm & Submit is disabled for {ats_platform or 'this platform'} in "
-            f"{mode.value.title()} mode: {capability.notes or 'real submission is not yet supported.'} "
-            f"Use Preview to see what would be attempted, or switch to Manual mode to apply yourself."
-        )
-    if not preview_done:
-        st.caption(
-            "Run Preview first. Staying enabled requires the same job, resume, profile and mode you previewed."
+def _render_modes(view) -> None:
+    st.markdown("### How you'll apply")
+    for mode in view.modes:
+        if mode.available:
+            tag = chip("Recommended" if mode.recommended else "Available", "verified")
+        else:
+            tag = chip("Not available yet")
+        st.markdown(
+            f'<div class="jc-row"><strong>{"● " if mode.name == "Manual" else "○ "}{escape(mode.name)}</strong> {tag}<br>'
+            f'<span class="jc-meta">{escape(mode.detail)}</span></div>',
+            unsafe_allow_html=True,
         )
 
-    if (preview_clicked or stage_clicked) and not profile:
-        st.error("No resume profile found. Upload and parse a resume on the main page first.")
-    elif (preview_clicked or stage_clicked) and not job_id_input:
-        st.error("Job ID is required.")
-    elif preview_clicked or stage_clicked:
-        dry_run = not stage_clicked
-        try:
-            result = service.apply_for_job(
-                job_id=job_id_input,
-                profile=profile,
-                resume_pdf_path=resume_pdf_path,
-                mode=mode,
-                resume_match_score=resume_match_score,
-                dry_run=dry_run,
-            )
-            if dry_run:
-                st.session_state["apply_preview_token"] = current_token
-                st.success("Preview ready. Nothing was saved; stage it when you're ready.")
-            else:
-                st.success(f"{launchpad.success_message} Application ID: {result.application_id}")
-            st.write(f"**Application link:** {result.form_url}")
-            st.write("**Fields that would be / were submitted:**")
-            st.json(result.form_fields_submitted)
-            if result.custom_answers:
-                st.write("**Answers from your approved answer bank:**")
-                st.json(result.custom_answers)
-            st.session_state["apply_unanswered"] = list(result.unanswered_questions)
-        except ValueError as exc:
-            if "Unknown ATS platform" in str(exc) or "not supported" in str(exc):
-                st.error(
-                    "This job's application site can't be auto-filled here. Switch to "
-                    "**Manual mode** to stage it and apply on the employer's site yourself."
+
+def _render_questions(service: JobService, job_id: str, profile, handoff) -> None:
+    with st.expander("Check the form for custom questions"):
+        st.caption("Optional. Tries to read the employer's form so you can answer questions here once and reuse them. "
+                   "Nothing is submitted or saved by checking.")
+        if st.button("Check for questions", key="apply_check_questions"):
+            try:
+                result = service.apply_for_job(
+                    job_id=job_id, profile=profile, resume_pdf_path=(handoff or {}).get("pdf_path", ""),
+                    mode=ApplicationMode.ASSIST, resume_match_score=0.0, dry_run=True,
                 )
-            elif "could not parse any application fields" in str(exc):
-                # Found live (2026-09-27): real Greenhouse application forms are
-                # rendered by client-side JavaScript with almost no named HTML
-                # form elements in the raw page -- this isn't a rare edge case,
-                # it's the normal shape of a real posting today. Tell the user
-                # what's actually true instead of surfacing a generic parse error.
-                st.error(
-                    "This posting's application form could not be read automatically -- it's "
-                    "likely rendered by JavaScript, which Assist/Auto mode can't see through "
-                    "today. This is a known limitation (see decisions/012), not specific to this "
-                    "job. Use **Manual mode** to get the application link and apply directly on "
-                    "the employer's site."
-                )
-            else:
-                st.error(f"Could not submit: {exc}")
-
-
-def _render_answer_bank(service: JobService) -> None:
-    """Let the user answer questions the last preview could not fill.
-
-    Only answers typed and approved here are ever used; nothing is drafted.
-    """
-    unanswered = st.session_state.get("apply_unanswered") or []
-    if not unanswered:
-        return
-    st.subheader("Questions that need your answer")
-    st.caption(
-        "Job Copilot never guesses answers such as work authorization or sponsorship. "
-        "Answers you approve here are saved and reused for the same question on later applications."
-    )
-    typed = {
-        question: st.text_area(question, key=f"answer_{index}_{question_key(question)}", height=80)
-        for index, question in enumerate(dict.fromkeys(unanswered))
-    }
-    if st.button("Approve and save answers"):
-        saved = 0
-        for question, answer in typed.items():
-            if answer.strip():
-                service.applications_db.save_answer(question_key(question), question, answer.strip())
-                saved += 1
-        st.session_state["apply_unanswered"] = [q for q, a in typed.items() if not a.strip()]
-        st.success(f"Saved {saved} answer(s). Run Preview again to use them.")
+                st.session_state["apply_unanswered"] = list(result.unanswered_questions)
+                st.session_state["apply_answers_used"] = dict(result.custom_answers or {})
+                if not result.unanswered_questions:
+                    st.success("No unanswered questions were found on the form.")
+            except ValueError:
+                st.info("This employer's form can't be read automatically (most are built in the browser). "
+                        "You'll see any extra questions on their site.")
+        used = st.session_state.get("apply_answers_used") or {}
+        if used:
+            st.markdown("**Saved answers that match this form**")
+            for question, answer in used.items():
+                st.markdown(f"- {escape(question)}: {escape(answer)}")
+        unanswered = list(dict.fromkeys(st.session_state.get("apply_unanswered") or []))
+        if unanswered:
+            st.markdown("**Questions that need your answer**")
+            st.caption("Only answers you write here are saved and reused. Job Copilot never writes an answer for you.")
+            typed = {q: st.text_area(q, key=f"answer_{i}_{question_key(q)}", height=70) for i, q in enumerate(unanswered)}
+            if st.button("Approve and save answers"):
+                saved = 0
+                for q, a in typed.items():
+                    if a.strip():
+                        service.applications_db.save_answer(question_key(q), q, a.strip())
+                        saved += 1
+                st.session_state["apply_unanswered"] = [q for q, a in typed.items() if not a.strip()]
+                st.toast(f"Saved {saved} {'answer' if saved == 1 else 'answers'}.")
+                st.rerun()
 
 
 def main():
     require_identity()
-    render_app_shell("Apply Launchpad", build_workflow_state(st.session_state))
+    render_app_shell("Apply")
     render_page_header(
-        "Apply Launchpad",
-        "Stage the verified job link, tailored resume, and reusable facts before you finish on the employer site.",
+        "Apply",
+        "Check that everything is ready, then finish on the employer's own site. Job Copilot never submits for you.",
     )
-    _render_disclosure_banner()
+    service = _service()
+    job = st.session_state.get(PENDING_TAILOR_JOB_KEY) or {}
+    if not job:
+        _pick_staged(service)
+        return
 
-    service = _get_job_service()
-    _render_submit_tab(service)
-    _render_answer_bank(service)
+    job_id = job.get("job_id", "")
+    handoff = handoff_for_job(st.session_state, job_id)
+    if handoff and str(handoff.get("validation_status", "")).upper() == "FAIL":
+        handoff = None  # a failed resume is never usable here
+    stored = service.db.get_job_posting(job_id) if job_id else None
+    if not job.get("url") and stored is not None:
+        job = {**job, "url": stored.url}
+    record = st.session_state.get(RECORD_KEY) or {}
+    readiness = build_readiness(record)
+    profile = get_career_profile(st.session_state)
+    application, status = _current_application(service, job_id)
+    capability = get_capability((stored.ats_platform if stored else "") or "")
+    view = build_apply_view(
+        job=job, handoff=handoff, review_complete=_review_complete(),
+        facts_confirmed=readiness.facts_confirmed, has_profile=profile is not None,
+        approved_answers=len(service.applications_db.get_answers()),
+        unanswered=tuple(st.session_state.get("apply_unanswered") or ()),
+        status=status, capability=capability,
+    )
+
+    render_progress(
+        (
+            ProgressStep("Resume ready", "complete" if handoff else "current"),
+            ProgressStep("Tracked", "complete" if view.stage in ("tracked", "applied") else ("current" if handoff else "pending")),
+            ProgressStep("Marked as applied", "complete" if view.stage == "applied" else ("current" if view.stage == "tracked" else "pending")),
+        ),
+        "Application readiness",
+    )
+
+    main_col, side = st.columns([2, 1], gap="large")
+    with main_col:
+        tone = {"ready": "verified", "tracked": "verified", "applied": "verified"}.get(view.stage, "review")
+        st.markdown(
+            f'<div class="jc-panel"><div class="jc-eyebrow">{escape(job.get("company", ""))}</div>'
+            f'<h2 style="margin:.1rem 0 .4rem">{escape(job.get("title", "Role"))}</h2>'
+            f'<div class="jc-status {tone}">{escape(view.headline)}</div></div>',
+            unsafe_allow_html=True,
+        )
+        st.write("")
+        _render_checklist(view)
+        st.write("")
+        a, b, c = st.columns(3)
+        if view.can_open:
+            a.link_button("Open employer application", job["url"], type="primary", use_container_width=True)
+        else:
+            a.button("Open employer application", disabled=True, use_container_width=True)
+        if b.button("Track this application", disabled=not view.can_track, use_container_width=True,
+                    help="Adds it to Tracker as ready to apply. Doesn't submit anything."):
+            token_now = preview_token(job_id, handoff["pdf_path"], profile, ApplicationMode.MANUAL,
+                                      service.applications_db.get_answers())
+            try:
+                # The dry run is the preview: nothing is saved by it.
+                service.apply_for_job(job_id=job_id, profile=profile, resume_pdf_path=handoff["pdf_path"],
+                                      mode=ApplicationMode.MANUAL,
+                                      resume_match_score=_score(handoff), dry_run=True)
+                st.session_state["apply_preview_token"] = token_now
+                service.apply_for_job(job_id=job_id, profile=profile, resume_pdf_path=handoff["pdf_path"],
+                                      mode=ApplicationMode.MANUAL,
+                                      resume_match_score=_score(handoff), dry_run=False)
+                st.toast("Tracked as ready to apply.")
+                st.rerun()
+            except ValueError as exc:
+                st.error(f"Couldn't track this application: {exc}")
+        if c.button("Mark as applied", disabled=not view.can_mark_applied, use_container_width=True,
+                    help="Use this after you've submitted on the employer's site."):
+            StatusTracker(service.applications_db).update_status(
+                application.application_id, ApplicationStatus.APPLIED,
+                "Marked as applied by you after finishing on the employer's site.", source=StatusSource.USER,
+            )
+            st.toast("Marked as applied.")
+            st.rerun()
+        if view.stage == "applied":
+            st.page_link("pages/4_Application_Tracker.py", label="Open Tracker →")
+        elif view.stage == "tracked":
+            st.caption("Opening the employer's page doesn't submit anything. Mark it as applied once you've finished there.")
+        if not handoff:
+            st.page_link("pages/5_Tailor.py", label="Tailor your resume for this job →")
+        if handoff and os.path.exists(handoff["pdf_path"]):
+            with open(handoff["pdf_path"], "rb") as f:
+                st.download_button("Download the tailored resume to attach", f.read(),
+                                   file_name=f"tailored_resume_v{handoff['version']}.pdf", mime="application/pdf")
+        _render_questions(service, job_id, profile, handoff)
+    with side:
+        _render_modes(view)
+        st.markdown("### Saved answers")
+        st.caption("Answers you've approved for application questions live in your Career Profile.")
+        st.page_link("pages/1_Profile_Review.py", label="Manage saved answers")
 
 
-if __name__ == "__main__":
-    main()
+def _score(handoff) -> float:
+    score = (handoff or {}).get("resume_match_score")
+    return min(float(score) * 100, 100.0) if isinstance(score, (int, float)) else 0.0
+
+
+main()

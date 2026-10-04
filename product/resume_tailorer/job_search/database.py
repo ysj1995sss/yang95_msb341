@@ -398,6 +398,40 @@ class JobDatabase:
             employment_type=row["employment_type"] if "employment_type" in row_keys else None,
         )
 
+    def get_jobs_by_latest_action(self, action: str, limit: int = 50) -> List[JobPosting]:
+        """Jobs whose most recent triage action is `action` (e.g. "save"), newest first."""
+        cursor = self.connection.cursor()
+        cursor.execute(
+            """
+            SELECT j.* FROM job_postings j
+            JOIN (
+                SELECT s.job_posting_id, s.action, s.timestamp FROM user_selections s
+                WHERE s.id = (
+                    SELECT s2.id FROM user_selections s2
+                    WHERE s2.job_posting_id = s.job_posting_id
+                    ORDER BY s2.timestamp DESC, s2.id DESC LIMIT 1
+                )
+            ) latest ON latest.job_posting_id = j.id
+            WHERE latest.action = ?
+            ORDER BY latest.timestamp DESC
+            LIMIT ?
+            """,
+            (action, limit),
+        )
+        return [self._row_to_job_posting(row) for row in cursor.fetchall()]
+
+    def latest_seen(self) -> Optional[datetime]:
+        """When any posting was last returned by a search, or None if never."""
+        cursor = self.connection.cursor()
+        cursor.execute("SELECT MAX(last_seen) FROM job_postings")
+        value = cursor.fetchone()[0]
+        if not value:
+            return None
+        try:
+            return datetime.fromisoformat(str(value))
+        except ValueError:
+            return None
+
     def close(self) -> None:
         """Close the database connection."""
         if self.connection:

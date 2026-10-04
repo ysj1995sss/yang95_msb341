@@ -1,154 +1,173 @@
-"""Presentation helpers for Apply Launchpad and Application Tracker."""
+"""Streamlit rendering for the Tracker, and the preview token Apply uses.
+
+What to show is decided in ui/tracker_views.py; this module only renders it.
+"""
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from datetime import date
+from html import escape
 
-from resume_tailorer.applications.models import (
-    ATSCapability,
-    ApplicationMode,
-    ApplicationStatus,
-    StatusSource,
-)
+from resume_tailorer.applications.models import ApplicationMode, ApplicationStatus, StatusSource
 from resume_tailorer.applications.status_tracker import StatusTracker
-from resume_tailorer.applications.ui_helpers import (
-    STATUS_GROUPS,
-    filter_applications,
-    format_application_for_display,
-    sort_applications,
-)
 
 
-@dataclass(frozen=True)
-class LaunchpadState:
-    recommended_mode: ApplicationMode
-    real_submit_enabled: bool
-    primary_action: str
-    tracker_action: str
-    success_message: str
-    disclosure: str
-
-
-def build_launchpad_state(mode: ApplicationMode, capability: ATSCapability) -> LaunchpadState:
-    automated_ready = mode is not ApplicationMode.MANUAL and capability.final_submission
-    return LaunchpadState(
-        recommended_mode=(mode if automated_ready else ApplicationMode.MANUAL),
-        real_submit_enabled=automated_ready,
-        primary_action="Submit application" if automated_ready else "Open application",
-        tracker_action="Submit application" if automated_ready else "Stage in tracker",
-        success_message=(
-            "Application submitted with verified confirmation."
-            if automated_ready
-            else "Application staged as Ready to apply."
-        ),
-        disclosure=(
-            "Verified automated submission is available for this platform."
-            if automated_ready
-            else "Manual mode is the reliable path today. You review and submit on the employer site."
-        ),
-    )
-
-
-def _render_weekly_gauge(trackers, submissions) -> None:
+def _weekly_panel(rows, owner_id: str) -> None:
     import streamlit as st
-    from datetime import date
 
     from resume_tailorer.applications.weekly import build_weekly_summary
+    from resume_tailorer.profile_import import RECORD_KEY, save_record
 
-    entries = [
-        (t.status, submissions[t.application_id].submission_timestamp.date() if submissions.get(t.application_id) else None)
-        for t in trackers
-    ]
-    week = build_weekly_summary(entries, date.today())
-    goal = int(st.session_state.get("weekly_goal", 0))
-    left, right = st.columns([2, 3])
-    with left:
-        st.markdown(f"**Week of {week.week_start:%b %d} – {week.week_end:%b %d}**")
-        st.metric("Applied this week", week.applied, delta=f"goal {goal}" if goal else None, delta_color="off")
-        if goal:
-            st.progress(min(week.applied / goal, 1.0))
-        st.number_input("Weekly goal (0 = none)", min_value=0, max_value=100, key="weekly_goal")
-    with right:
-        a, b = st.columns(2)
-        a.metric("In interview stages", week.interviews)
-        b.metric("Saved, not applied", week.saved)
+    week = build_weekly_summary([(r.status, r.applied) for r in rows], date.today())
+    record = st.session_state.get(RECORD_KEY) or {}
+    prefs = record.setdefault("preferences", {})
+    goal = int(prefs.get("weekly_goal") or 0)
+    st.markdown(f"#### Week of {week.week_start:%b %d}")
+    st.metric("Applications sent", week.applied, help="Counted from the day you marked each one as applied.")
+    if goal:
+        st.progress(min(week.applied / goal, 1.0))
+        st.caption(f"{week.applied} of {goal}. A goal is a pace, not a test.")
+    a, b = st.columns(2)
+    a.metric("In interviews", week.interviews)
+    b.metric("Saved, not applied", week.saved)
+    new_goal = st.number_input("Weekly goal (0 for none)", min_value=0, max_value=100, value=goal, key="weekly_goal_input")
+    if new_goal != goal and record.get("profile") is not None:
+        prefs["weekly_goal"] = int(new_goal)
+        save_record(st.session_state, owner_id, record)
+        st.rerun()
 
 
-def render_application_tracker(service) -> None:
-    """Render the tracker from existing immutable submission snapshots."""
+def render_application_tracker(service, owner_id: str = "local") -> None:
+    """Dense table, saved views and a detail panel built from immutable snapshots."""
     import streamlit as st
+
+    from resume_tailorer.job_search.job_service import PENDING_TAILOR_JOB_KEY
+    from resume_tailorer.ui.shell import chip
+    from resume_tailorer.ui.tracker_views import (
+        STATUS_WORDS, VIEWS, build_row, in_view, sort_rows, view_counts,
+    )
 
     status_tracker = StatusTracker(service.applications_db)
     trackers = status_tracker.get_all_applications()
     if not trackers:
-        st.info("No applications yet. Use Apply Launchpad to stage your first one.")
+        st.markdown(
+            '<section class="jc-focus"><div class="jc-eyebrow">Nothing tracked yet</div>'
+            "<h2>Your applications will appear here</h2><p>Prepare an application from Jobs, then choose "
+            "<strong>Track this application</strong> on Apply.</p></section>",
+            unsafe_allow_html=True,
+        )
+        st.page_link("pages/2_Job_Search.py", label="Find a job →")
         return
 
-    submissions = {
-        tracker.application_id: service.applications_db.get_submission(tracker.application_id)
-        for tracker in trackers
-    }
-    rows = [format_application_for_display(t, submissions[t.application_id]) for t in trackers]
-    _render_weekly_gauge(trackers, submissions)
-    view = st.radio("Saved view", list(STATUS_GROUPS), horizontal=True, key="tracker_view")
-    filters = st.columns(4)
-    company = filters[0].text_input("Company", key="tracker_company")
-    role = filters[1].text_input("Role", key="tracker_role")
-    mode = filters[2].selectbox("Mode", ["", "Manual", "Assist", "Auto"], key="tracker_mode")
-    sort_by = filters[3].selectbox(
-        "Sort by", ["Newest application", "Oldest pending", "Company", "Status", "Candidate Fit"], key="tracker_sort"
-    )
-    shown = sort_applications(
-        filter_applications(rows, view=view, company=company, role=role, mode=mode), sort_by
-    )
-    if not shown:
-        st.info("No applications match these filters.")
-        return
-    st.dataframe(shown, use_container_width=True, hide_index=True)
+    today = date.today()
+    submissions = {t.application_id: service.applications_db.get_submission(t.application_id) for t in trackers}
+    histories = {t.application_id: status_tracker.get_status_history(t.application_id) for t in trackers}
+    rows = [build_row(t, submissions[t.application_id], histories[t.application_id]) for t in trackers]
+    counts = view_counts(rows, today)
 
-    labels = {row["Application ID"]: f"{row['Company']} · {row['Role']}" for row in shown}
-    application_id = st.selectbox("Application detail", list(labels), format_func=labels.get)
+    main, side = st.columns([2.2, 1], gap="large")
+    with side:
+        _weekly_panel(rows, owner_id)
+    with main:
+        view = st.radio(
+            "Saved view", VIEWS, horizontal=True, key="tracker_view",
+            format_func=lambda v: f"{v} ({counts[v]})",
+        )
+        search = st.text_input("Search company or role", key="tracker_search", placeholder="Type to filter")
+        shown = [r for r in sort_rows(rows) if in_view(r, view, today)]
+        if search.strip():
+            needle = search.strip().lower()
+            shown = [r for r in shown if needle in r.company.lower() or needle in r.role.lower()]
+        if not shown:
+            st.info("Nothing in this view." if not search else "No applications match that search.")
+            return
+        st.dataframe([r.as_table() for r in shown], use_container_width=True, hide_index=True)
+
+        labels = {r.application_id: f"{r.role} at {r.company} · {STATUS_WORDS.get(r.status, r.status.value)}" for r in shown}
+        application_id = st.selectbox("Open an application", list(labels), format_func=labels.get, key="tracker_selected")
+    row = next(r for r in rows if r.application_id == application_id)
     submission = submissions.get(application_id)
-    tracker = next(t for t in trackers if t.application_id == application_id)
-    if submission:
-        left, right = st.columns(2)
-        left.markdown(
-            f"**Application evidence**  \nResume: {submission.resume_used or 'Not recorded'}  \n"
-            f"Mode: {submission.mode.value.title()}  \nURL: {submission.form_url or 'Not recorded'}"
-        )
-        fit = submission.candidate_fit_snapshot.get("overall_fit")
-        right.markdown(
-            f"**Submission snapshot**  \nCandidate fit: {f'{fit:.0f}%' if fit is not None else 'Not assessed'}  \n"
-            f"Status: {tracker.status.value.replace('_', ' ').title()}  \n"
-            f"Confirmation: {submission.confirmation_number or 'Not recorded'}"
-        )
-        next_action = st.text_input("Next action", value=submission.next_action, key="tracker_next_action")
-        due = st.text_input("Due date (YYYY-MM-DD, optional)", value=submission.next_action_due or "", key="tracker_due")
-        next_action_notes = st.text_area(
-            "Next-action notes", value=submission.next_action_notes, key="tracker_next_action_notes"
-        )
-        if st.button("Save next action"):
-            service.applications_db.update_next_action(application_id, next_action, due or None, next_action_notes)
-            st.success("Next action saved.")
+    _render_detail(st, service, status_tracker, row, submission, histories[application_id], chip, PENDING_TAILOR_JOB_KEY)
+
+
+def _render_detail(st, service, status_tracker, row, submission, history, chip, pending_key) -> None:
+    from resume_tailorer.ui.tracker_views import STATUS_WORDS
+
+    st.markdown("### " + escape(f"{row.role} at {row.company}"))
+    left, right = st.columns([1.3, 1], gap="large")
+    with left:
+        job = (submission.job_snapshot if submission else {}) or {}
+        salary = "No salary stated"
+        if job.get("salary_min") or job.get("salary_max"):
+            salary = f"${(job.get('salary_min') or 0):,} – ${(job.get('salary_max') or 0):,}"
+        facts = [
+            ("Status", STATUS_WORDS.get(row.status, row.status.value)),
+            ("Applied", row.applied.isoformat() if row.applied else "Not yet"),
+            ("Candidate fit when you applied", row.fit),
+            ("Resume used", row.resume_version),
+            ("Mode", row.mode),
+            ("Location", job.get("location") or "Not recorded"),
+            ("Salary", salary),
+            ("Confirmation number", (submission.confirmation_number if submission else "") or "None recorded"),
+        ]
+        table = "".join(f"<tr><th>{escape(k)}</th><td>{escape(str(v))}</td></tr>" for k, v in facts)
+        st.markdown(f'<table class="jc-table">{table}</table>', unsafe_allow_html=True)
+        st.caption("This is what was true when the application was recorded; later edits don't change it.")
+        answers = (submission.custom_answers if submission else {}) or {}
+        with st.expander(f"Answers used ({len(answers)})"):
+            if answers:
+                for question, answer in answers.items():
+                    st.markdown(f"- **{escape(question)}** {escape(answer)}")
+            else:
+                st.caption("No saved answers were used for this application.")
+        with st.expander("Status history", expanded=True):
+            for event in sorted(history, key=lambda e: e.status_updated, reverse=True):
+                who = {"user": "you", "system": "Job Copilot"}.get(event.source.value, event.source.value.replace("_", " "))
+                note = f" · {event.notes}" if event.notes else ""
+                st.markdown(
+                    f'<div class="jc-meta">{event.status_updated:%b %d, %Y %H:%M} · '
+                    f"{escape(STATUS_WORDS.get(event.status, event.status.value))} · set by {escape(who)}{escape(note)}</div>",
+                    unsafe_allow_html=True,
+                )
+        c1, c2 = st.columns(2)
+        if row.url:
+            c1.link_button("Open employer page", row.url, use_container_width=True)
+        if c2.button("Tailor again for this job", use_container_width=True, key="tracker_retailor"):
+            st.session_state[pending_key] = {
+                "job_id": submission.job_posting_id if submission else "", "title": row.role,
+                "company": row.company, "url": row.url, "candidate_fit": (submission.candidate_fit_snapshot or {}) if submission else {},
+                "description": (service.db.get_job_posting(submission.job_posting_id).description
+                                if submission and service.db.get_job_posting(submission.job_posting_id) else ""),
+            }
+            st.switch_page("pages/5_Tailor.py")
+    with right:
+        st.markdown("#### Next action")
+        if submission:
+            next_action = st.text_input("What's next", value=submission.next_action, key="tracker_next_action",
+                                        placeholder="e.g. Email the recruiter")
+            due_value = None
+            if submission.next_action_due:
+                try:
+                    due_value = date.fromisoformat(submission.next_action_due[:10])
+                except ValueError:
+                    due_value = None
+            due = st.date_input("Due", value=due_value, key="tracker_due", format="YYYY-MM-DD")
+            notes = st.text_area("Notes", value=submission.next_action_notes, key="tracker_next_action_notes", height=80)
+            if st.button("Save next action", key="tracker_save_next"):
+                service.applications_db.update_next_action(
+                    row.application_id, next_action, due.isoformat() if due else None, notes
+                )
+                st.toast("Next action saved.")
+                st.rerun()
+        st.markdown("#### Move status")
+        order = [s for s in STATUS_WORDS if s is not ApplicationStatus.UNKNOWN]
+        selected = st.selectbox("New status", order, index=order.index(row.status) if row.status in order else 0,
+                                format_func=STATUS_WORDS.get, key="tracker_status")
+        note = st.text_input("Note (optional)", key="tracker_status_note")
+        if st.button("Save status", type="primary", key="tracker_save_status", disabled=selected == row.status):
+            status_tracker.update_status(row.application_id, selected, note, source=StatusSource.USER)
+            st.toast(f"Moved to {STATUS_WORDS[selected]}.")
             st.rerun()
-
-    with st.expander("Status provenance and history", expanded=True):
-        for event in status_tracker.get_status_history(application_id):
-            provenance = event.source.value.replace("_", " ").title()
-            confidence = f" · {event.confidence} confidence" if event.confidence else ""
-            note = f" · {event.notes}" if event.notes else ""
-            st.write(
-                f"{event.status_updated:%Y-%m-%d %H:%M} · "
-                f"{event.status.value.replace('_', ' ').title()} · {provenance}{confidence}{note}"
-            )
-
-    status_labels = {status.value.replace("_", " ").title(): status for status in ApplicationStatus}
-    selected = st.selectbox("Update status", list(status_labels), key="tracker_status")
-    notes = st.text_input("Status note (optional)", key="tracker_status_note")
-    if st.button("Save status", type="primary"):
-        status_tracker.update_status(application_id, status_labels[selected], notes, source=StatusSource.USER)
-        st.success("Status saved with user provenance.")
-        st.rerun()
 
 
 def preview_token(

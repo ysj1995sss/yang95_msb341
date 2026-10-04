@@ -138,6 +138,18 @@ class ApplicationDatabase:
         rows = self.conn.execute("SELECT question_key, answer FROM answer_bank").fetchall()
         return {row["question_key"]: row["answer"] for row in rows}
 
+    def get_answer_entries(self) -> list:
+        """All approved answers with the question as the user saw it, newest first."""
+        rows = self.conn.execute(
+            "SELECT question_key, question, answer, updated_at FROM answer_bank ORDER BY updated_at DESC"
+        ).fetchall()
+        return [dict(row) for row in rows]
+
+    def delete_answer(self, question_key: str) -> None:
+        """Remove an approved answer; it will no longer be reused."""
+        self.conn.execute("DELETE FROM answer_bank WHERE question_key = ?", (question_key,))
+        self.conn.commit()
+
     def save_submission(self, submission: ApplicationSubmission) -> str:
         """Record what was (or would be) submitted.
 

@@ -1,78 +1,57 @@
 from resume_tailorer.ui.design_system import (
-    WORKSPACES,
-    build_workflow_state,
+    DESTINATIONS,
+    THEME_CSS,
+    TOKENS,
     display_optional,
+    progress_steps,
     semantic_status,
 )
 
 
-def test_workspaces_use_the_five_user_facing_destinations():
-    assert [workspace.name for workspace in WORKSPACES] == [
-        "Start Here",
-        "Fact Vault",
-        "Job Discovery",
-        "Tailoring Studio",
-        "Apply Launchpad",
-        "Application Tracker",
-    ]
+def _luminance(hex_color: str) -> float:
+    h = hex_color.lstrip("#")
+    channels = [int(h[i:i + 2], 16) / 255 for i in (0, 2, 4)]
+    lin = [c / 12.92 if c <= 0.03928 else ((c + 0.055) / 1.055) ** 2.4 for c in channels]
+    return 0.2126 * lin[0] + 0.7152 * lin[1] + 0.0722 * lin[2]
 
 
-def test_empty_session_starts_at_fact_vault():
-    state = build_workflow_state({})
-    assert [step.state for step in state] == [
-        "current",
-        "pending",
-        "pending",
-        "pending",
-    ]
+def _contrast(a: str, b: str) -> float:
+    hi, lo = sorted((_luminance(a), _luminance(b)), reverse=True)
+    return (hi + 0.05) / (lo + 0.05)
 
 
-def test_completed_stages_follow_real_session_evidence():
-    state = build_workflow_state(
-        {
-            "career_profile": object(),
-            "job_description_text": "Build reliable systems",
-            "artifact_run_state": {
-                "reviewed": True,
-                "validation": "PASS",
-                "pdf_bytes": b"pdf",
-            },
-        }
-    )
-    assert [step.state for step in state] == [
-        "complete",
-        "complete",
-        "complete",
-        "complete",
-    ]
+def test_six_user_facing_destinations_in_order():
+    assert [d.name for d in DESTINATIONS] == ["Home", "Career Profile", "Jobs", "Tailor", "Apply", "Tracker"]
+    assert DESTINATIONS[0].path == "app.py"
 
 
-def test_unreviewed_artifact_does_not_complete_review_or_ready_stages():
-    state = build_workflow_state(
-        {
-            "career_profile": object(),
-            "job_description_text": "Build reliable systems",
-            "artifact_run_state": {"reviewed": False, "validation": "PASS", "pdf_bytes": b"pdf"},
-        }
-    )
-    assert [step.state for step in state] == ["complete", "complete", "current", "pending"]
+def test_text_tokens_meet_aa_on_paper():
+    for name in ("ink", "action", "verified", "review", "blocked", "muted"):
+        assert _contrast(TOKENS[name], TOKENS["paper"]) >= 4.5, name
 
 
-def test_failed_artifact_never_completes_application_ready_stage():
-    state = build_workflow_state(
-        {
-            "career_profile": object(),
-            "job_description_text": "Build reliable systems",
-            "artifact_run_state": {"reviewed": True, "validation": "FAIL", "pdf_bytes": b"pdf"},
-        }
-    )
-    assert [step.state for step in state][-1] == "current"
+def test_text_tokens_meet_aa_on_canvas_with_the_darker_amber():
+    for name in ("ink", "action", "verified", "blocked", "muted", "review_on_canvas"):
+        assert _contrast(TOKENS[name], TOKENS["canvas"]) >= 4.5, name
+    assert _contrast(TOKENS["review"], TOKENS["canvas"]) < 4.5  # the reason review_on_canvas exists
+
+
+def test_css_respects_reduced_motion_and_has_no_global_ribbon():
+    assert "prefers-reduced-motion" in THEME_CSS
+    assert "jc-ribbon" not in THEME_CSS
+
+
+def test_progress_marks_first_unfinished_step_current():
+    steps = progress_steps(("a", "b", "c"), (True, False, False))
+    assert [s.state for s in steps] == ["complete", "current", "pending"]
+    assert [s.state for s in progress_steps(("a", "b"), (True, True))] == ["complete", "complete"]
 
 
 def test_warning_is_review_not_ready():
     status = semantic_status("WARNING")
     assert status.label == "Review required"
     assert status.application_ready is False
+    assert semantic_status("FAIL").application_ready is False
 
 
 def test_unknown_value_is_not_zero():
