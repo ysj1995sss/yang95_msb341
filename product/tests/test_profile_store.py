@@ -101,3 +101,20 @@ def test_load_into_session_makes_it_the_shared_verified_profile(data_dir):
 def test_each_owner_has_their_own_profile(data_dir):
     import_resume(store_for("alice"), "cv.docx", b"x", parser=FakeParser())
     assert store_for("bob").load()["profile"] == {}
+
+
+def test_bullets_show_as_one_list_and_untouched_jobs_stay_unchanged():
+    from resume_tailorer.profile_store import combined_bullets, split_bullets
+
+    job = {"responsibilities": ["Led launches"], "accomplishments": ["Grew sales 20%"]}
+    lines = combined_bullets(job)
+    assert lines == ["Led launches", "Grew sales 20%"]
+    assert split_bullets(job, lines) == (["Led launches"], ["Grew sales 20%"])
+    assert split_bullets(job, lines + ["New bullet"]) == (["Led launches", "New bullet"], ["Grew sales 20%"])
+
+
+def test_gpa_edit_is_saved_and_marked(data_dir):
+    record = import_resume(store_for("local"), "cv.docx", b"x", parser=FakeParser())
+    edited = dict(record["profile"], education=[dict(record["profile"]["education"][0], gpa="3.8")])
+    assert apply_edits(record, edited) == ["education[0]"]
+    assert record["profile"]["education"][0]["gpa"] == "3.8"

@@ -17,7 +17,7 @@ import streamlit as st
 
 from resume_tailorer.applications.answer_bank import question_key
 from resume_tailorer.profile_import import RECORD_KEY, import_resume, load_into_session, save_record, store_for
-from resume_tailorer.profile_store import apply_edits, confirm_remaining
+from resume_tailorer.profile_store import apply_edits, combined_bullets, confirm_remaining, split_bullets
 from resume_tailorer.ui import chip, progress_steps, render_app_shell, render_page_header, render_progress
 from resume_tailorer.ui.auth_gate import job_service_for, require_identity
 from resume_tailorer.ui.goals_wizard import render_goals_wizard
@@ -109,24 +109,29 @@ def _facts_tab(owner_id: str, record: dict) -> None:
                 employer = c2.text_input("Employer", value=job.get("employer", ""), key=f"cp_job_employer_{i}")
                 dates = c3.text_input("Dates", value=job.get("dates", ""), key=f"cp_job_dates_{i}",
                                       placeholder="e.g. Jan 2021 – Present")
-                resp = st.text_area("What you did (one per line)", value="\n".join(job.get("responsibilities") or []),
-                                    key=f"cp_job_resp_{i}", height=110)
-                acc = st.text_area("Results (one per line)", value="\n".join(job.get("accomplishments") or []),
-                                   key=f"cp_job_acc_{i}", height=90)
+                bullets = st.text_area(
+                    "Bullet points (one per line)",
+                    value="\n".join(combined_bullets(job)),
+                    key=f"cp_job_bullets_{i}", height=160,
+                )
+                responsibilities, accomplishments = split_bullets(job, _lines(bullets))
                 jobs.append({**job, "title": title, "employer": employer, "dates": dates,
-                             "responsibilities": _lines(resp), "accomplishments": _lines(acc)})
+                             "responsibilities": responsibilities, "accomplishments": accomplishments})
 
         st.markdown("### Education")
         education = []
         for i, entry in enumerate(profile.get("education") or []):
             st.markdown(_prov(record, f"education[{i}]"), unsafe_allow_html=True)
-            c1, c2, c3, c4 = st.columns([1.2, 2, 2.4, 1])
+            c1, c2, c3, c4, c5 = st.columns([1.3, 1.8, 2.3, 0.9, 0.8])
             degree = c1.text_input("Degree", value=entry.get("degree", ""), key=f"cp_edu_degree_{i}")
             field = c2.text_input("Field", value=entry.get("field", ""), key=f"cp_edu_field_{i}")
             school = c3.text_input("School", value=entry.get("institution", ""), key=f"cp_edu_school_{i}")
             year = c4.text_input("Year", value=str(entry.get("year") or ""), key=f"cp_edu_year_{i}")
+            gpa = c5.text_input("GPA", value=entry.get("gpa") or "", key=f"cp_edu_gpa_{i}",
+                                placeholder="Optional", help="Leave blank to keep it off your resume facts.")
             education.append({**entry, "degree": degree, "field": field, "institution": school,
-                              "year": int(year) if year.strip().isdigit() else 0})
+                              "year": int(year) if year.strip().isdigit() else 0,
+                              "gpa": gpa.strip() or None})
         no_education = st.checkbox("I have no degree to list", value=bool(record.get("no_education")), key="cp_no_edu")
 
         st.markdown("### Skills and tools")

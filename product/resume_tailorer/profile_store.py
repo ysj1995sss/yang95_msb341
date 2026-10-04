@@ -175,3 +175,15 @@ def apply_edits(record: dict, new_profile: dict) -> list[str]:
         if path in present:
             provenance[path] = EDITED
     return changed
+
+
+def combined_bullets(job: dict) -> list[str]:
+    """A job's bullet points as one list, in resume order (what it did, then results)."""
+    return list(job.get("responsibilities") or []) + list(job.get("accomplishments") or [])
+
+
+def split_bullets(job: dict, lines: list[str]) -> tuple[list[str], list[str]]:
+    """Store edited bullets back. A line that was a result stays a result, so an
+    untouched job keeps its exact shape and isn't marked as edited."""
+    results = set(job.get("accomplishments") or [])
+    return [l for l in lines if l not in results], [l for l in lines if l in results]
