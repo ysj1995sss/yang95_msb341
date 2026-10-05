@@ -2,7 +2,7 @@
 
 import { ArrowRight, Check, Circle, Download, Pencil, RotateCcw } from "lucide-react";
 import { useState } from "react";
-import { Alert, Button, Card, Chip, LinkButton, TextArea, cx, toneOf, useToast } from "@/components/ui";
+import { Alert, Button, Card, Chip, DownloadLink, LinkButton, TextArea, cx, toneOf, useToast } from "@/components/ui";
 import { api } from "@/lib/api";
 import type { Change, Decision, Review } from "@/lib/types";
 
@@ -185,8 +185,8 @@ export function ReviewRoom({ review, onChange, onDiscard }: {
           )}
           {review.status !== "FAIL" && (
             <div className="flex flex-wrap gap-2">
-              {review.has_pdf && <LinkButton href="/api/backend/tailor/download/pdf"><Download aria-hidden className="size-4" /> Download PDF</LinkButton>}
-              {review.has_docx && <LinkButton href="/api/backend/tailor/download/docx"><Download aria-hidden className="size-4" /> Download Word</LinkButton>}
+              {review.has_pdf && <DownloadLink href="/api/backend/tailor/download/pdf"><Download aria-hidden className="size-4" /> Download PDF</DownloadLink>}
+              {review.has_docx && <DownloadLink href="/api/backend/tailor/download/docx"><Download aria-hidden className="size-4" /> Download Word</DownloadLink>}
             </div>
           )}
           <details className="rounded-[var(--radius-card)] border border-line bg-paper p-4 text-[15px]">

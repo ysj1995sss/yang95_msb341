@@ -68,8 +68,14 @@ class Workspace:
             from resume_tailorer.active_job import restore_handoff, restore_pending_job
             from resume_tailorer.session_profile import get_career_profile
 
-            restore_pending_job(self.session, self.record, self.service.db, self.service.fit_scorer,
-                                get_career_profile(self.session))
+            pending = restore_pending_job(self.session, self.record, self.service.db, self.service.fit_scorer,
+                                          get_career_profile(self.session))
+            if pending:
+                # The tailored-resume handoff is labelled with this key (Streamlit sets it in
+                # sync_pending_job); without it Apply can't match the resume to the job.
+                from resume_tailorer.tailoring_session import ACTIVE_JOB_KEY
+
+                self.session[ACTIVE_JOB_KEY] = pending.get("job_id")
             restore_handoff(self.session, self.record)
         except Exception:  # the chosen job is a convenience; never fail a request on it
             pass

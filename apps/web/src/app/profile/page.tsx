@@ -17,10 +17,15 @@ export default function ProfilePage() {
   const [chosen, setOpen] = useState<string | null | undefined>(undefined);
   const [confirming, setConfirming] = useState(false);
   const editorRef = useRef<HTMLHeadingElement>(null);
+  // Focus moves to the editor only when the person opens a section, never on page load.
+  const focusEditor = useRef(false);
 
   const open = chosen === undefined ? (data?.first_to_review ?? null) : chosen;
   useEffect(() => {
-    if (open) editorRef.current?.focus();
+    if (open && focusEditor.current) {
+      focusEditor.current = false;
+      editorRef.current?.focus();
+    }
   }, [open]);
 
   if (error) return <ErrorBox error={error} retry={reload} />;
@@ -105,7 +110,7 @@ export default function ProfilePage() {
                   </div>
                   <Chip tone={toneOf(r.tone)}>{r.status}</Chip>
                   <Button variant={r.key === open ? "primary" : "secondary"} aria-expanded={r.key === open}
-                    aria-controls="section-editor" onClick={() => setOpen(r.key)}>
+                    aria-controls="section-editor" onClick={() => { focusEditor.current = true; setOpen(r.key); }}>
                     {r.action}<span className="sr-only"> {r.name}</span>
                   </Button>
                 </li>

@@ -165,3 +165,19 @@ def test_a_one_off_resume_survives_a_restart(tailor_client):
     assert tailor_client.get("/v2/tailor").json()["resume"]["one_off"] is True
     tailor_client.delete("/v2/tailor/one-off")
     assert tailor_router._one_off("local") is None
+
+
+def test_a_reviewed_resume_reaches_apply(tailor_client, monkeypatch):
+    """Found by the browser tests: the handoff carried no job id, so Apply said there was no resume."""
+    from tests.e2e_server import fake_pdf
+
+    monkeypatch.setattr("resume_tailorer.docx_export.pipeline.convert_docx_to_pdf", fake_pdf)
+    _ready(tailor_client)
+    tailor_client.post("/v2/profile/confirm")
+    assert _run(tailor_client)["status"] == "done"
+    review = tailor_client.get("/v2/tailor").json()["review"]
+    for c in review["changes"]:
+        tailor_client.post("/v2/tailor/decisions", json={"change_id": c["id"], "decision": "ACCEPTED"})
+    assert tailor_client.post("/v2/tailor/rebuild").json()["progress"]["can_continue"] is True
+    apply = tailor_client.get("/v2/apply").json()
+    assert apply["handoff"]["has_file"] is True and apply["view"]["stage"] == "ready"

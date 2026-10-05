@@ -52,6 +52,13 @@ export function LinkButton({
   return <Link href={href} className={cx(buttonBase, buttonVariants[variant], className)}>{children}</Link>;
 }
 
+/** A file download. A plain link, never next/link: client navigation would prefetch the file. */
+export function DownloadLink({ href, variant = "secondary", className, children }: {
+  href: string; variant?: keyof typeof buttonVariants; className?: string; children: ReactNode;
+}) {
+  return <a href={href} download className={cx(buttonBase, buttonVariants[variant], className)}>{children}</a>;
+}
+
 export function Card({ children, className, as: As = "section", ...rest }: {
   children: ReactNode; className?: string; as?: "section" | "div" | "article"; "aria-labelledby"?: string;
 }) {
