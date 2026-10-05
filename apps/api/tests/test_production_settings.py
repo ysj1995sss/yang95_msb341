@@ -26,5 +26,10 @@ def test_production_refuses_unsafe_values(secret, url, message):
 
 def test_production_starts_with_a_real_secret_and_database():
     settings = Settings(app_env="production", jwt_secret=STRONG, database_url=POSTGRES,
-                        allowed_origins="https://app.example.com, https://www.example.com")
+                        workspace_token_secret=STRONG, allowed_origins="https://app.example.com, https://www.example.com")
     assert settings.cors_origins == ["https://app.example.com", "https://www.example.com"]
+
+
+def test_production_needs_the_shared_workspace_secret():
+    with pytest.raises(ValueError, match="WORKSPACE_TOKEN_SECRET"):
+        Settings(app_env="production", jwt_secret=STRONG, database_url=POSTGRES)

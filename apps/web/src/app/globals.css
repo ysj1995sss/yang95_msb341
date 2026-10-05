@@ -1,0 +1,59 @@
+@import "tailwindcss";
+
+/* Job Copilot design tokens (spec 009): calm, trustworthy, flat. Light only for now;
+   names are semantic so a dark theme can redefine them later. */
+@theme {
+  --color-ink: #0f172a;
+  --color-muted: #475569;
+  --color-canvas: #f8fafc;
+  --color-paper: #ffffff;
+  --color-line: #e2e8f0;
+  --color-line-strong: #cbd5e1;
+  --color-primary: #0f766e;
+  --color-primary-hover: #115e59;
+  --color-primary-soft: #f0fdfa;
+  --color-verified: #15803d;
+  --color-verified-soft: #f0fdf4;
+  --color-review: #b45309;
+  --color-review-soft: #fffbeb;
+  --color-blocked: #b91c1c;
+  --color-blocked-soft: #fef2f2;
+  --color-focus: #f59e0b;
+
+  --font-heading: var(--font-lexend), system-ui, sans-serif;
+  --font-sans: var(--font-source-sans), system-ui, sans-serif;
+
+  --radius-card: 6px;
+  --radius-control: 4px;
+}
+
+html {
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  background: var(--color-canvas);
+  color: var(--color-ink);
+  font-family: var(--font-sans);
+  font-size: 16px;
+  line-height: 1.5;
+}
+
+h1, h2, h3 {
+  font-family: var(--font-heading);
+  letter-spacing: -0.01em;
+  text-wrap: balance;
+}
+
+/* Always-visible keyboard focus (WCAG 2.4.7 / 2.4.13). */
+:focus-visible {
+  outline: 3px solid var(--color-focus);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+  }
+}

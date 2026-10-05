@@ -11,6 +11,8 @@ from app.job_search_profiles.router import router as job_search_profiles_router
 from app.jobs.router import router as jobs_router
 from app.devices.router import router as devices_router
 from app.tailor.router import router as tailor_router
+from app.workspace.home_router import router as workspace_home_router
+from app.workspace.profile_router import router as workspace_profile_router
 
 app = FastAPI(title="Resume Copilot API")
 app.add_middleware(
@@ -36,6 +38,9 @@ app.include_router(job_search_profiles_router)
 app.include_router(jobs_router)
 app.include_router(devices_router)
 app.include_router(tailor_router)
+# Spec 009: the workspace API the Next.js frontend uses (shared with the Streamlit app's data).
+app.include_router(workspace_home_router)
+app.include_router(workspace_profile_router)
 
 
 @app.get("/health")

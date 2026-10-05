@@ -20,7 +20,10 @@ class Settings(BaseSettings):
     access_token_expire_minutes: int = 60 * 24
     device_token_expire_minutes: int = 60 * 24 * 30
     # Browser origins allowed to call the API, comma-separated (e.g. the deployed site).
-    allowed_origins: str = "http://localhost:5173"
+    allowed_origins: str = "http://localhost:5173,http://localhost:3000"
+    # Shared with the Next.js server (apps/web), which signs a short-lived token per request
+    # for the signed-in user. Empty in development means local single-user mode (spec 009).
+    workspace_token_secret: str = ""
 
     @model_validator(mode="after")
     def _refuse_unsafe_production_defaults(self) -> "Settings":
@@ -30,6 +33,11 @@ class Settings(BaseSettings):
         if self.jwt_secret == DEV_JWT_SECRET or len(self.jwt_secret) < MIN_PRODUCTION_SECRET_LENGTH:
             problems.append(
                 f"JWT_SECRET must be a private random value of at least {MIN_PRODUCTION_SECRET_LENGTH} characters"
+            )
+        if len(self.workspace_token_secret) < MIN_PRODUCTION_SECRET_LENGTH:
+            problems.append(
+                f"WORKSPACE_TOKEN_SECRET must be shared with the web app and at least "
+                f"{MIN_PRODUCTION_SECRET_LENGTH} characters"
             )
         if self.database_url.startswith("sqlite"):
             problems.append("DATABASE_URL must point to a durable server database, not a local SQLite file")
