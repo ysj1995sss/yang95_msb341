@@ -1,6 +1,7 @@
 # Spec 005: Application status sync
 
-**Status:** Draft (deferred to a later sprint)
+**Status:** Slice 1 (email paste) built 2026-10-04 (decision 027). Slice 2 (Gmail) still deferred: it
+needs Google's restricted-scope security review, which only the builder can apply for.
 **Date:** 2026-09-29
 
 ## Problem
@@ -17,7 +18,8 @@ A way for a real email to update an application's status, with the user confirmi
 1. **Email paste (first slice).** The user pastes a recruiter email into the Application
    Tracker. The app finds the matching application (by company and role) and proposes a
    status, for example "Rejected" or "Recruiter screen". Nothing changes until the user
-   confirms. The confirmed update is recorded with `StatusSource.EMAIL` and the email's date.
+   confirms. The confirmed update is recorded with `StatusSource.EMAIL_INTEGRATION` and the
+   email's date (in the history note; the subject line is kept as evidence).
 2. **Gmail connection (second slice).** The user connects Gmail with read-only access limited to
    messages from known ATS senders (greenhouse.io, lever.co, ashbyhq.com, myworkdayjobs.com).
    The same matching and confirmation flow runs on new messages.

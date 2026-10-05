@@ -37,6 +37,67 @@ def _weekly_panel(rows, owner_id: str) -> None:
         st.rerun()
 
 
+_EMAIL_KEY = "tracker_email_text"
+
+
+def _confirm_email(status_tracker, application_id, status, notes, evidence, done_message) -> None:
+    """Runs before the rerun: record the user's confirmed update, then clear the pasted email."""
+    import streamlit as st
+
+    status_tracker.update_status(application_id, status, notes=notes, source=StatusSource.EMAIL_INTEGRATION,
+                                 confidence="confirmed by you", evidence=evidence)
+    st.session_state[_EMAIL_KEY] = ""
+    st.session_state["tracker_email_done"] = done_message
+
+
+def _email_panel(status_tracker, rows) -> None:
+    """Spec 005, first slice: a pasted recruiter email proposes a status; only the user applies it."""
+    import streamlit as st
+
+    from resume_tailorer.applications.email_status import Candidate, read_email
+    from resume_tailorer.ui.tracker_views import STATUS_WORDS
+
+    done = st.session_state.pop("tracker_email_done", None)
+    if done:
+        st.toast(done)
+    with st.expander("Update a status from a recruiter email"):
+        st.caption("Paste the email, with its From, Date and Subject lines if you have them. "
+                   "Job Copilot suggests the application and status; nothing changes until you confirm.")
+        text = st.text_area("Recruiter email", key=_EMAIL_KEY, height=150)
+        if not text.strip():
+            return
+        by_id = {r.application_id: r for r in rows}
+        reading = read_email(text, [Candidate(r.application_id, r.company, r.role, r.status) for r in rows])
+        if reading.status is None:
+            st.info("This email doesn't clearly say a status (a rejection, assessment, interview, offer and so on), "
+                    "so there's nothing to update.")
+            return
+        st.markdown(f"Suggested status: **{escape(STATUS_WORDS.get(reading.status, reading.status.value))}**, "
+                    f"because it says \u201c{escape(reading.phrase)}\u201d.", unsafe_allow_html=True)
+        matched = [m.application_id for m in reading.matches]
+        options = matched + [i for i in by_id if i not in matched]
+        application_id = st.selectbox(
+            "Which application is this about?", options, index=0 if reading.chosen else None,
+            format_func=lambda i: f"{by_id[i].role} at {by_id[i].company}",
+            placeholder="Choose the application", key="tracker_email_app",
+        )
+        if not reading.chosen:
+            st.caption("The email doesn't clearly point to one tracked application, so choose it yourself.")
+        statuses = list(STATUS_WORDS)
+        status = st.selectbox("Status to record", statuses, index=statuses.index(reading.status),
+                              format_func=lambda v: STATUS_WORDS[v], key="tracker_email_status")
+        email_date = st.date_input("Email date", value=reading.email_date or date.today(), key="tracker_email_date")
+        if application_id and reading.moves_backwards(by_id[application_id].status):
+            st.warning(f"This would move it back from {STATUS_WORDS.get(by_id[application_id].status)}. "
+                       "Confirm only if that's right.")
+        st.button(
+            "Confirm update", type="primary", disabled=application_id is None, key="tracker_email_confirm",
+            on_click=_confirm_email,
+            args=(status_tracker, application_id, status, f"from a recruiter email dated {email_date:%b %d, %Y}",
+                  (reading.subject or reading.phrase)[:200], f"Updated to {STATUS_WORDS.get(status)}."),
+        )
+
+
 def render_application_tracker(service, owner_id: str = "local") -> None:
     """Dense table, saved views and a detail panel built from immutable snapshots."""
     import streamlit as st
@@ -83,6 +144,7 @@ def render_application_tracker(service, owner_id: str = "local") -> None:
     with side:
         _weekly_panel(rows, owner_id)
     with main:
+        _email_panel(status_tracker, rows)
         if "tracker_view" not in st.session_state:
             st.session_state["tracker_view"] = default_view(counts)
         view = st.radio(
@@ -147,7 +209,8 @@ def _render_detail(st, service, status_tracker, row, submission, history, chip, 
                 st.caption("No saved answers were used for this application.")
         with st.expander("Status history", expanded=True):
             for event in sorted(history, key=lambda e: e.status_updated, reverse=True):
-                who = {"user": "you", "system": "Job Copilot"}.get(event.source.value, event.source.value.replace("_", " "))
+                who = {"user": "you", "system": "Job Copilot", "email_integration": "you, from an email"}.get(
+                    event.source.value, event.source.value.replace("_", " "))
                 note = f" · {event.notes}" if event.notes else ""
                 st.markdown(
                     f'<div class="jc-meta">{event.status_updated:%b %d, %Y %H:%M} · '
