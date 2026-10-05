@@ -79,3 +79,14 @@ def test_save_pass_and_prepare(jobs_client):
 def test_search_needs_a_role_and_a_source(jobs_client):
     assert jobs_client.post("/v2/jobs/search", json={"job_title": " "}).status_code == 400
     assert jobs_client.post("/v2/jobs/search", json={"job_title": "Analyst", "sources": ["linkedin"]}).status_code == 400
+
+
+def test_results_come_one_page_at_a_time(jobs_client):
+    many = {"jobs": [dict(BOARD["jobs"][0], id=1000 + i, title=f"Data Analyst {i}",
+                          absolute_url=f"https://job-boards.greenhouse.io/gitlab/jobs/{1000 + i}") for i in range(120)]}
+    with patch.object(GreenhouseScraper, "_fetch_board", lambda self, token: many if token == "gitlab" else {"jobs": []}):
+        first = _search(jobs_client)
+    assert first["total"] == 120 and len(first["rows"]) == 50
+    second = jobs_client.get("/v2/jobs", params={"offset": 50}).json()
+    assert len(second["rows"]) == 50 and second["rows"][0]["job_id"] not in {r["job_id"] for r in first["rows"]}
+    assert len(jobs_client.get("/v2/jobs", params={"offset": 100}).json()["rows"]) == 20

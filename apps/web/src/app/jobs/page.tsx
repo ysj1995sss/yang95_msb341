@@ -31,6 +31,8 @@ export default function JobsPage() {
   const [searchError, setSearchError] = useState<string | null>(null);
   const [selected, setSelected] = useState<string | null>(null);
   const [showDetail, setShowDetail] = useState(false); // phones: list or detail, one at a time
+  const [more, setMore] = useState<{ key: string; rows: JobsList["rows"] }>({ key: "", rows: [] });
+  const [loadingMore, setLoadingMore] = useState(false);
 
   async function search(form: JobForm) {
     setSearching(true);
@@ -94,11 +96,25 @@ export default function JobsPage() {
   }
 
   const data = list.data;
-  const rows = data?.rows ?? [];
+  // Extra pages belong to the list they were loaded for (same view, same search time).
+  const listKey = `${view}|${data?.searched_at ?? ""}|${data?.total ?? 0}`;
+  const rows = [...(data?.rows ?? []), ...(more.key === listKey ? more.rows : [])];
+  const total = data?.total ?? 0;
+  async function showMore() {
+    setLoadingMore(true);
+    try {
+      const next = await api<JobsList>(`/jobs?view=${view}&offset=${rows.length}`);
+      setMore({ key: listKey, rows: [...(more.key === listKey ? more.rows : []), ...next.rows] });
+    } catch (e) {
+      setSearchError((e as Error).message);
+    } finally {
+      setLoadingMore(false);
+    }
+  }
   const current = rows.find((r) => r.job_id === selected)?.job_id ?? rows[0]?.job_id ?? null;
   const meta = data ? (view === "saved"
-    ? [`${rows.length} saved ${rows.length === 1 ? "job" : "jobs"}`]
-    : [`${rows.length} matching ${rows.length === 1 ? "role" : "roles"}`,
+    ? [`${total} saved ${total === 1 ? "job" : "jobs"}`]
+    : [`${total} matching ${total === 1 ? "role" : "roles"}`,
       data.searched_at ? `searched ${new Date(data.searched_at).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" })}` : "",
       data.source_note]).filter(Boolean).join(" · ") : "";
 
@@ -168,6 +184,13 @@ export default function JobsPage() {
                 );
               })}
             </ul>
+            {rows.length < total && (
+              <div className="border-t border-line p-3">
+                <Button className="w-full" busy={loadingMore} onClick={showMore}>
+                  Show more ({total - rows.length} left)
+                </Button>
+              </div>
+            )}
           </Card>
           <div className={cx("lg:block", !showDetail && "hidden")}>
             <Button variant="ghost" className="mb-3 lg:hidden" onClick={() => setShowDetail(false)}>

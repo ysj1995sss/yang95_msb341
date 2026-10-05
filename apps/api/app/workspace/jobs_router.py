@@ -147,11 +147,12 @@ def search(body: SearchForm, ws: Workspace = Depends(workspace)):
                        "note": p.error} for p in summary.providers],
     }
     ws.save_record(record)
-    return list_jobs("best", ws)
+    return list_jobs("best", 0, 50, ws)
 
 
 @router.get("/jobs")
-def list_jobs(view: Literal["best", "newest", "saved"] = "best", ws: Workspace = Depends(workspace)):
+def list_jobs(view: Literal["best", "newest", "saved"] = "best", offset: int = 0, limit: int = 50,
+              ws: Workspace = Depends(workspace)):
     from resume_tailorer.job_search.ui_helpers import build_search_goals_from_form
     from resume_tailorer.ui.job_view import build_row, job_id_for
     from resume_tailorer.ui.jobs_state import JobsInputs, goals_summary_line, order_jobs, resolve
@@ -188,7 +189,11 @@ def list_jobs(view: Literal["best", "newest", "saved"] = "best", ws: Workspace =
         # ISO time; the browser shows it in the user's own time zone.
         "searched_at": started.isoformat() if started and view != "saved" else None,
         "coverage_notes": [p["note"] for p in last.get("providers") or [] if p.get("note")] if view != "saved" else [],
-        "rows": [jsonable(build_row(j, fits.get(job_id_for(j)), actions.get(job_id_for(j)))) for j in jobs],
+        # One page at a time: a broad search can match hundreds of roles.
+        "total": len(jobs),
+        "offset": max(0, offset),
+        "rows": [jsonable(build_row(j, fits.get(job_id_for(j)), actions.get(job_id_for(j))))
+                 for j in jobs[max(0, offset): max(0, offset) + max(1, min(limit, 200))]],
     }
 
 
