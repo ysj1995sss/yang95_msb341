@@ -1,6 +1,7 @@
 # Spec 009: A new Job Copilot frontend (Next.js) on one FastAPI backend
 
-**Status:** Draft, awaiting the builder's review
+**Status:** Built 2026-10-05, all four phases (decision 029). Not deployed: hosting and the Google OAuth
+client are the builder's to set up (see "Deploying" below).
 **Date:** 2026-10-05
 **Decision:** `decisions/028-new-frontend-on-one-fastapi-backend.md`
 
@@ -61,8 +62,8 @@ with the palette adjusted so primary text meets AA contrast.
   - Tracker (views, next actions, status history, status from a pasted email), saved answers.
 - **Identity:** the API checks the signed-in user on every request. Each user's data stays
   separate, as in decision 023.
-- **Storage:** Postgres for records and a file store for resumes and PDFs. This delivers the
-  permanent storage the live app lacks.
+- **Storage:** the same per-user folders as the Streamlit app on a mounted disk (decision 029
+  changed this from Postgres). This delivers the permanent storage the live app lacks.
 
 ### 3. Build order (each phase ships before the next starts)
 
@@ -128,3 +129,17 @@ with the palette adjusted so primary text meets AA contrast.
    - optionally the Streamlit redirect `.../oauth2callback`.
 3. Keep the ID and secret out of chat and out of git. They go in `apps/web/.env.local` as
    `AUTH_GOOGLE_ID` and `AUTH_GOOGLE_SECRET`, and in Vercel's environment settings.
+
+## Deploying (added 2026-10-05)
+
+1. **API on Render:** "New → Blueprint" with this repository; `render.yaml` creates a Docker
+   service with a 1 GB disk at `/data`. Set `WORKSPACE_TOKEN_SECRET` (a random 64-character value),
+   `LLM_MODEL`, `LLM_API_KEY` and optionally `LLM_FALLBACK_MODELS`.
+2. **Web on Vercel:** import the repository with the root directory `apps/web`. Set `API_URL` (the
+   Render address), `AUTH_GOOGLE_ID`, `AUTH_GOOGLE_SECRET`, `AUTH_SECRET` (another random value)
+   and the same `WORKSPACE_TOKEN_SECRET`.
+3. **Google client (appendix A):** add the Vercel address as an origin and
+   `<address>/api/auth/callback/google` as a redirect.
+4. **Check:** sign in as two different Google accounts and confirm neither sees the other's data.
+
+The Streamlit app keeps running on Streamlit Community Cloud as before.

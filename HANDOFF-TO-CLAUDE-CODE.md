@@ -9,6 +9,20 @@ Read this file first, then `CLAUDE.md`, then the decisions listed below. Do not 
 
 ---
 
+## Latest update (2026-10-05) — new Next.js frontend (spec 009, decisions 028–029)
+
+- **`apps/web`:** Next.js 16 + Tailwind, a calm teal design. Home, Career Profile, Jobs, Tailor,
+  Apply and Tracker are all built. Google sign-in is our own small OIDC code, and
+  `/api/backend` is a server-side proxy that adds a signed token for the user.
+- **`apps/api/app/workspace`:** the `/v2` API. It reuses the shared Python modules and the same
+  per-user data folders, so Streamlit and the web app see the same data.
+- **`tailoring_service.py`:** the tailoring pipeline moved out of `pages/5_Tailor.py`.
+- **Deploy pieces:** `apps/api/Dockerfile`, `render.yaml`, and `LEGACY_ROUTES=false` (spec 009,
+  "Deploying"). Not deployed yet: it needs the builder's Render, Vercel and Google accounts.
+- **Old UI:** kept and deployable, tagged `ui-streamlit-v1`.
+- **Test baseline:** `product/` 1049 passed, `apps/api/` 93 passed, web lint, types and build
+  clean.
+
 ## Latest update (2026-10-04, latest) — weak-spot fixes (decision 027)
 
 - **Matching:** one whole-term matcher (`analyzers/term_match.py`). "Go" no longer matches
