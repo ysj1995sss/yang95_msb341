@@ -49,6 +49,7 @@ from resume_tailorer.docx_export import run_docx_tailoring_pipeline
 from resume_tailorer.analyzers.gap_analyzer import find_unsupported_claims
 from resume_tailorer.analyzers.term_match import short_requirement
 from resume_tailorer.ui.shell import md_literal
+from resume_tailorer.review_store import discard_review, load_review, save_review, signature
 from resume_tailorer.artifacts.changes import build_freeform_changes
 from resume_tailorer.artifacts.length_control import (
     build_freeform_artifact,
@@ -97,6 +98,30 @@ def _percent(value) -> str:
 def _fit_label(pending: dict) -> str:
     overall = (pending.get("candidate_fit") or {}).get("overall_fit")
     return f"{round(overall)}%" if isinstance(overall, (int, float)) else "Not assessed"
+
+
+_SAVED_SIGNATURE_KEY = "tailor_review_saved_signature"
+
+
+def _save_review_if_changed(job_id) -> None:
+    """Keep the review on disk so leaving mid-review loses no decisions."""
+    state = st.session_state.get(_STATE_KEY)
+    if not state or not job_id:
+        return
+    current = signature(state)
+    if st.session_state.get(_SAVED_SIGNATURE_KEY) == (job_id, current):
+        return
+    if save_review(st.session_state.get("artifacts_dir"), job_id, state):
+        st.session_state[_SAVED_SIGNATURE_KEY] = (job_id, current)
+
+
+def _restore_review(job_id) -> None:
+    if _STATE_KEY in st.session_state or not job_id or st.session_state.get("tailor_redo"):
+        return
+    restored = load_review(st.session_state.get("artifacts_dir"), job_id)
+    if restored:
+        st.session_state[_STATE_KEY] = restored
+        st.session_state[_SAVED_SIGNATURE_KEY] = (job_id, signature(restored))
 
 
 def _reset_review_state() -> None:
@@ -539,7 +564,7 @@ def _render_existing(handoff: dict, main, side) -> None:
                              help="Creates a new version. The current one stays until the new one passes validation."):
                     st.session_state["tailor_redo"] = True
                     st.rerun()
-            st.caption("The detailed change-by-change review is only available in the session that created it. "
+            st.caption("The change-by-change review for this version wasn't saved. "
                        "Tailor again to review changes one by one.")
     with side:
         st.markdown('<div class="jc-aside"><h3>What happens next</h3>'
@@ -749,13 +774,19 @@ def main():
         if sync_pending_job(st.session_state, pending, _JD_SESSION_KEY, _STATE_KEY):
             st.session_state.pop("tailor_redo", None)
 
+    job_id = pending.get("job_id")
+    _restore_review(job_id)
+    _save_review_if_changed(job_id)
     if _STATE_KEY in st.session_state:
         _render_review_room(pending)
+        _save_review_if_changed(job_id)
         with st.expander("Start over for this job"):
             st.caption("Discards the current review. Your Career Profile is not changed.")
             if st.button("Discard and tailor again"):
                 _reset_review_state()
+                discard_review(st.session_state.get("artifacts_dir"), job_id)
                 st.session_state.pop(HANDOFF_KEY, None)
+                st.session_state["tailor_redo"] = True
                 st.rerun()
         return
 
