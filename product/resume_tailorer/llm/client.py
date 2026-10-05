@@ -1,10 +1,16 @@
 from __future__ import annotations
 
+import os
 import re
 import time
 from typing import Callable
 
-import litellm
+# litellm otherwise loads the first .env above its own install folder (for a user install, the
+# home folder), which may belong to a different project (decision 030). Our settings come from
+# the environment and the app's own .env loading only. This flag changes nothing else in litellm.
+os.environ.setdefault("LITELLM_MODE", "PRODUCTION")
+
+import litellm  # noqa: E402
 
 from resume_tailorer.llm.settings import LLMSettings
 
