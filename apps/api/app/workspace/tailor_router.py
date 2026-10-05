@@ -276,6 +276,9 @@ def _worker(ws: Workspace, job_id: str, pending: dict, source, request: RunReque
         outcome = {"status": "failed", "error": str(exc)}
     except Exception as exc:  # never leave a run stuck as "running"
         logger.exception("Tailoring run failed for owner %s", ws.owner_id[:8])
+        from app import alerts
+
+        alerts.notify(uuid.uuid4().hex[:10], "a tailoring run", type(exc).__name__)
         outcome = {"status": "failed", "error": f"Tailoring didn't finish: {exc}. Try again."}
     with _RUNS_LOCK:
         _write_run(ws.owner_id, {**_read_run(ws.owner_id), **outcome, "finished": time.time()})

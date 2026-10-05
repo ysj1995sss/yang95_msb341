@@ -1,10 +1,12 @@
 import logging
+import sys
 import time
 import uuid
 
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
+from app import alerts
 from app.config import get_settings
 from app.db import Base, engine
 from app import models  # noqa: F401
@@ -80,10 +82,12 @@ async def request_log(request: Request, call_next):
         response = await call_next(request)
     except Exception:
         logger.exception("Unhandled error %s on %s %s", reference, request.method, request.url.path)
+        alerts.notify(reference, f"{request.method} {request.url.path}", type(sys.exc_info()[1]).__name__)
         return JSONResponse(status_code=500, content={
             "detail": f"Something went wrong on our side. If it keeps happening, mention reference {reference}."})
     if response.status_code >= 500:
         logger.error("%s %s -> %s (%s)", request.method, request.url.path, response.status_code, reference)
+        alerts.notify(reference, f"{request.method} {request.url.path}", f"HTTP {response.status_code}")
     else:
         logger.info("%s %s -> %s in %.0f ms", request.method, request.url.path, response.status_code,
                     (time.perf_counter() - started) * 1000)

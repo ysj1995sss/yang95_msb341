@@ -34,6 +34,8 @@ class Settings(BaseSettings):
     tailor_runs_per_day: int = 15
     searches_per_hour: int = 30
     imports_per_day: int = 20
+    # Optional: a Slack or Discord incoming-webhook address for server error alerts (app/alerts.py).
+    error_webhook_url: str = ""
 
     @model_validator(mode="after")
     def _refuse_unsafe_production_defaults(self) -> "Settings":

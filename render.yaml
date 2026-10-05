@@ -25,3 +25,5 @@ services:
         sync: false
       - key: GOOGLE_CLIENT_SECRET
         sync: false
+      - key: ERROR_WEBHOOK_URL      # optional: Slack/Discord webhook for error alerts (no personal data)
+        sync: false
