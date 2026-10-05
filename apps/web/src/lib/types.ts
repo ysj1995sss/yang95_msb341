@@ -188,6 +188,12 @@ export type ApplicationDetail = {
   next_action: { text: string; due: string; notes: string }; job_id: string | null; status_options: Option[];
 };
 
+export type GmailStatus = { available: boolean; connected: boolean; connected_at: string | null; last_scan: string | null };
+export type GmailSuggestion = {
+  message_id: string; subject: string; from: string; email_date: string | null; status: string; status_label: string;
+  phrase: string; chosen: string | null; options: Array<{ application_id: string; label: string; backwards: boolean }>;
+};
+
 export type EmailReading = {
   status: string | null; status_label: string; phrase: string; chosen: string | null; email_date: string | null;
   subject: string; options: Array<{ application_id: string; label: string; matched: boolean; backwards: boolean }>;

@@ -1,7 +1,9 @@
 # Spec 005: Application status sync
 
-**Status:** Slice 1 (email paste) built 2026-10-04 (decision 027). Slice 2 (Gmail) still deferred: it
-needs Google's restricted-scope security review, which only the builder can apply for.
+**Status:** Slice 1 (email paste) built 2026-10-04 (decision 027). Slice 2 (Gmail) built 2026-10-05
+in the Next.js workspace (decision 030), for Google "testing" mode only: test users listed in the
+Google project can connect; public use still needs Google's restricted-scope security review, which
+only the builder can apply for. Not yet run against a real Gmail account.
 **Date:** 2026-09-29
 
 ## Problem
@@ -24,6 +26,17 @@ A way for a real email to update an application's status, with the user confirmi
    messages from known ATS senders (greenhouse.io, lever.co, ashbyhq.com, myworkdayjobs.com).
    The same matching and confirmation flow runs on new messages.
 
+   As built (decision 030): Tracker → **Recruiter emails from Gmail** → Connect Gmail runs a separate
+   Google consent step (`gmail.readonly`, offline access) from the web server; the refresh token goes
+   server-to-server to the API and is stored encrypted (Fernet, key derived from
+   `WORKSPACE_TOKEN_SECRET`) in the user's own folder. **Check Gmail now** asks Gmail only for
+   `from:(greenhouse.io OR lever.co OR ashbyhq.com OR myworkdayjobs.com OR workday.com OR
+   smartrecruiters.com …) newer_than:30d` (at most 25 messages), reads each with the slice 1 email
+   reader, and lists suggestions. Confirm uses the slice 1 confirm path; confirmed or dismissed
+   messages are not suggested again. **Disconnect** revokes the token at Google and deletes it.
+   Google's permission covers the whole mailbox (Gmail has no per-sender scope); the sender limit is
+   enforced by the query, and the consent text in the app says so.
+
 Matching is deterministic first: the sender domain, company name and role title. A model may
 summarize an email, but it never sets a status on its own.
 
@@ -31,7 +44,8 @@ summarize an email, but it never sets a status on its own.
 
 - Automatic status changes without the user confirming them.
 - Sending email or replying to recruiters.
-- Reading any mail that isn't from a known ATS sender.
+- Reading any mail that isn't from a known ATS sender (enforced by the Gmail search query; see above).
+- Background or scheduled scans: a scan runs only when the user clicks **Check Gmail now**.
 - Portal scraping (logging into Workday or Greenhouse candidate portals).
 
 ## Why deferred

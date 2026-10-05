@@ -21,3 +21,7 @@ services:
         sync: false
       - key: LLM_FALLBACK_MODELS
         sync: false
+      - key: GOOGLE_CLIENT_ID       # optional: the web app's Google client, for Gmail status sync
+        sync: false
+      - key: GOOGLE_CLIENT_SECRET
+        sync: false

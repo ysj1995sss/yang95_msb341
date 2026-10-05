@@ -1,11 +1,11 @@
 "use client";
 
-import { ArrowLeft, ExternalLink, Mail } from "lucide-react";
-import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { ArrowLeft, ExternalLink, Inbox, Mail } from "lucide-react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { Suspense, useState } from "react";
 import { Alert, Button, Card, Chip, ErrorBox, LinkButton, PageHeader, SelectField, Spinner, TextArea, TextField, cx, useToast } from "@/components/ui";
 import { api, useResource } from "@/lib/api";
-import type { ApplicationDetail, EmailReading, TrackerBoard } from "@/lib/types";
+import type { ApplicationDetail, EmailReading, GmailStatus, GmailSuggestion, TrackerBoard } from "@/lib/types";
 
 const STATUS_TONE: Record<string, "verified" | "review" | "blocked" | "primary" | "neutral"> = {
   offer: "verified", rejected: "blocked", withdrawn: "neutral", interview: "primary", final_interview: "primary",
@@ -59,6 +59,113 @@ function EmailPanel({ onApplied }: { onApplied: () => void }) {
         )}
       </div>
     </details>
+  );
+}
+
+const GMAIL_RESULT: Record<string, { tone: "verified" | "review"; text: string }> = {
+  connected: { tone: "verified", text: "Gmail is connected. Check it for recruiter emails below." },
+  declined: { tone: "review", text: "Gmail wasn't connected: the read-only permission wasn't granted." },
+  expired: { tone: "review", text: "That Gmail connection attempt expired. Try again." },
+  failed: { tone: "review", text: "Gmail couldn't be connected. Try again in a minute." },
+};
+
+function GmailSuggestionCard({ s, onDone }: { s: GmailSuggestion; onDone: (message: string) => void }) {
+  const toast = useToast();
+  const [applicationId, setApplicationId] = useState(s.chosen ?? "");
+  const [busy, setBusy] = useState(false);
+  const option = s.options.find((o) => o.application_id === applicationId);
+
+  async function confirm() {
+    setBusy(true);
+    try {
+      await api("/tracker/email/confirm", { method: "POST",
+        json: { application_id: applicationId, status: s.status, email_date: s.email_date, evidence: s.subject || s.phrase } });
+      await api("/gmail/dismiss", { method: "POST", json: { message_id: s.message_id } });
+      onDone(`Updated to ${s.status_label}.`);
+    } catch (e) { toast((e as Error).message); setBusy(false); }
+  }
+  async function dismiss() {
+    setBusy(true);
+    try {
+      await api("/gmail/dismiss", { method: "POST", json: { message_id: s.message_id } });
+      onDone("Dismissed. It won't be suggested again.");
+    } catch (e) { toast((e as Error).message); setBusy(false); }
+  }
+
+  return (
+    <li className="flex flex-col gap-3 rounded-[var(--radius-card)] border border-line bg-canvas p-4">
+      <div>
+        <p className="font-semibold">{s.subject || "(no subject)"}</p>
+        <p className="text-[14px] text-muted">{s.from}{s.email_date ? ` · ${s.email_date.slice(0, 10)}` : ""}</p>
+      </div>
+      <p>Suggested status: <strong>{s.status_label}</strong>, because it says &ldquo;{s.phrase}&rdquo;.</p>
+      <SelectField label="Which application is this about?" value={applicationId}
+        options={[{ value: "", label: "Choose the application" }, ...s.options.map((o) => ({ value: o.application_id, label: o.label }))]}
+        onChange={(e) => setApplicationId(e.target.value)}
+        help={s.chosen ? undefined : "The email doesn't clearly point to one tracked application, so choose it yourself."} />
+      {option?.backwards && <Alert tone="review">This would move it back to an earlier stage. Confirm only if that&apos;s right.</Alert>}
+      <div className="flex flex-wrap gap-2">
+        <Button variant="primary" busy={busy} disabled={!applicationId} onClick={confirm}>Confirm update</Button>
+        <Button disabled={busy} onClick={dismiss}>Not about my application</Button>
+      </div>
+    </li>
+  );
+}
+
+function GmailPanel({ onApplied }: { onApplied: () => void }) {
+  const toast = useToast();
+  const result = GMAIL_RESULT[useSearchParams().get("gmail") ?? ""];
+  const { data: status, reload } = useResource<GmailStatus>("/gmail");
+  const [found, setFound] = useState<GmailSuggestion[] | null>(null);
+  const [busy, setBusy] = useState(false);
+  if (!status?.available) return null;
+
+  async function scan() {
+    setBusy(true);
+    try {
+      setFound((await api<{ suggestions: GmailSuggestion[] }>("/gmail/scan", { method: "POST" })).suggestions);
+      reload();
+    } catch (e) { toast((e as Error).message); } finally { setBusy(false); }
+  }
+  async function disconnect() {
+    setBusy(true);
+    try {
+      await api("/gmail", { method: "DELETE" });
+      setFound(null); reload(); toast("Gmail is disconnected and Job Copilot's access was removed.");
+    } catch (e) { toast((e as Error).message); } finally { setBusy(false); }
+  }
+
+  return (
+    <section aria-labelledby="gmail-heading" className="mb-6 rounded-[var(--radius-card)] border border-line bg-paper p-4">
+      <h2 id="gmail-heading" className="flex items-center gap-2 font-semibold"><Inbox aria-hidden className="size-4 text-primary" /> Recruiter emails from Gmail</h2>
+      {result && <div className="mt-3"><Alert tone={result.tone}>{result.text}</Alert></div>}
+      {!status.connected ? (
+        <>
+          <p className="mt-2 text-[15px] text-muted">Job Copilot can read emails from job-application systems (Greenhouse, Lever, Ashby, Workday, SmartRecruiters) from the last 30 days and suggest status updates. Google asks for read-only access to your whole mailbox, but Job Copilot only looks at those senders, never sends or changes email, and nothing in Tracker changes until you confirm. You can disconnect at any time.</p>
+          <a href="/api/gmail/connect" className="mt-3 inline-flex min-h-11 items-center rounded-[var(--radius-control)] border border-line-strong bg-paper px-4 font-semibold hover:bg-canvas">Connect Gmail</a>
+        </>
+      ) : (
+        <>
+          <p className="mt-2 text-[15px] text-muted">
+            Connected. {status.last_scan ? `Last checked ${new Date(status.last_scan).toLocaleString()}.` : "Not checked yet."} Nothing in Tracker changes until you confirm a suggestion.
+          </p>
+          <div className="mt-3 flex flex-wrap gap-2">
+            <Button variant="primary" busy={busy && !found} onClick={scan}>Check Gmail now</Button>
+            <Button disabled={busy} onClick={disconnect}>Disconnect Gmail</Button>
+          </div>
+          {found && found.length === 0 && <p className="mt-3" role="status">No new status updates in recruiter emails from the last 30 days.</p>}
+          {found && found.length > 0 && (
+            <ul className="mt-4 flex flex-col gap-3" aria-label="Suggested status updates">
+              {found.map((s) => (
+                <GmailSuggestionCard key={s.message_id} s={s} onDone={(message) => {
+                  toast(message); setFound((list) => (list ?? []).filter((x) => x.message_id !== s.message_id)); onApplied();
+                }} />
+              ))}
+            </ul>
+          )}
+        </>
+      )}
+    </section>
   );
 }
 
@@ -171,6 +278,7 @@ export default function TrackerPage() {
   return (
     <>
       {header}
+      <Suspense fallback={null}><GmailPanel onApplied={reload} /></Suspense>
       <EmailPanel onApplied={reload} />
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,1fr)_300px]">
         <div className="min-w-0">

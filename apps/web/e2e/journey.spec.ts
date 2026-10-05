@@ -82,6 +82,46 @@ test("resume → profile → goals → jobs → tailor → apply → tracker", a
   await expect(page.getByRole("tab", { name: /Closed \(1\)/ })).toBeVisible();
 });
 
+test("Gmail suggestions change nothing until confirmed (Google's answers are stubbed)", async ({ page }) => {
+  let connected = false;
+  const confirmed: unknown[] = [];
+  const dismissed: unknown[] = [];
+  await page.route("**/api/backend/gmail", (route) => {
+    if (route.request().method() === "DELETE") connected = false;
+    return route.fulfill({ json: { available: true, connected, connected_at: null, last_scan: connected ? "2026-10-05T09:00:00Z" : null } });
+  });
+  await page.route("**/api/backend/gmail/scan", (route) => route.fulfill({ json: { suggestions: [{
+    message_id: "m1", subject: "Your application to GitLab", from: "GitLab <no-reply@greenhouse.io>", email_date: "2026-10-01T09:30:00",
+    status: "interview", status_label: "Interview", phrase: "schedule an interview", chosen: null,
+    options: [{ application_id: "app-1", label: "Data Analyst at GitLab", backwards: false }],
+  }] } }));
+  await page.route("**/api/backend/tracker/email/confirm", (route) => { confirmed.push(route.request().postDataJSON()); return route.fulfill({ json: {} }); });
+  await page.route("**/api/backend/gmail/dismiss", (route) => { dismissed.push(route.request().postDataJSON()); return route.fulfill({ json: { dismissed: true } }); });
+
+  await page.goto("/tracker");
+  const card = page.getByRole("region", { name: "Recruiter emails from Gmail" });
+  await expect(card.getByRole("link", { name: "Connect Gmail" })).toHaveAttribute("href", "/api/gmail/connect");
+  await expect(card).toContainText("never sends or changes email");
+  await expectAccessible(page, "tracker, Gmail not connected");
+
+  connected = true;
+  await page.goto("/tracker?gmail=connected");
+  await expect(card.getByText("Gmail is connected.")).toBeVisible();
+  await card.getByRole("button", { name: "Check Gmail now" }).click();
+  await expect(card.getByText(/Suggested status: Interview/)).toBeVisible();
+  await expectAccessible(page, "tracker, Gmail suggestion");
+  const confirm = card.getByRole("button", { name: "Confirm update" });
+  await expect(confirm).toBeDisabled(); // the email didn't name one application, so the person chooses
+  await card.getByLabel("Which application is this about?").selectOption("app-1");
+  await confirm.click();
+  await expect(card.getByText(/Suggested status: Interview/)).toHaveCount(0);
+  expect(confirmed).toEqual([{ application_id: "app-1", status: "interview", email_date: "2026-10-01T09:30:00", evidence: "Your application to GitLab" }]);
+  expect(dismissed).toEqual([{ message_id: "m1" }]);
+
+  await card.getByRole("button", { name: "Disconnect Gmail" }).click();
+  await expect(card.getByRole("link", { name: "Connect Gmail" })).toBeVisible();
+});
+
 test("every page can be used by keyboard, with focus always visible", async ({ page }) => {
   for (const path of PAGES) {
     await page.goto(path);

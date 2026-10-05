@@ -27,6 +27,9 @@ class Settings(BaseSettings):
     # The older account/profile/tailor routes (password sign-in, SQL database). The web app
     # uses only /v2, so a deployment for it sets LEGACY_ROUTES=false and needs no database.
     legacy_routes: bool = True
+    # The same Google OAuth client as the web app; needed only for Gmail status sync (spec 005).
+    google_client_id: str = ""
+    google_client_secret: str = ""
     # Usage limits per person (0 turns one off). Tailoring spends the model key.
     tailor_runs_per_day: int = 15
     searches_per_hour: int = 30
