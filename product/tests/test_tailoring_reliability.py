@@ -85,3 +85,18 @@ def test_repair_prompt_shows_the_rejected_draft_and_its_length():
     edit = BulletEdit(4, bullet.text, bullet.text, False, rejected_reason="length cap exceeded", rejected_text=draft)
     prompt = tailorer._build_repair_prompt([edit], {4: bullet})
     assert draft in prompt and f'"your_rejected_attempt_length": {len(draft)}' in prompt
+
+
+def test_litellm_service_unavailable_counts_as_busy_and_falls_back():
+    client = _client(("gemini/backup",))
+    down = Exception("litellm.ServiceUnavailableError: ServiceUnavailableError: OpenrouterException - ")
+    with patch("resume_tailorer.llm.client.litellm.completion", side_effect=[down, down, down, down, _reply("ok")]):
+        assert client.complete("s", "u") == "ok"
+
+
+def test_a_provider_that_stays_down_gets_a_plain_message():
+    client = _client()
+    down = Exception("litellm.ServiceUnavailableError: ServiceUnavailableError: OpenrouterException - ")
+    with patch("resume_tailorer.llm.client.litellm.completion", side_effect=down):
+        with pytest.raises(RuntimeError, match="busy right now"):
+            client.complete("s", "u")

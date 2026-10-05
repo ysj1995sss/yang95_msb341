@@ -105,3 +105,19 @@ def short_requirement(text: str, max_words: int = 8) -> str:
     if first.isalpha() and first.islower() and len(first) > 3:  # keep "dbt", "iOS" as written
         result = result[0].upper() + result[1:]
     return result
+
+
+def displayable_gaps(gaps):
+    """Gaps worth listing to the user. Multi-word requirements always are; a single word only
+    when it is a known skill or tool ("Kubernetes"), not a stray posting word ("Proven",
+    "Related") from the analyzer's fallback keywords. Display only: blocking still uses every gap."""
+    from resume_tailorer.analyzers.ats_keywords import VOCABULARY
+    from resume_tailorer.job_search.candidate_fit import CandidateFitScorer
+
+    known = {k.lower() for k in VOCABULARY} | {v.lower() for v in VOCABULARY.values()} | CandidateFitScorer.TECHNICAL_SKILLS
+    shown = []
+    for gap in gaps:
+        text = str(gap).strip()
+        if len(text.split()) > 1 or text.lower() in known:
+            shown.append(gap)
+    return shown

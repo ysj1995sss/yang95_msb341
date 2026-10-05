@@ -9,8 +9,10 @@ import litellm
 from resume_tailorer.llm.settings import LLMSettings
 
 
-_TRANSIENT_MARKERS = ("timeout", "timed out", "connection", "429", "rate limit", "500", "502", "503", "504", "overloaded")
-_BUSY_MARKERS = ("overloaded", "503", "429", "rate limit", "service unavailable", "temporarily")
+_TRANSIENT_MARKERS = ("timeout", "timed out", "connection", "429", "rate limit", "500", "502", "503", "504", "overloaded",
+                      "unavailable")
+# "unavailable" also catches litellm's "ServiceUnavailableError", which has no space.
+_BUSY_MARKERS = ("overloaded", "503", "429", "rate limit", "unavailable", "temporarily")
 _THINK_BLOCK = re.compile(r"<think>.*?</think>", re.DOTALL | re.IGNORECASE)
 
 

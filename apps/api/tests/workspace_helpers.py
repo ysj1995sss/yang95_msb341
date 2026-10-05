@@ -14,7 +14,7 @@ def resume_docx() -> bytes:
     for line in ("Riley Park", "riley@example.com | 555-0100 | Denver, CO", "", "EXPERIENCE", "Data Analyst",
                  "Acme Analytics | Denver, CO | 2021 - Present"):
         doc.add_paragraph(line)
-    for bullet in ("Built SQL dashboards used by 40 managers", "Cut weekly reporting time by 30%"):
+    for bullet in ("Built SQL dashboards used by 40 managers across regional sales teams", "Cut weekly reporting time by 30%"):
         doc.add_paragraph(f"• {bullet}")
     for line in ("", "EDUCATION", "BS Economics, State University, 2019", "", "SKILLS", "SQL, Tableau, Python"):
         doc.add_paragraph(line)

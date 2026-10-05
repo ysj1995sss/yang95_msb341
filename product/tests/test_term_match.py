@@ -89,3 +89,10 @@ def test_lowercase_go_counts_in_a_programming_context(text):
 ])
 def test_lowercase_go_in_ordinary_english_still_does_not(text):
     assert not mentions("go", text)
+
+
+def test_stray_single_words_are_not_listed_as_missing_requirements():
+    from resume_tailorer.analyzers.term_match import displayable_gaps
+
+    gaps = ["Proven", "Related", "Kubernetes", "Marketing complex products to enterprise buyers", "SQL"]
+    assert displayable_gaps(gaps) == ["Kubernetes", "Marketing complex products to enterprise buyers", "SQL"]

@@ -115,3 +115,34 @@ export type JobDetail = {
   fit_measured: boolean; keywords: { summary: string; present: string[]; missing: string[] } | null;
   description: string; active: boolean;
 };
+
+// --- Tailor (phase 3) ---
+
+export type Decision = "ACCEPTED" | "MANUALLY_EDITED" | "REJECTED";
+
+export type Change = {
+  id: string; requirement: string; fact: string; reason: string; original: string; proposed: string;
+  check: string; decision: Decision | null; decision_label: string; manual_text: string;
+};
+
+export type Review = {
+  version: number; status: "PASS" | "WARNING" | "FAIL"; status_text: string; status_tone: string; findings: string[];
+  fidelity: string; page_count: number | null; preview_pages: number; has_pdf: boolean; has_docx: boolean;
+  tailored_text: string; alignment: { before: number | null; after: number | null };
+  pages_before_after: [number | null, number | null]; unsupported_claims: string[];
+  progress: { reviewed: number; total: number; needs_rebuild: boolean; can_continue: boolean; blocker: string; label: string };
+  next_undecided: string | null; changes: Change[]; empty_message: string;
+  turned_down: Array<{ original: string; reason: string }>; true_gaps: Array<{ label: string; full: string }>;
+  blocked: string[]; show_all: boolean; verbs: Record<Decision, string>;
+};
+
+export type RunStatus = { status: "idle" | "running" | "done" | "failed"; step?: string; error?: string; job_id?: string };
+
+export type TailorPage = {
+  job: { job_id: string; title: string; company: string; fit: number | null } | null;
+  resume: { label: string; one_off: boolean } | null;
+  model_ready: boolean;
+  run: RunStatus;
+  review: Review | null;
+  existing: { version: number; status: string; review_complete: boolean } | null;
+};
