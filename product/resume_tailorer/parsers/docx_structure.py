@@ -22,6 +22,7 @@ from docx.oxml.ns import qn
 from docx.text.paragraph import Paragraph
 
 from resume_tailorer.parsers.anchor_detection import find_anchor_blocks
+from resume_tailorer.parsers.bullets import strip_typed_bullet, typed_bullet_prefix
 from resume_tailorer.parsers.section_headings import SECTION_BOUNDARY_RE, WORK_EXPERIENCE_HEADING_RE
 
 _MIN_TITLE_LENGTH = 3
@@ -44,9 +45,11 @@ def is_bullet_paragraph(paragraph: Paragraph) -> bool:
     in the run text), so a text-prefix heuristic like the PDF path uses
     would silently see zero bullets on a resume that uses real Word lists.
     """
-    if paragraph.style is None or paragraph.style.name != "List Paragraph":
-        return False
-    return paragraph._p.find(f".//{qn('w:numPr')}") is not None
+    if paragraph.style is not None and paragraph.style.name == "List Paragraph":
+        if paragraph._p.find(f".//{qn('w:numPr')}") is not None:
+            return True
+    # Or a bullet typed into the text itself ("• Led ..."), common in resumes built by hand.
+    return bool(typed_bullet_prefix(paragraph.text))
 
 
 def _is_heading(paragraph: Paragraph) -> bool:
@@ -91,14 +94,14 @@ class DocxStructure:
         competencies line) in document order -- the flattened input fed to
         DocxBulletTailorer."""
         targets = [
-            Bullet(paragraph_index=i, text=paragraphs[i].text, section="summary")
+            Bullet(paragraph_index=i, text=strip_typed_bullet(paragraphs[i].text), section="summary")
             for i in self.summary_paragraph_indices
         ]
         for job_index, job in enumerate(self.jobs):
             targets.extend(
                 Bullet(
                     paragraph_index=i,
-                    text=paragraphs[i].text,
+                    text=strip_typed_bullet(paragraphs[i].text),
                     section="work_experience",
                     job_index=job_index,
                 )
@@ -108,7 +111,7 @@ class DocxStructure:
             targets.append(
                 Bullet(
                     paragraph_index=self.competency_paragraph_index,
-                    text=paragraphs[self.competency_paragraph_index].text,
+                    text=strip_typed_bullet(paragraphs[self.competency_paragraph_index].text),
                     section="competencies",
                 )
             )
@@ -164,7 +167,7 @@ def _find_summary_paragraph_indices(paragraphs: list[Paragraph]) -> list[int]:
 
 def _find_competency_paragraph_index(paragraphs: list[Paragraph]) -> int | None:
     for i, paragraph in enumerate(paragraphs):
-        if is_bullet_paragraph(paragraph) and _COMPETENCY_LABEL_RE.match(paragraph.text.strip()):
+        if is_bullet_paragraph(paragraph) and _COMPETENCY_LABEL_RE.match(strip_typed_bullet(paragraph.text).strip()):
             return i
     return None
 

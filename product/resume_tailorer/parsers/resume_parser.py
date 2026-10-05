@@ -8,6 +8,7 @@ from resume_tailorer.models import CareerTruthProfile, WorkExperience, Education
 from resume_tailorer.parsers.anchor_detection import find_anchor_blocks
 from resume_tailorer.parsers.section_headings import SECTION_BOUNDARY_RE
 from resume_tailorer.parsers.docx_structure import is_bullet_paragraph
+from resume_tailorer.parsers.bullets import strip_typed_bullet, typed_bullet_prefix
 
 # Constants for extraction heuristics
 NAME_SEARCH_LINES = 5  # Number of first lines to check for name
@@ -42,6 +43,36 @@ def split_company_line(line: str) -> tuple[str, str, str]:
     employer = parts[0] if parts else "Unknown"
     location = parts[1] if len(parts) > 1 else ""
     return employer, location, dates
+
+
+_TITLE_WORDS = re.compile(
+    r"\b(?:analyst|manager|engineer|intern|director|associate|specialist|consultant|coordinator|lead|"
+    r"assistant|developer|scientist|designer|officer|representative|president|founder|head|"
+    r"administrator|architect|researcher|strategist|planner|advisor|accountant|fellow|"
+    r"supervisor|executive|owner|partner|teacher|tutor|technician|editor|writer|producer)s?\b",
+    re.IGNORECASE,
+)
+
+
+def split_one_line_header(line: str) -> Optional[tuple[str, str, str, str]]:
+    """(title, employer, location, dates) from a single-line job header such as
+    "Data Analyst | Acme Corp | Denver, CO | Jan 2021 - Present" or
+    "Data Analyst, Acme Corp   2021 - 2023". None when the line can't be read that way."""
+    matches = list(_DATE_RANGE.finditer(line))
+    if not matches:
+        return None
+    last = matches[-1]
+    dates = last.group(0).strip()
+    rest = (line[: last.start()] + line[last.end():]).strip(" ,|—–\t")
+    parts = [p.strip(" ,") for p in re.split(r"\s*(?:\||—|\s–\s|\s-\s|\t|\s+at\s+|,(?=\s+[A-Z]))\s*", rest) if p.strip(" ,")]
+    if len(parts) < 2:
+        return None
+    title_at = next((i for i, part in enumerate(parts[:2]) if _TITLE_WORDS.search(part)), 0)
+    title = parts[title_at]
+    others = [part for i, part in enumerate(parts) if i != title_at]
+    employer = others[0]
+    location = ", ".join(others[1:3])
+    return title, employer, location, dates
 
 
 class ResumeParser:
@@ -113,7 +144,8 @@ class ResumeParser:
         """
         doc = Document(file_path)
         lines = [
-            f"- {para.text}" if is_bullet_paragraph(para) else para.text for para in doc.paragraphs
+            f"- {strip_typed_bullet(para.text)}" if is_bullet_paragraph(para) else para.text
+            for para in doc.paragraphs
         ]
         return "\n".join(lines)
 
@@ -124,6 +156,12 @@ class ResumeParser:
         This is a simplified parser; more sophisticated parsing (using Claude)
         will be added in future iterations.
         """
+        # Any typed marker ("▪ ", "◦ ", "* ") reads as a bullet everywhere below.
+        text = "\n".join(
+            f"• {strip_typed_bullet(line)}" if typed_bullet_prefix(line) and not line.lstrip().startswith(("•", "-"))
+            else line
+            for line in text.split("\n")
+        )
         # Extract contact info (name, email, phone)
         contact_info = self._extract_contact_info(text)
 
@@ -375,11 +413,15 @@ class ResumeParser:
             company_line = lines[idx].strip()
 
             title_line = lines[block.title_index].strip() if block.title_index is not None else ""
-            if not title_line or len(title_line) < MIN_TITLE_LENGTH:
+            one_line = split_one_line_header(company_line)
+            if one_line and (not title_line or len(title_line) < MIN_TITLE_LENGTH):
+                # "Title | Company | Dates" on one line, so there is no separate title line.
+                title, employer, location, dates = one_line
+            elif not title_line or len(title_line) < MIN_TITLE_LENGTH:
                 continue
-            title = title_line.replace("<b>", "").replace("</b>", "")
-
-            employer, location, dates = split_company_line(company_line)
+            else:
+                title = title_line.replace("<b>", "").replace("</b>", "")
+                employer, location, dates = split_company_line(company_line)
 
             bullet_lines = [lines[i] for i in block.body_indices]
 
