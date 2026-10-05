@@ -13,7 +13,7 @@ const buttonBase =
   "inline-flex min-h-11 items-center justify-center gap-2 rounded-[var(--radius-control)] px-4 text-[15px] font-semibold " +
   "transition-colors duration-150 disabled:cursor-not-allowed disabled:opacity-50 cursor-pointer";
 const buttonVariants = {
-  primary: "bg-primary text-white hover:bg-primary-hover",
+  primary: "bg-primary text-on-primary hover:bg-primary-hover",
   secondary: "border border-line-strong bg-paper text-ink hover:bg-canvas",
   ghost: "text-primary hover:bg-primary-soft",
   danger: "border border-blocked/40 bg-paper text-blocked hover:bg-blocked-soft",
@@ -239,7 +239,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
       {children}
       <div aria-live="polite" className="pointer-events-none fixed inset-x-4 bottom-24 z-50 flex flex-col items-center gap-2 sm:bottom-6">
         {messages.map((m) => (
-          <div key={m.id} className="rounded-[var(--radius-card)] bg-ink px-4 py-2.5 text-[15px] text-white">{m.text}</div>
+          <div key={m.id} className="rounded-[var(--radius-card)] bg-inverse px-4 py-2.5 text-[15px] text-on-inverse">{m.text}</div>
         ))}
       </div>
     </ToastContext.Provider>

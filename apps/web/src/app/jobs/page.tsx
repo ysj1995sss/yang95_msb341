@@ -141,7 +141,7 @@ export default function JobsPage() {
           <button key={v.key} role="tab" aria-selected={view === v.key} type="button"
             onClick={() => { setView(v.key); setSelected(null); setShowDetail(false); }}
             className={cx("min-h-10 rounded-[3px] px-4 text-[15px] font-semibold transition-colors duration-150 cursor-pointer",
-              view === v.key ? "bg-primary text-white" : "text-muted hover:text-ink")}>
+              view === v.key ? "bg-primary text-on-primary" : "text-muted hover:text-ink")}>
             {v.label}
           </button>
         ))}

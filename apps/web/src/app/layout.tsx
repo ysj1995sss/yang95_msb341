@@ -14,7 +14,14 @@ export const metadata: Metadata = {
   description: "Truthful tailored resumes, real jobs, and an application tracker. Nothing is invented and nothing is submitted for you.",
 };
 
-export const viewport: Viewport = { width: "device-width", initialScale: 1, themeColor: "#0f766e" };
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  themeColor: [
+    { media: "(prefers-color-scheme: light)", color: "#ffffff" },
+    { media: "(prefers-color-scheme: dark)", color: "#121b2c" },
+  ],
+};
 
 export default async function RootLayout({ children }: { children: React.ReactNode }) {
   await connection(); // sign-in is configured at runtime, so pages are never prerendered

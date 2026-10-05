@@ -179,7 +179,7 @@ export default function TrackerPage() {
               <button key={v.name} role="tab" type="button" aria-selected={data.view === v.name}
                 onClick={() => { setView(v.name); setSelected(null); setShowDetail(false); }}
                 className={cx("min-h-11 rounded-full border px-3.5 text-[14px] font-semibold transition-colors duration-150 cursor-pointer",
-                  data.view === v.name ? "border-primary bg-primary text-white" : "border-line-strong bg-paper hover:bg-canvas")}>
+                  data.view === v.name ? "border-primary bg-primary text-on-primary" : "border-line-strong bg-paper hover:bg-canvas")}>
                 {v.name} ({v.count})
               </button>
             ))}

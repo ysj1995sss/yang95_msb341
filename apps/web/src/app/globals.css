@@ -12,6 +12,9 @@
   --color-primary: #0f766e;
   --color-primary-hover: #115e59;
   --color-primary-soft: #f0fdfa;
+  --color-on-primary: #ffffff;
+  --color-inverse: #0f172a;
+  --color-on-inverse: #ffffff;
   --color-verified: #15803d;
   --color-verified-soft: #f0fdf4;
   --color-review: #b45309;
@@ -29,6 +32,33 @@
 
 html {
   -webkit-text-size-adjust: 100%;
+  color-scheme: light;
+}
+
+/* Dark theme: follows the device setting (decision 030). Same names, so components don't
+   change; every text/background pair keeps at least 4.5:1 contrast. */
+@media (prefers-color-scheme: dark) {
+  :root {
+    color-scheme: dark;
+    --color-ink: #e6edf5;
+    --color-muted: #a3b1c2;
+    --color-canvas: #0b1220;
+    --color-paper: #121b2c;
+    --color-line: #26354d;
+    --color-line-strong: #3a4c69;
+    --color-primary: #2dd4bf;
+    --color-primary-hover: #5eead4;
+    --color-primary-soft: #0f2e2b;
+    --color-on-primary: #04211e;
+    --color-verified: #4ade80;
+    --color-verified-soft: #0c2a18;
+    --color-review: #fbbf24;
+    --color-review-soft: #2e2208;
+    --color-blocked: #f87171;
+    --color-blocked-soft: #331214;
+    --color-inverse: #e6edf5;
+    --color-on-inverse: #0b1220;
+  }
 }
 
 body {

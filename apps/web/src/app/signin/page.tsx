@@ -33,7 +33,7 @@ export default async function SignInPage({ searchParams }: { searchParams: Promi
           </p>
         )}
         <a href="/api/auth/signin"
-          className="mt-6 flex min-h-11 items-center justify-center rounded-[var(--radius-control)] bg-primary px-4 font-semibold text-white hover:bg-primary-hover">
+          className="mt-6 flex min-h-11 items-center justify-center rounded-[var(--radius-control)] bg-primary px-4 font-semibold text-on-primary hover:bg-primary-hover">
           Sign in with Google
         </a>
       </div>

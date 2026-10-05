@@ -12,3 +12,16 @@ for (const path of PAGES) {
     await expectAccessible(page, `${path} on a phone`);
   });
 }
+
+// Dark theme (the device setting): every page stays readable and accessible.
+test.describe("dark theme", () => {
+  test.use({ colorScheme: "dark" });
+  for (const path of PAGES) {
+    test(`dark theme passes accessibility checks: ${path}`, async ({ page }) => {
+      await page.goto(path);
+      await page.waitForLoadState("networkidle");
+      expect(await page.evaluate(() => getComputedStyle(document.body).backgroundColor)).toBe("rgb(11, 18, 32)");
+      await expectAccessible(page, `${path} in the dark theme`);
+    });
+  }
+});
