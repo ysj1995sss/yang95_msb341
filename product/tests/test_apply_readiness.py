@@ -14,11 +14,11 @@ def view(**kw):
     return build_apply_view(**base)
 
 
-def test_manual_is_the_recommended_mode_and_assist_auto_stay_unavailable():
+def test_manual_is_recommended_assist_is_the_kit_and_auto_is_never_offered():
     modes = {m.name: m for m in mode_options(UNPROVEN)}
     assert modes["Manual"].available and modes["Manual"].recommended
-    assert not modes["Assist"].available and not modes["Auto"].available
-    assert "Not available yet" in modes["Assist"].detail
+    assert modes["Assist"].available and "ready to copy" in modes["Assist"].detail
+    assert not modes["Auto"].available and "never submits" in modes["Auto"].detail
 
 
 def test_ready_job_can_be_opened_and_tracked_but_not_marked_applied_yet():

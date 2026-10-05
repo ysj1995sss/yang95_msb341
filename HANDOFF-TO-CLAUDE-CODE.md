@@ -9,6 +9,24 @@ Read this file first, then `CLAUDE.md`, then the decisions listed below. Do not 
 
 ---
 
+## Latest update (2026-10-04, latest) — weak-spot fixes (decision 027)
+
+- **Matching:** one whole-term matcher (`analyzers/term_match.py`). "Go" no longer matches
+  go-to-market. Tailor lists missing requirements as short phrases.
+- **Parser:** typed bullet glyphs in Word and PDF, and one-line "Title | Company | Dates"
+  headers (`parsers/bullets.py`).
+- **Tailoring:** empty replies are retried; a busy provider or empty reply falls back via
+  `LLM_FALLBACK_MODELS` (Gemini has a built-in default); drafts over the length cap are trimmed
+  before rejection.
+- **Search:** title check before mapping, a shared board cache with a background warm-up, and
+  batched saves. 17.9 s became 9.5 s cold and under 1 s cached.
+- **Persistence:** the Tailor review is saved per job (`review_store.py`).
+- **Deploys:** `code_freshness.py` reloads changed code without a reboot (the first deploy of
+  it still needs one).
+- **Apply:** Assist is a copy-ready application kit (`ui/application_kit.py`). Auto is not
+  offered.
+- **Test baseline:** `product/` 1001 passed, `apps/api/` 70 passed.
+
 ## Latest update (2026-10-04, later) — Jobs workspace and site polish
 
 - **Spec 008 / decision 026.** Jobs has no stepper:

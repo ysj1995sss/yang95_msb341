@@ -16,6 +16,11 @@ ASSIST_UNAVAILABLE = (
 )
 
 
+# Assist as a kit: the answers, ready to copy, beside the employer's own form (decision 027).
+ASSIST_KIT = "Your application kit below: every answer the form asks for, ready to copy into the employer's form."
+AUTO_NOT_OFFERED = "Not offered. Job Copilot never submits an application for you."
+
+
 @dataclass(frozen=True)
 class CheckItem:
     label: str
@@ -51,14 +56,15 @@ def valid_employer_url(url: Optional[str]) -> bool:
 
 
 def mode_options(capability: ATSCapability) -> tuple[ModeOption, ...]:
-    """Manual always works. Assist and Auto stay unavailable until a platform
-    proves real end-to-end submission (decisions 012, 016; spec 006)."""
+    """Manual always works. Assist is the copy-ready kit unless a platform proves real form
+    filling; Auto stays off until a platform proves real end-to-end submission
+    (decisions 012, 016, 027; spec 006)."""
     assist = capability.assist_supported and capability.final_submission
     auto = capability.auto_supported and capability.final_submission
     return (
         ModeOption("Manual", True, True, "You apply on the employer's site with your tailored resume. Works with any employer link."),
-        ModeOption("Assist", assist, False, "Fills the form for you to review." if assist else ASSIST_UNAVAILABLE),
-        ModeOption("Auto", auto, False, "Submits for you after you approve." if auto else ASSIST_UNAVAILABLE),
+        ModeOption("Assist", True, False, "Fills the form for you to review." if assist else ASSIST_KIT),
+        ModeOption("Auto", auto, False, "Submits for you after you approve." if auto else AUTO_NOT_OFFERED),
     )
 
 

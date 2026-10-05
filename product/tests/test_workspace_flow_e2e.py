@@ -170,7 +170,10 @@ def test_guided_journey_from_resume_to_tracker(app, tmp_path):
     # Apply: the handoff arrives with no typing; track, then mark as applied.
     _go(at, "pages/3_Applications.py")
     assert at.session_state[HANDOFF_KEY]["job_id"] == "greenhouse_101"
-    assert "Not available yet" in _markdown(at)  # Assist and Auto are visibly unavailable
+    page = _markdown(at)
+    assert "Assist: your application kit" in page and "Not offered" in page  # Auto never submits
+    copyable = [c.value for c in at.code]
+    assert "Alex" in copyable and "Kim" in copyable and "alex@example.com" in copyable
     assert not [b for b in at.button if b.label == "Mark as applied" and not b.disabled]
     _click(at, "Track this application")
     service = at.session_state["job_service"]

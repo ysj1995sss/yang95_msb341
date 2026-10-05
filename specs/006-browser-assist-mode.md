@@ -1,6 +1,7 @@
 # Spec 006: Browser-based Assist mode
 
-**Status:** Draft (separate project, not scheduled)
+**Status:** Draft (separate project, not scheduled). Interim: Assist ships as a copy-ready
+application kit on Apply (decision 027); this spec's open questions still need the builder's answer.
 **Date:** 2026-09-29
 
 ## Problem

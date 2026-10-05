@@ -114,12 +114,39 @@ def _render_modes(view) -> None:
         if mode.available:
             tag = chip("Recommended" if mode.recommended else "Available", "verified")
         else:
-            tag = chip("Not available yet")
+            tag = chip("Not offered" if mode.name == "Auto" else "Not available yet")
         st.markdown(
             f'<div class="jc-row"><strong>{"● " if mode.name == "Manual" else "○ "}{escape(mode.name)}</strong> {tag}<br>'
             f'<span class="jc-meta">{escape(mode.detail)}</span></div>',
             unsafe_allow_html=True,
         )
+
+
+def _render_kit(record: dict, handoff, answers: list) -> None:
+    """Assist: the answers the employer's form asks for, ready to copy (decision 027)."""
+    from resume_tailorer.ui.application_kit import MISSING, OPTIONAL, READY, build_kit, kit_summary
+
+    fields = build_kit(record, handoff, answers)
+    st.markdown("### Assist: your application kit")
+    st.caption("Open the employer's form beside this, then copy each answer across. "
+               "Everything here comes from your confirmed profile, your tailored resume and answers you approved. "
+               + kit_summary(fields))
+    with st.container(border=True, key="apply_kit"):
+        for field in fields:
+            if field.state == OPTIONAL:
+                continue
+            label, value = st.columns([2, 3], vertical_alignment="center")
+            label.markdown(f"**{escape(field.label)}**  \n<span class='jc-meta'>{escape(field.source)}</span>",
+                           unsafe_allow_html=True)
+            if field.state == READY and field.label == "Resume":
+                value.markdown(f"{escape(field.value)} · use the download above", unsafe_allow_html=True)
+            elif field.state == READY:
+                value.code(field.value, language=None, wrap_lines=True)
+            elif field.state == MISSING:
+                value.markdown(f"{chip('Missing', 'review')} Add it in {escape(field.fix)}", unsafe_allow_html=True)
+    optional = [f.label for f in fields if f.state == OPTIONAL]
+    if optional:
+        st.caption("Not in your profile (often optional): " + ", ".join(optional) + ".")
 
 
 def _render_questions(service: JobService, job_id: str, profile, handoff) -> None:
@@ -254,6 +281,7 @@ def main():
             with open(handoff["pdf_path"], "rb") as f:
                 st.download_button("Download the tailored resume to attach", f.read(),
                                    file_name=f"tailored_resume_v{handoff['version']}.pdf", mime="application/pdf")
+        _render_kit(record, handoff, service.applications_db.get_answer_entries())
         _render_questions(service, job_id, profile, handoff)
     with side:
         _render_modes(view)

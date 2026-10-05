@@ -21,6 +21,11 @@ a brand new session act like a colleague who already knows what you are working 
   - **Validation:** blank PDFs and unreviewed made-up claims fail; failed artifacts are never
     handed out.
   - **Regeneration** uses the run's exact resume version.
+  - **Weak-spot fixes (2026-10-04, decision 027):** whole-term skill matching
+    (`analyzers/term_match.py`), typed bullets and one-line job headers, model fallback and
+    length trimming in tailoring, faster search (shared board cache, background warm-up),
+    Tailor reviews saved per job, new deploys picked up without a reboot (`code_freshness.py`),
+    and Assist as a copy-ready application kit on Apply. Auto is not offered.
   - **Jobs workspace (2026-10-04, spec 008 / decision 026):** Jobs is a stateful list/detail
     browser driven by `ui/jobs_state.py`; the chosen job and its tailored resume persist across
     sessions; Career Profile is a section summary with one editor.
@@ -38,8 +43,9 @@ a brand new session act like a colleague who already knows what you are working 
   don't share it as a multi-user product. The deployment checklist is in `decisions/023`.
 - **Not built (specs only):**
   - status sync (`specs/005`);
-  - browser Assist mode (`specs/006`) — Assist/Auto still can't fill real JavaScript ATS
-    forms (`decisions/012`);
+  - the browser helper that fills employer forms (`specs/006`), which waits on the ATS
+    terms-of-service and packaging questions. Assist is the copy-ready kit meanwhile
+    (`decisions/027`), and Auto is not offered;
   - LinkedIn, Indeed and Handshake are demo data only.
 - **Biggest open risk:** nobody other than the builder has used the full search → tailor → apply
   loop. Next: supervised tests with 2–3 people, then the Sprint 2 review.
@@ -61,7 +67,7 @@ a brand new session act like a colleague who already knows what you are working 
 
 - **Stack:** Python (resume_tailorer package), Streamlit UI with built-in Google sign-in, any LiteLLM-supported model (`product/resume_tailorer/llm/`), pytest, reportlab/PyMuPDF for PDFs, python-docx for the DOCX splice pipeline, Greenhouse live job search (LinkedIn/Indeed/Handshake demo only), FastAPI backend in `apps/api/`.
 - **How work ships:** push to `main` → Streamlit Community Cloud redeploys `product/resume_tailorer/app.py`. Multi-user deployment needs the `decisions/023` checklist first (Google OAuth secrets, durable `JOB_COPILOT_DATA_DIR`).
-- **Testing and style:** pytest; CI (`.github/workflows/tests.yml`) runs both suites on every push, on Python 3.14 with the pinned versions in `product/requirements.txt`. Run both before claiming anything is done: `product/` currently 925 tests, `apps/api/` currently 70.
+- **Testing and style:** pytest; CI (`.github/workflows/tests.yml`) runs both suites on every push, on Python 3.14 with the pinned versions in `product/requirements.txt`. Run both before claiming anything is done: `product/` currently 1001 tests, `apps/api/` currently 70.
 
 ## Working with me
 
