@@ -20,6 +20,8 @@ class LeverScraper(BoardApiScraper):
     BOARDS = LEVER_BOARDS
     API_BASE = "https://api.lever.co/v0/postings"
 
+    RAW_TITLE_KEY = "text"
+
     def get_platform_name(self) -> str:
         return "lever"
 

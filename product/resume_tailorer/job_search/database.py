@@ -2,6 +2,7 @@
 
 import sqlite3
 import json
+from contextlib import contextmanager
 from datetime import datetime
 from typing import Optional, List
 from resume_tailorer.job_search.models import JobSource, SearchGoals, JobPosting, UserSelection
@@ -107,6 +108,8 @@ class JobDatabase:
 
         self.connection.commit()
 
+    _defer_commit = False
+
     def save_job_posting(self, job: JobPosting) -> str:
         """Save a job posting to the database.
 
@@ -158,8 +161,19 @@ class JobDatabase:
             job.employment_type,
         ))
 
-        self.connection.commit()
+        if not self._defer_commit:
+            self.connection.commit()
         return job_id
+
+    @contextmanager
+    def deferred_commits(self):
+        """Save many postings in one transaction (one commit instead of one per posting)."""
+        self._defer_commit = True
+        try:
+            yield
+        finally:
+            self._defer_commit = False
+            self.connection.commit()
 
     def get_job_posting(self, job_id: str) -> Optional[JobPosting]:
         """Retrieve a job posting by ID.

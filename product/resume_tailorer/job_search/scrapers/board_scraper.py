@@ -19,6 +19,46 @@ from resume_tailorer.job_search.job_attributes import title_matches
 from resume_tailorer.job_search.models import JobPosting, SearchGoals
 from resume_tailorer.job_search.scrapers.base_scraper import BaseScraper
 
+# One cache for the whole process, so a board fetched for one session (or by the
+# background warm-up) serves every other session too (decision 027).
+_SHARED_CACHE: Dict[str, Tuple[float, object]] = {}
+_IN_FLIGHT: Dict[str, threading.Event] = {}
+_SHARED_LOCK = threading.Lock()
+_last_warm = float("-inf")
+
+
+def clear_board_cache() -> None:
+    global _last_warm
+    with _SHARED_LOCK:
+        _SHARED_CACHE.clear()
+        _IN_FLIGHT.clear()
+        _last_warm = float("-inf")
+
+
+def warm_board_cache(scrapers) -> bool:
+    """Fetch every board in the background unless that happened recently. True if started."""
+    global _last_warm
+    if not scrapers:
+        return False
+    now = time.monotonic()
+    with _SHARED_LOCK:
+        if now - _last_warm < max(s.CACHE_SECONDS for s in scrapers) - 60:
+            return False
+        _last_warm = now
+
+    def run():
+        # Every source's boards in one pool, so no source waits for another to finish.
+        work = [(scraper, token) for scraper in scrapers for token in scraper.board_tokens()]
+        try:
+            with ThreadPoolExecutor(max_workers=16) as pool:
+                list(pool.map(lambda item: item[0]._fetch_board(item[1]), work))
+        except Exception:  # a warm-up is only a head start; a search fetches anyway
+            pass
+
+    threading.Thread(target=run, name="job-board-warmup", daemon=True).start()
+    return True
+
+
 _WORK_MODES = {"remote": "Remote", "hybrid": "Hybrid", "onsite": "Onsite", "on-site": "Onsite"}
 _JOB_TYPES = {
     "fulltime": "full-time", "full-time": "full-time",
@@ -93,18 +133,21 @@ class BoardApiScraper(BaseScraper):
     availability = "AVAILABLE"
     capabilities = ("SEARCH", "DETAIL_FETCH", "POSTED_DATE")
     BOARDS: Dict[str, Tuple[str, str]] = {}  # board token -> (company name, industry)
-    MAX_PARALLEL_BOARDS = 6
+    MAX_PARALLEL_BOARDS = 12
     REQUEST_TIMEOUT = 20
     # Board listings change slowly; reusing a response for a few minutes makes
     # a second search (e.g. a different title) fast. Never served when older.
     CACHE_SECONDS = 15 * 60
+    # Where a raw board posting keeps its title. Checked before a posting is mapped, because
+    # mapping cleans the full HTML description and boards list thousands of other roles.
+    RAW_TITLE_KEY = "title"
 
     def __init__(self, api_key: str = None):
         super().__init__(api_key=api_key)
         self.data_source = None  # "real" or "unavailable" after each scrape()
         self.coverage_note = None
-        self._board_cache: Dict[str, Tuple[float, object]] = {}
-        self._cache_lock = threading.Lock()
+        self._board_cache = _SHARED_CACHE
+        self._cache_lock = _SHARED_LOCK
 
     def board_tokens(self) -> List[str]:
         return list(self.BOARDS)
@@ -135,16 +178,32 @@ class BoardApiScraper(BaseScraper):
 
     def _fetch_board(self, token: str):
         url = self.board_url(token)
-        now = time.monotonic()
         with self._cache_lock:
             cached = self._board_cache.get(url)
-        if cached and now - cached[0] < self.CACHE_SECONDS:
-            return cached[1]
-        data = self._make_get_request(url, timeout=self.REQUEST_TIMEOUT)
-        if data is not None:
+            if cached and time.monotonic() - cached[0] < self.CACHE_SECONDS:
+                return cached[1]
+            pending = _IN_FLIGHT.get(url)
+            if pending is None:
+                _IN_FLIGHT[url] = threading.Event()
+        if pending is not None:
+            # Another session or the warm-up is fetching this board right now: share its answer.
+            pending.wait(self.REQUEST_TIMEOUT + 5)
             with self._cache_lock:
-                self._board_cache[url] = (now, data)
-        return data
+                cached = self._board_cache.get(url)
+            if cached:
+                return cached[1]
+            return self._make_get_request(url, timeout=self.REQUEST_TIMEOUT)
+        try:
+            data = self._make_get_request(url, timeout=self.REQUEST_TIMEOUT)
+            if data is not None:
+                with self._cache_lock:
+                    self._board_cache[url] = (time.monotonic(), data)
+            return data
+        finally:
+            with self._cache_lock:
+                event = _IN_FLIGHT.pop(url, None)
+            if event is not None:
+                event.set()
 
     def _scrape_real(self, goals: SearchGoals) -> List[JobPosting]:
         tokens = self.board_tokens()
@@ -159,7 +218,11 @@ class BoardApiScraper(BaseScraper):
                 continue
             boards_answered += 1
             for raw_job in raw_jobs:
-                job = self.map_job(raw_job, token) if isinstance(raw_job, dict) else None
+                if not isinstance(raw_job, dict):
+                    continue
+                if goals.job_title and not title_matches(goals.job_title, str(raw_job.get(self.RAW_TITLE_KEY) or "")):
+                    continue
+                job = self.map_job(raw_job, token)
                 if job is not None:
                     all_jobs.append(job)
 

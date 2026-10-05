@@ -57,6 +57,7 @@ def require_identity() -> Identity:
         restore_pending_job(st.session_state, st.session_state.get("profile_record"), service.db,
                             service.fit_scorer, get_career_profile(st.session_state))
         restore_handoff(st.session_state, st.session_state.get("profile_record"))
+        service.warm_up()  # live job boards download while the user reads; searches then hit the cache
     except Exception:  # the chosen job is a convenience; never block a page on it
         pass
     return identity

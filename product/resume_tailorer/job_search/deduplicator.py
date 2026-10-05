@@ -53,15 +53,19 @@ class JobDeduplicator:
 
         candidates = merged_from_url + no_url
         clusters: List[List[JobPosting]] = []
+        # Only postings with the same (company, title, location) can merge, so each one is
+        # compared with the clusters under its own key, not every cluster (was quadratic).
+        by_key: Dict[Tuple[str, str, str], List[List[JobPosting]]] = {}
         for posting in candidates:
-            placed = False
-            for cluster in clusters:
+            same_key = by_key.setdefault(self._ct_key(posting), [])
+            for cluster in same_key:
                 if self._can_join_cluster(posting, cluster):
                     cluster.append(posting)
-                    placed = True
                     break
-            if not placed:
-                clusters.append([posting])
+            else:
+                cluster = [posting]
+                clusters.append(cluster)
+                same_key.append(cluster)
 
         return [self._merge_group(cluster) for cluster in clusters]
 

@@ -4,6 +4,7 @@ Coordinates: user goals → scraper selection → scraping → deduplication →
 """
 
 from concurrent.futures import ThreadPoolExecutor
+from contextlib import nullcontext
 from datetime import datetime
 from typing import Any, Dict, List, Optional, Tuple
 from resume_tailorer.job_search.models import (
@@ -153,13 +154,15 @@ class JobService:
         stored_count = 0
         save_failed = 0
         save_error = None
-        for posting in deduplicated_postings:
-            try:
-                self.db.save_job_posting(posting)
-                stored_count += 1
-            except Exception as exc:
-                save_failed += 1
-                save_error = save_error or (str(exc) or exc.__class__.__name__)
+        batch = getattr(self.db, "deferred_commits", None)
+        with (batch() if callable(batch) else nullcontext()):
+            for posting in deduplicated_postings:
+                try:
+                    self.db.save_job_posting(posting)
+                    stored_count += 1
+                except Exception as exc:
+                    save_failed += 1
+                    save_error = save_error or (str(exc) or exc.__class__.__name__)
 
         ok_count = sum(1 for p in provider_results if p.status == ProviderRunStatus.OK)
         fail_count = sum(1 for p in provider_results if p.status == ProviderRunStatus.FAILED)
@@ -190,6 +193,18 @@ class JobService:
         )
         self.last_search_run = summary
         return summary
+
+    def warm_up(self) -> bool:
+        """Start fetching the live company boards in the background so a search finds them cached.
+        Off when JOB_COPILOT_PREFETCH=0 (tests). True if a warm-up started."""
+        import os
+
+        from resume_tailorer.job_search.scrapers.board_scraper import BoardApiScraper, warm_board_cache
+
+        if os.environ.get("JOB_COPILOT_PREFETCH", "1") == "0":
+            return False
+        scrapers = [self._get_scraper(source) for source in (JobSource.GREENHOUSE, JobSource.LEVER, JobSource.ASHBY)]
+        return warm_board_cache([s for s in scrapers if isinstance(s, BoardApiScraper)])
 
     def _run_provider(
         self, source: JobSource, goals: SearchGoals
