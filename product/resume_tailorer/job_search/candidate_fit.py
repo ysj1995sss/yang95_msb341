@@ -21,6 +21,7 @@ from resume_tailorer.analyzers.competency_map import (
     find_education_status_evidence,
     find_transferable_evidence,
 )
+from resume_tailorer.analyzers.term_match import mentions
 from resume_tailorer.models.career_profile import CareerTruthProfile
 from resume_tailorer.job_search.models import (
     DIRECT_VERIFIED,
@@ -113,11 +114,11 @@ class CandidateFitScorer:
                 evidence.append(FitEvidence(skill, UNSUPPORTED, ""))
 
         req_text = self._section_after(
-            (job.description or "").lower(),
+            job.description or "",
             ("requirements:", "required:", "you must", "minimum qualifications"),
-        ) or (job.description or "").lower()[:900]
+        ) or (job.description or "")[:900]
         for competency in COMPETENCY_EVIDENCE_PATTERNS:
-            if competency.lower() not in req_text:
+            if not mentions(competency, req_text):
                 continue
             if any(competency.lower() == s.lower() for s in required_skills):
                 continue
@@ -296,7 +297,7 @@ class CandidateFitScorer:
             return TRANSFERABLE_PARTIAL, te.evidence_text
 
         for sentence in sentences:
-            if req_lower in sentence.lower():
+            if mentions(requirement, sentence):
                 return STRONGLY_SUPPORTED, sentence
 
         return UNSUPPORTED, ""
@@ -375,7 +376,7 @@ class CandidateFitScorer:
     def _extract_required_skills(
         self, description: str, experience_text: Optional[str] = None
     ) -> List[str]:
-        combined_text = (description or "").lower()
+        combined_text = description or ""
         required_section = self._section_after(
             combined_text,
             ("requirements:", "required:", "you must", "minimum qualifications"),
@@ -392,32 +393,23 @@ class CandidateFitScorer:
             "contract",
             "internship",
         ):
-            search_text += " " + experience_text.lower()
+            search_text += " " + str(experience_text)
 
-        matched_skills = []
-        for skill in self.TECHNICAL_SKILLS:
-            pattern = r"\b" + re.escape(skill) + r"\b"
-            if re.search(pattern, search_text):
-                matched_skills.append(skill)
-        return matched_skills
+        return sorted(skill for skill in self.TECHNICAL_SKILLS if mentions(skill, search_text))
 
     def _extract_preferred_skills(self, description: str) -> List[str]:
-        text = (description or "").lower()
         preferred_section = self._section_after(
-            text, ("preferred:", "nice to have", "preferred qualifications")
+            description or "", ("preferred:", "nice to have", "preferred qualifications")
         )
         if not preferred_section:
             return []
-        matched = []
-        for skill in self.TECHNICAL_SKILLS:
-            pattern = r"\b" + re.escape(skill) + r"\b"
-            if re.search(pattern, preferred_section):
-                matched.append(skill)
-        return matched
+        return sorted(skill for skill in self.TECHNICAL_SKILLS if mentions(skill, preferred_section))
 
     def _section_after(self, text: str, markers: tuple[str, ...]) -> str:
+        """The 800 characters after the first marker, case-insensitive, original case kept."""
+        lowered = text.lower()
         for marker in markers:
-            idx = text.find(marker)
+            idx = lowered.find(marker)
             if idx >= 0:
                 return text[idx : idx + 800]
         return ""

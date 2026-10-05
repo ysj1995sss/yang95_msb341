@@ -5,6 +5,7 @@ import re
 from resume_tailorer.analyzers.competency_map import normalize_concept
 from resume_tailorer.analyzers.jd_sections import PREFERRED, REQUIRED, RESPONSIBILITIES, split_sections
 from resume_tailorer.utils.stemming import stem
+from resume_tailorer.analyzers.term_match import mentions
 
 @dataclass
 class WeightedKeyword:
@@ -274,7 +275,7 @@ class JobAnalyzer:
         text_lower = text.lower()
 
         for skill in known_skills:
-            if re.search(r"\b" + re.escape(skill) + r"\b", text_lower):
+            if mentions(skill, text):
                 found_skills.append(skill.title())
 
         return found_skills
@@ -291,7 +292,7 @@ class JobAnalyzer:
         text_lower = text.lower()
 
         for tool in known_tools:
-            if re.search(r"\b" + re.escape(tool) + r"\b", text_lower):
+            if mentions(tool, text):
                 found_tools.append(tool.title())
 
         return found_tools

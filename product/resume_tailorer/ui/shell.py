@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from html import escape
 from typing import Iterable, Optional
 
@@ -98,3 +99,8 @@ def primary_action(label: str, page: str, key: str, before=None) -> None:
 
 def chip(text: str, tone: str = "") -> str:
     return f'<span class="jc-chip {escape(tone)}">{escape(text)}</span>'
+
+
+def md_literal(text: str) -> str:
+    """Text shown through Streamlit markdown as-is: no formatting, and "$" never starts maths."""
+    return re.sub(r"([\\`*_{}\[\]<>#|$])", r"\\\1", text or "")

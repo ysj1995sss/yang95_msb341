@@ -47,6 +47,8 @@ from resume_tailorer.llm.ui import COMMON_MODELS, collect_sidebar_llm_fields
 from resume_tailorer.job_search.job_service import PENDING_TAILOR_JOB_KEY
 from resume_tailorer.docx_export import run_docx_tailoring_pipeline
 from resume_tailorer.analyzers.gap_analyzer import find_unsupported_claims
+from resume_tailorer.analyzers.term_match import short_requirement
+from resume_tailorer.ui.shell import md_literal
 from resume_tailorer.artifacts.changes import build_freeform_changes
 from resume_tailorer.artifacts.length_control import (
     build_freeform_artifact,
@@ -360,9 +362,13 @@ def _render_review_room(pending: dict) -> None:
                 "Job Copilot will not add them.</div>",
                 unsafe_allow_html=True,
             )
+            seen = set()
             for gap in groups.true_gaps:
-                text = gap if len(gap) <= 140 else gap[:137].rsplit(" ", 1)[0] + "…"
-                st.markdown(f"- Missing from your experience: {text}")
+                label = short_requirement(gap)
+                if label.lower() in seen:
+                    continue
+                seen.add(label.lower())
+                st.markdown(f"- {md_literal(label)}", help=gap if label != gap else None)
             for change in groups.blocked:
                 st.markdown(
                     f"- Blocked a proposed line that claimed *{change.job_requirement or 'an unsupported requirement'}*; "

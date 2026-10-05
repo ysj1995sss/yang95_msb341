@@ -32,6 +32,7 @@ from resume_tailorer.session_profile import get_career_profile
 from resume_tailorer.ui import chip, render_app_shell, render_page_header
 from resume_tailorer.ui.auth_gate import OWNER_KEY, job_service_for, require_identity
 from resume_tailorer.ui.job_view import build_detail, build_row, job_id_for
+from resume_tailorer.ui.shell import md_literal as _md_literal
 from resume_tailorer.ui.jobs_state import (
     SAVED_VIEW,
     VIEWS,
@@ -282,11 +283,6 @@ def _render_list(jobs, fits, actions, ids) -> None:
         chosen = st.radio("Jobs", list(ids), format_func=labels.get, captions=[captions[i] for i in ids],
                           key="w_jobs_selected", label_visibility="collapsed")
     st.session_state[SELECTED_KEY] = chosen
-
-
-def _md_literal(text: str) -> str:
-    """Text shown through Streamlit markdown as-is: no formatting, and "$" never starts maths."""
-    return re.sub(r"([\\`*_{}\[\]<>#|$])", r"\\\1", text or "")
 
 
 def _evidence_rows(lines, mark: str, tone: str) -> str:

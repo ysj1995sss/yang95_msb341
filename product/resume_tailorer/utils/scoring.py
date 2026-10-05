@@ -8,6 +8,8 @@ job requirements using keyword and qualification matching.
 import re
 from typing import Tuple
 
+from resume_tailorer.analyzers.term_match import mentions
+
 # JD filler that must not count as evidence a candidate already has a qualification.
 _QUALIFICATION_STOPWORDS = frozenset({
     "with", "from", "this", "that", "have", "must", "including", "related",
@@ -45,9 +47,7 @@ def calculate_keyword_alignment(
     resume_text_lower = resume_text.lower()
 
     for keyword in required_keywords:
-        # Use word boundary regex for exact word matching (case-insensitive)
-        pattern = r"\b" + re.escape(keyword.lower()) + r"\b"
-        if re.search(pattern, resume_text_lower):
+        if mentions(keyword, resume_text):
             matched.append(keyword)
         else:
             missing.append(keyword)

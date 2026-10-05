@@ -4,6 +4,7 @@ from enum import Enum
 from resume_tailorer.models import CareerTruthProfile
 from resume_tailorer.analyzers.job_analyzer import JobAnalysis
 from resume_tailorer.analyzers.resume_benchmarker import ResumeBenchmark
+from resume_tailorer.analyzers.term_match import mentions
 from resume_tailorer.analyzers.competency_map import (
     extract_profile_sentences,
     find_education_status_evidence,
@@ -395,8 +396,7 @@ def find_unsupported_claims(gap_report: GapReport, tailored_text: str) -> list[s
             continue
         req_lower = item.requirement.lower()
         if len(req_lower.split()) <= 2:
-            pattern = r"\b" + re.escape(req_lower) + r"\b"
-            if re.search(pattern, tailored_lower):
+            if mentions(item.requirement, tailored_text):
                 unsupported.append(item.requirement)
         elif qualification_match_ratio(tailored_lower, item.requirement) >= 0.7:
             unsupported.append(item.requirement)
