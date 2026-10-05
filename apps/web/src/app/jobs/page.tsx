@@ -63,7 +63,7 @@ export default function JobsPage() {
     return (
       <>
         {header}
-        <div className="grid gap-6 lg:grid-cols-[1fr_320px]">
+        <div className="grid grid-cols-1 gap-6 lg:grid-cols-[1fr_320px]">
           <Card>
             {s.has_goals && !editing ? (
               <>
@@ -143,7 +143,7 @@ export default function JobsPage() {
           )}
         </Card>
       ) : (
-        <div className="grid gap-6 lg:grid-cols-[minmax(0,0.62fr)_minmax(0,1fr)]">
+        <div className="grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,0.62fr)_minmax(0,1fr)]">
           <Card className={cx("p-0 sm:p-0 lg:block", showDetail && "hidden")} aria-labelledby="results-heading">
             <h2 id="results-heading" className="sr-only">Results</h2>
             <ul className="max-h-[70vh] divide-y divide-line overflow-y-auto">

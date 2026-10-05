@@ -146,3 +146,47 @@ export type TailorPage = {
   review: Review | null;
   existing: { version: number; status: string; review_complete: boolean } | null;
 };
+
+// --- Apply and Tracker (phase 4) ---
+
+export type CheckItem = { label: string; state: "ok" | "review" | "blocked" | "neutral"; detail: string };
+export type ModeOption = { name: string; available: boolean; recommended: boolean; detail: string };
+export type KitField = { label: string; value: string; source: string; state: "ready" | "missing" | "optional"; fix: string };
+
+export type ApplyPage = {
+  job: { job_id: string; title: string; company: string; url: string } | null;
+  empty?: { items: Array<{ label: string; done: boolean }>; action_label: string; action_page: string };
+  staged?: Array<{ job_id: string; title: string; company: string }>;
+  view?: {
+    checklist: CheckItem[]; can_open: boolean; can_track: boolean; can_mark_applied: boolean;
+    stage: "not_ready" | "ready" | "tracked" | "applied"; headline: string; modes: ModeOption[];
+  };
+  handoff?: { version: number; has_file: boolean } | null;
+  application_id?: string | null;
+  kit?: KitField[];
+  kit_summary?: string;
+  helper_code?: string;
+};
+
+export type TrackerRow = {
+  application_id: string; company: string; role: string; status: string; status_label: string;
+  applied: string | null; next_action: string; due: string | null; fit: string; resume_version: string;
+  source: string; mode: string; last_update: string; url: string;
+};
+
+export type TrackerBoard = {
+  total: number; views: Array<{ name: string; count: number }>; view: string; rows: TrackerRow[];
+  lifecycle: string[]; weekly: { week_start: string; applied: number; interviews: number; saved: number };
+  weekly_goal: number; status_options: Option[];
+};
+
+export type ApplicationDetail = {
+  row: TrackerRow; facts: Array<{ label: string; value: string }>; answers: Array<{ question: string; answer: string }>;
+  history: Array<{ when: string; status: string; who: string; note: string }>;
+  next_action: { text: string; due: string; notes: string }; job_id: string | null; status_options: Option[];
+};
+
+export type EmailReading = {
+  status: string | null; status_label: string; phrase: string; chosen: string | null; email_date: string | null;
+  subject: string; options: Array<{ application_id: string; label: string; matched: boolean; backwards: boolean }>;
+};

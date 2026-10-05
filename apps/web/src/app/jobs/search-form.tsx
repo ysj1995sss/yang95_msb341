@@ -44,7 +44,7 @@ export function SearchForm({ setup, busy, error, onSearch, onCancel }: {
           </div>
         </div>
       )}
-      <div className="grid gap-4 md:grid-cols-[1.4fr_1.2fr_1fr]">
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-[1.4fr_1.2fr_1fr]">
         <TextField label="Target role" required value={form.job_title} placeholder="e.g. Product marketing manager"
           onChange={(e) => set({ job_title: e.target.value })} />
         <TextField label="Location" value={form.location} placeholder="City, state or country"
@@ -58,7 +58,7 @@ export function SearchForm({ setup, busy, error, onSearch, onCancel }: {
           <Toggles legend="Level" options={setup.options.experience_levels} value={form.experience_level} onChange={(v) => set({ experience_level: v })} />
           <Toggles legend="Industry" options={setup.options.industries} value={form.industries} onChange={(v) => set({ industries: v })} />
           <Toggles legend="Job type" options={setup.options.employment_types} value={form.employment_type} onChange={(v) => set({ employment_type: v })} />
-          <div className="grid gap-4 md:grid-cols-2">
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
             <TextField label="Minimum salary (USD)" type="number" min={0} step={5000} value={form.min_salary}
               onChange={(e) => set({ min_salary: Math.max(0, Number(e.target.value) || 0) })} />
             <div className="flex flex-col justify-end">

@@ -34,7 +34,7 @@ export default function ProfilePage() {
     return (
       <>
         {header}
-        <div className="grid gap-6 lg:grid-cols-[1fr_320px]">
+        <div className="grid grid-cols-1 gap-6 lg:grid-cols-[1fr_320px]">
           <Card>
             <h2 className="text-[22px] font-semibold">Import your resume</h2>
             <p className="mb-5 text-muted">Job Copilot reads it once and fills in your profile. You&apos;ll only fix what it got wrong.</p>
@@ -90,7 +90,7 @@ export default function ProfilePage() {
         </Card>
       )}
 
-      <div className="mt-6 grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.35fr)]">
+      <div className="mt-6 grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.35fr)]">
         <div className="flex flex-col gap-4">
           <Card className="p-0 sm:p-0" aria-labelledby="sections">
             <h2 id="sections" className="sr-only">Sections</h2>

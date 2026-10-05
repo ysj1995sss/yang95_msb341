@@ -147,7 +147,7 @@ export default function TailorPageView() {
           <p className="mt-3 text-[14px] text-muted">The change-by-change review for this version wasn&apos;t saved. Tailor again to review changes one by one.</p>
         </Card>
       ) : (
-        <div className="grid gap-6 lg:grid-cols-[1fr_320px]">
+        <div className="grid grid-cols-1 gap-6 lg:grid-cols-[1fr_320px]">
           <Card>
             <h2 className="text-[22px] font-semibold">Create your tailored resume</h2>
             {data.run.status === "failed" && <div className="mt-3"><Alert tone="blocked" role="alert" title="The last run didn't finish">{data.run.error}</Alert></div>}

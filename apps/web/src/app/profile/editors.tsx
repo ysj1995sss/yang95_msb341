@@ -52,7 +52,7 @@ export function ContactEditor({ data, onSaved }: EditorProps) {
   const { busy, error, save } = useSave(onSaved);
   return (
     <form className="flex flex-col gap-4" onSubmit={(e) => { e.preventDefault(); void save("/profile/contact", form, changedMessage); }}>
-      <div className="grid gap-4 sm:grid-cols-2">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         {(["name", "email", "phone", "location"] as const).map((k) => (
           <TextField key={k} label={tag(k[0].toUpperCase() + k.slice(1), data, `contact_info.${k}`)} value={form[k]}
             type={k === "email" ? "email" : k === "phone" ? "tel" : "text"} autoComplete={k === "name" ? "name" : k === "email" ? "email" : k === "phone" ? "tel" : "address-level2"}
@@ -93,7 +93,7 @@ export function WorkEditor({ data, onSaved }: EditorProps) {
       <SelectField label="Role" value={String(index)}
         options={jobs.map((j, i) => ({ value: String(i), label: `${j.title || "Role"} · ${j.employer || "Employer"}` }))}
         onChange={(e) => { const i = Number(e.target.value); setIndex(i); setForm(roleForm(jobs[i])); }} />
-      <div className="grid gap-4 sm:grid-cols-[2fr_2fr_1.4fr]">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-[2fr_2fr_1.4fr]">
         <TextField label={tag("Title", data, `work_experience[${index}]`)} value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} />
         <TextField label="Employer" value={form.employer} onChange={(e) => setForm({ ...form, employer: e.target.value })} />
         <TextField label="Dates" value={form.dates} placeholder="e.g. Jan 2021 – Present" onChange={(e) => setForm({ ...form, dates: e.target.value })} />
@@ -121,7 +121,7 @@ export function EducationEditor({ data, onSaved }: EditorProps) {
       {entries.map((entry, i) => (
         <fieldset key={i} className="flex flex-col gap-3 rounded-[var(--radius-card)] border border-line p-4">
           <legend className="px-1 font-semibold">{entry.institution || "Education"}{edited(data, `education[${i}]`) ? " · edited by you" : ""}</legend>
-          <div className="grid gap-3 sm:grid-cols-2">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <TextField label="Degree" value={entry.degree} onChange={(e) => update(i, { degree: e.target.value })} />
             <TextField label="Field" value={entry.field} onChange={(e) => update(i, { field: e.target.value })} />
             <TextField label="School" value={entry.institution} onChange={(e) => update(i, { institution: e.target.value })} />
@@ -145,7 +145,7 @@ export function SkillsEditor({ data, onSaved }: EditorProps) {
   const { busy, error, save } = useSave(onSaved);
   return (
     <form className="flex flex-col gap-4" onSubmit={(e) => { e.preventDefault(); void save("/profile/skills", { skills: lines(skills), tools: lines(tools) }, changedMessage); }}>
-      <div className="grid gap-4 sm:grid-cols-2">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <TextArea label={tag("Skills (one per line)", data, "skills")} rows={10} value={skills} onChange={(e) => setSkills(e.target.value)} />
         <TextArea label={tag("Tools (one per line)", data, "tools")} rows={10} value={tools} onChange={(e) => setTools(e.target.value)} />
       </div>

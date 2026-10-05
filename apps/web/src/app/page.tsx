@@ -73,7 +73,7 @@ export default function HomePage() {
       <>
         <PageHeader title="Welcome to Job Copilot"
           description="Truthful tailored resumes for real jobs. Five steps, in any order; here's the one that helps most now." />
-        <div className="grid gap-6 lg:grid-cols-[1fr_320px]">
+        <div className="grid grid-cols-1 gap-6 lg:grid-cols-[1fr_320px]">
           <NextStep action={view.next_action} onDone={reload} />
           <Card aria-labelledby="checklist">
             <h2 id="checklist" className="text-[18px] font-semibold">Getting set up</h2>
@@ -106,10 +106,10 @@ export default function HomePage() {
     <>
       <PageHeader title={data.first_name ? `Welcome back, ${data.first_name}` : "Welcome back"}
         description={`${today}. Here's what needs you.`} />
-      <div className="grid gap-6 lg:grid-cols-[1fr_320px]">
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-[1fr_320px]">
         <div className="flex flex-col gap-6">
           <NextStep action={view.next_action} onDone={reload} />
-          <div className="grid gap-6 md:grid-cols-2">
+          <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
             <ItemList title="Follow-ups due" items={view.followups_due} empty="Nothing due. Add next steps in Tracker." />
             <ItemList title="Ready to finish" items={view.ready_to_finish} empty="No staged applications waiting." />
             <ItemList title="Resumes awaiting your decisions" items={view.drafts} empty="No tailoring drafts open." />

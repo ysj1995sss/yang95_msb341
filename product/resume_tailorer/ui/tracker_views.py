@@ -104,8 +104,8 @@ def build_row(tracker: ApplicationTracker, submission: Optional[ApplicationSubmi
     source = (tracker.job_posting_id.split("_", 1)[0] or "").title() if tracker.job_posting_id else "Not recorded"
     return TrackerRow(
         application_id=tracker.application_id,
-        company=job.get("company") or "Company not recorded",
-        role=job.get("title") or "Role not recorded",
+        company=(job.get("company") or "").strip() or "Company not recorded",
+        role=(job.get("title") or "").strip() or "Role not recorded",
         status=tracker.status,
         applied=applied_date(history),
         next_action=(submission.next_action if submission else "") or "",

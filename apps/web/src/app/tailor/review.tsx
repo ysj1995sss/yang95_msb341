@@ -18,7 +18,7 @@ function Steps({ review }: { review: Review }) {
     { label: "Ready for Apply", state: p.can_continue ? "complete" : "pending" },
   ];
   return (
-    <ol aria-label="Review progress" className="mb-6 grid gap-2 sm:grid-cols-4">
+    <ol aria-label="Review progress" className="mb-6 grid grid-cols-1 gap-2 sm:grid-cols-4">
       {steps.map((s) => (
         <li key={s.label} className={cx("rounded-[var(--radius-control)] border-t-4 bg-paper px-3 py-2 text-[14px] font-semibold",
           s.state === "complete" ? "border-verified text-verified" : s.state === "current" ? "border-primary text-ink" : "border-line text-muted")}>
@@ -46,7 +46,7 @@ function ChangeCard({ change, review, onDecide }: {
         <li className="rounded-[var(--radius-control)] bg-canvas p-3"><span className="block text-[13px] text-muted">Supporting fact</span>{change.fact}</li>
         <li className="rounded-[var(--radius-control)] bg-canvas p-3"><span className="block text-[13px] text-muted">Resume change</span>{change.reason}</li>
       </ol>
-      <div className="mt-4 grid gap-3 md:grid-cols-2">
+      <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-2">
         <div><p className="text-[13px] font-semibold text-muted uppercase">Original</p><p className="mt-1">{change.original || "(new line)"}</p></div>
         <div><p className="text-[13px] font-semibold text-muted uppercase">Proposed</p><p className="mt-1 rounded-[var(--radius-control)] bg-primary-soft p-2">{change.proposed}</p></div>
       </div>
@@ -117,8 +117,8 @@ export function ReviewRoom({ review, onChange, onDiscard }: {
   return (
     <>
       <Steps review={review} />
-      <div className="grid gap-6 lg:grid-cols-[minmax(0,1.15fr)_minmax(0,0.85fr)]">
-        <div className="flex flex-col gap-5">
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,1.15fr)_minmax(0,0.85fr)]">
+        <div className="flex min-w-0 flex-col gap-5">
           <h2 className="text-[22px] font-semibold">Proposed changes</h2>
           {review.changes.length > 0 ? (
             <>
@@ -130,7 +130,7 @@ export function ReviewRoom({ review, onChange, onDiscard }: {
                         className={cx("flex min-h-11 w-full items-center gap-2 rounded-[var(--radius-control)] px-3 text-left text-[15px] transition-colors duration-150 cursor-pointer",
                           c.id === current?.id ? "bg-primary-soft font-semibold text-primary" : "hover:bg-paper")}>
                         {c.decision ? <Check aria-hidden className="size-4 shrink-0 text-verified" /> : <Circle aria-hidden className="size-4 shrink-0 text-line-strong" />}
-                        <span className="truncate">{i + 1}. {c.requirement || c.original || "Change"}</span>
+                        <span className="min-w-0 truncate">{i + 1}. {c.requirement || c.original || "Change"}</span>
                         <span className="sr-only">{c.decision ? ` — ${c.decision_label}` : " — not reviewed"}</span>
                       </button>
                     </li>
@@ -161,7 +161,7 @@ export function ReviewRoom({ review, onChange, onDiscard }: {
           )}
         </div>
 
-        <aside aria-labelledby="preview" className="flex flex-col gap-4 lg:sticky lg:top-20 lg:self-start">
+        <aside aria-labelledby="preview" className="flex min-w-0 flex-col gap-4 lg:sticky lg:top-20 lg:self-start">
           <h2 id="preview" className="text-[22px] font-semibold">Resume preview</h2>
           <div className="flex flex-wrap gap-2">
             <Chip tone={toneOf(review.status_tone)}>{review.status_text}</Chip>

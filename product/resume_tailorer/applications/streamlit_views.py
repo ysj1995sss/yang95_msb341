@@ -208,7 +208,7 @@ def _render_detail(st, service, status_tracker, row, submission, history, chip, 
             else:
                 st.caption("No saved answers were used for this application.")
         with st.expander("Status history", expanded=True):
-            for event in sorted(history, key=lambda e: e.status_updated, reverse=True):
+            for _i, event in sorted(enumerate(history), key=lambda p: (p[1].status_updated, p[0]), reverse=True):
                 who = {"user": "you", "system": "Job Copilot", "email_integration": "you, from an email"}.get(
                     event.source.value, event.source.value.replace("_", " "))
                 note = f" · {event.notes}" if event.notes else ""

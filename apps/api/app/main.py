@@ -15,6 +15,8 @@ from app.workspace.home_router import router as workspace_home_router
 from app.workspace.profile_router import router as workspace_profile_router
 from app.workspace.jobs_router import router as workspace_jobs_router
 from app.workspace.tailor_router import router as workspace_tailor_router
+from app.workspace.apply_router import router as workspace_apply_router
+from app.workspace.tracker_router import router as workspace_tracker_router
 
 app = FastAPI(title="Resume Copilot API")
 app.add_middleware(
@@ -45,6 +47,8 @@ app.include_router(workspace_home_router)
 app.include_router(workspace_profile_router)
 app.include_router(workspace_jobs_router)
 app.include_router(workspace_tailor_router)
+app.include_router(workspace_apply_router)
+app.include_router(workspace_tracker_router)
 
 
 @app.get("/health")
