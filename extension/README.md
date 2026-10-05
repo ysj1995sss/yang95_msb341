@@ -37,5 +37,14 @@ Your kit is stored only in this browser (`chrome.storage.local`). **Forget my ki
   `extension/test/fixture.html`.
 - Not yet run on a live employer form. That should be done by a person, on their own
   application.
-- Known limit: forms inside a cross-origin iframe (some company career sites embed Greenhouse)
-  may not be reachable without a host permission.
+- Forms a company embeds from Greenhouse, Lever, Ashby, Workday or SmartRecruiters in its own
+  careers page sit in a frame from another site. The first time the helper sees one, it offers
+  **Allow embedded forms**, an optional permission for those six sites only. Without it, it fills
+  what it can reach and says so.
+- Not yet loaded into a real Chrome profile by a test: the fill script and the address matching
+  are tested in a normal page (`apps/web/e2e/extension.spec.ts`).
+
+## Publishing
+
+`python extension/build.py` draws the icons and writes the store zip to `dist/`. `STORE.md` has
+the listing text and the privacy-tab answers. The privacy policy is the web app's `/privacy` page.

@@ -4,6 +4,7 @@
 import { expect, test } from "@playwright/test";
 import { pathToFileURL } from "node:url";
 import { resolve } from "node:path";
+import { readFileSync } from "node:fs";
 
 const EXTENSION = resolve(__dirname, "../../../extension");
 const PDF = Buffer.from("%PDF-1.4\n% synthetic\n").toString("base64");
@@ -43,4 +44,20 @@ test("the browser helper fills from the kit, attaches the resume and never submi
   expect(result.left.join(" ")).toMatch(/How did you hear/);
   expect(await page.evaluate(() => (window as unknown as { __submitted?: boolean }).__submitted ?? false)).toBe(false);
   await expect(page.getByRole("status")).toContainText("Nothing was submitted.");
+});
+
+test("the helper recognizes embedded application forms only from the job-application sites", async ({ page }) => {
+  await page.goto(pathToFileURL(resolve(EXTENSION, "test/fixture.html")).href);
+  await page.addScriptTag({ path: resolve(EXTENSION, "match.js") });
+  const manifest = JSON.parse(readFileSync(resolve(EXTENSION, "manifest.json"), "utf8")) as { optional_host_permissions: string[] };
+  const embedded = (url: string) => page.evaluate(([patterns, u]) =>
+    (patterns as string[]).some((p) => (window as unknown as { matchesHostPattern: (p: string, u: string) => boolean }).matchesHostPattern(p, u as string)),
+  [manifest.optional_host_permissions, url] as const);
+  expect(await embedded("https://boards.greenhouse.io/embed/job_app?for=acme")).toBe(true);
+  expect(await embedded("https://acme.wd5.myworkdayjobs.com/en-US/careers/job/1")).toBe(true);
+  expect(await embedded("https://jobs.lever.co/acme/123/apply")).toBe(true);
+  expect(await embedded("https://boardsXgreenhouse.io/embed")).toBe(false);
+  expect(await embedded("https://acmeXmyworkdayjobs.com/")).toBe(false);
+  expect(await embedded("https://evil.example/?next=https://jobs.lever.co/")).toBe(false);
+  expect(await embedded("https://www.youtube.com/embed/x")).toBe(false);
 });

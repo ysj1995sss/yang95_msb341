@@ -79,7 +79,7 @@ test("resume → profile → goals → jobs → tailor → apply → tracker", a
   await expect(page.getByText(/Suggested status: Rejected/)).toBeVisible();
   await expectAccessible(page, "tracker, email suggestion");
   await page.getByRole("button", { name: "Confirm update" }).click();
-  await expect(page.getByRole("tab", { name: /Closed \(1\)/ })).toBeVisible();
+  await expect(page.getByRole("button", { name: /Closed \(1\)/ })).toBeVisible();
 });
 
 test("Gmail suggestions change nothing until confirmed (Google's answers are stubbed)", async ({ page }) => {
@@ -122,6 +122,19 @@ test("Gmail suggestions change nothing until confirmed (Google's answers are stu
   await expect(card.getByRole("link", { name: "Connect Gmail" })).toBeVisible();
 });
 
+test.describe("in a far-away time zone", () => {
+  test.use({ timezoneId: "Pacific/Auckland" });
+
+  test("status history shows the person's own local time", async ({ page }) => {
+    await page.goto("/tracker");
+    const shown = (await page.getByRole("group").filter({ hasText: "Status history" }).getByRole("listitem").first().textContent()) ?? "";
+    // The journey just made this change, so it happened within the last few minutes, Auckland time.
+    const recent = await page.evaluate(() => Array.from({ length: 15 }, (_, i) => new Date(Date.now() - i * 60_000)
+      .toLocaleString(undefined, { month: "short", day: "numeric", year: "numeric", hour: "numeric", minute: "2-digit" })));
+    expect(recent.some((when) => shown.startsWith(when)), `"${shown}" should start with one of ${recent.join(" | ")}`).toBe(true);
+  });
+});
+
 test("every page can be used by keyboard, with focus always visible", async ({ page }) => {
   for (const path of PAGES) {
     await page.goto(path);
@@ -155,4 +168,13 @@ test("every page can be used by keyboard, with focus always visible", async ({ p
     }
     expect(seen.size, `${path}: too few keyboard stops`).toBeGreaterThan(5);
   }
+});
+
+test("the privacy page is public, readable and accessible", async ({ page }) => {
+  await page.goto("/privacy");
+  await expect(page.getByRole("heading", { level: 1, name: "Privacy" })).toBeVisible();
+  await expect(page.getByText(/Limited Use requirements/)).toBeVisible();
+  await expectAccessible(page, "privacy");
+  await page.goto("/");
+  await expect(page.getByRole("contentinfo").getByRole("link", { name: "Privacy" })).toHaveAttribute("href", "/privacy");
 });
