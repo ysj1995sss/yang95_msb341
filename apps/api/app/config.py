@@ -24,13 +24,18 @@ class Settings(BaseSettings):
     # Shared with the Next.js server (apps/web), which signs a short-lived token per request
     # for the signed-in user. Empty in development means local single-user mode (spec 009).
     workspace_token_secret: str = ""
+    # The older account/profile/tailor routes (password sign-in, SQL database). The web app
+    # uses only /v2, so a deployment for it sets LEGACY_ROUTES=false and needs no database.
+    legacy_routes: bool = True
 
     @model_validator(mode="after")
     def _refuse_unsafe_production_defaults(self) -> "Settings":
         if self.app_env.lower() != "production":
             return self
         problems = []
-        if self.jwt_secret == DEV_JWT_SECRET or len(self.jwt_secret) < MIN_PRODUCTION_SECRET_LENGTH:
+        if self.legacy_routes and (
+            self.jwt_secret == DEV_JWT_SECRET or len(self.jwt_secret) < MIN_PRODUCTION_SECRET_LENGTH
+        ):
             problems.append(
                 f"JWT_SECRET must be a private random value of at least {MIN_PRODUCTION_SECRET_LENGTH} characters"
             )
@@ -39,7 +44,7 @@ class Settings(BaseSettings):
                 f"WORKSPACE_TOKEN_SECRET must be shared with the web app and at least "
                 f"{MIN_PRODUCTION_SECRET_LENGTH} characters"
             )
-        if self.database_url.startswith("sqlite"):
+        if self.legacy_routes and self.database_url.startswith("sqlite"):
             problems.append("DATABASE_URL must point to a durable server database, not a local SQLite file")
         if problems:
             raise ValueError("Refusing to start in production: " + "; ".join(problems) + ".")

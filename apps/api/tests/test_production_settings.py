@@ -33,3 +33,8 @@ def test_production_starts_with_a_real_secret_and_database():
 def test_production_needs_the_shared_workspace_secret():
     with pytest.raises(ValueError, match="WORKSPACE_TOKEN_SECRET"):
         Settings(app_env="production", jwt_secret=STRONG, database_url=POSTGRES)
+
+
+def test_the_web_app_deployment_needs_no_database_or_password_secret():
+    settings = Settings(app_env="production", legacy_routes=False, workspace_token_secret=STRONG)
+    assert settings.database_url.startswith("sqlite") and settings.legacy_routes is False

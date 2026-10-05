@@ -56,3 +56,18 @@ jobs:
         run: npx tsc --noEmit
       - name: Build
         run: npm run build
+
+  api-image:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build the API container (apps/api/Dockerfile)
+        run: docker build -f apps/api/Dockerfile -t job-copilot-api .
+      - name: It starts and answers
+        run: |
+          docker run -d --name api -p 8000:8000 -e WORKSPACE_TOKEN_SECRET=$(python3 -c "print('x'*40)") job-copilot-api
+          for i in $(seq 1 30); do curl -sf localhost:8000/health && break; sleep 1; done
+          curl -sf localhost:8000/health
+          test "$(curl -s -o /dev/null -w '%{http_code}' localhost:8000/v2/me)" = "401"
+          test "$(curl -s -o /dev/null -w '%{http_code}' localhost:8000/auth/login)" = "404"
+          docker exec api python -c "from resume_tailorer.docx_export.converter import _soffice; assert _soffice()"

@@ -29,19 +29,24 @@ app.add_middleware(
 )
 
 
+_LEGACY = get_settings().legacy_routes
+
+
 @app.on_event("startup")
 def on_startup():
-    Base.metadata.create_all(bind=engine)
-    apply_additive_migrations(engine)
+    if _LEGACY:
+        Base.metadata.create_all(bind=engine)
+        apply_additive_migrations(engine)
 
 
-app.include_router(auth_router)
-app.include_router(profile_router)
-app.include_router(goals_router)
-app.include_router(job_search_profiles_router)
-app.include_router(jobs_router)
-app.include_router(devices_router)
-app.include_router(tailor_router)
+if _LEGACY:
+    app.include_router(auth_router)
+    app.include_router(profile_router)
+    app.include_router(goals_router)
+    app.include_router(job_search_profiles_router)
+    app.include_router(jobs_router)
+    app.include_router(devices_router)
+    app.include_router(tailor_router)
 # Spec 009: the workspace API the Next.js frontend uses (shared with the Streamlit app's data).
 app.include_router(workspace_home_router)
 app.include_router(workspace_profile_router)

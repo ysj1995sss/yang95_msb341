@@ -1,0 +1,12 @@
+**/.venv
+**/venv
+**/node_modules
+**/__pycache__
+**/.next
+**/.pytest_cache
+apps/web
+apps/api/data
+apps/api/tests
+product/tests
+*.db
+.git

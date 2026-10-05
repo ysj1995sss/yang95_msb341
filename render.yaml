@@ -1,0 +1,23 @@
+# Render blueprint for the workspace API (spec 009). The web app (apps/web) deploys to
+# Vercel with its root directory set to apps/web. See specs/009, "Deploying".
+services:
+  - type: web
+    name: job-copilot-api
+    runtime: docker
+    dockerfilePath: apps/api/Dockerfile
+    dockerContext: .
+    plan: starter            # a persistent disk needs a paid instance (about $7/month)
+    healthCheckPath: /health
+    disk:
+      name: job-copilot-data
+      mountPath: /data
+      sizeGB: 1
+    envVars:
+      - key: WORKSPACE_TOKEN_SECRET   # the same value as on the web app
+        sync: false
+      - key: LLM_MODEL
+        sync: false
+      - key: LLM_API_KEY
+        sync: false
+      - key: LLM_FALLBACK_MODELS
+        sync: false
