@@ -14,6 +14,11 @@ class LLMSettings:
     model: str
     api_key: str
     api_base: Optional[str] = None
+    # Tried in order when the main model is busy or returns nothing (decision 027).
+    fallback_models: tuple[str, ...] = ()
+
+# Same provider and key as the main model, so no extra secret is needed.
+_DEFAULT_FALLBACKS = {"gemini/": ("gemini/gemini-flash-lite-latest", "gemini/gemini-2.5-flash")}
 
 
 def apply_secret_settings(
@@ -22,7 +27,7 @@ def apply_secret_settings(
 ) -> None:
     """Fill missing LLM environment values from a deployment secret store."""
     target = env if env is not None else os.environ
-    for key in ("LLM_MODEL", "LLM_API_KEY", "LLM_API_BASE"):
+    for key in ("LLM_MODEL", "LLM_API_KEY", "LLM_API_BASE", "LLM_FALLBACK_MODELS"):
         value = secrets.get(key)
         if key not in target and value is not None and str(value).strip():
             target[key] = str(value).strip()
@@ -55,4 +60,16 @@ def resolve_settings(
         model=resolved_model,
         api_key=resolved_key,
         api_base=resolved_base,
+        fallback_models=_fallbacks(resolved_model, source.get("LLM_FALLBACK_MODELS")),
     )
+
+
+def _fallbacks(model: str, configured: Optional[str]) -> tuple[str, ...]:
+    """LLM_FALLBACK_MODELS (comma-separated; "none" turns fallback off), else a built-in default."""
+    if configured is not None and configured.strip():
+        if configured.strip().lower() == "none":
+            return ()
+        names = [name.strip() for name in configured.split(",") if name.strip()]
+    else:
+        names = next((list(v) for prefix, v in _DEFAULT_FALLBACKS.items() if model.startswith(prefix)), [])
+    return tuple(dict.fromkeys(name for name in names if name != model))

@@ -62,6 +62,32 @@ def _split_competency_line(text: str) -> tuple[str, list[str]]:
 # live in code, not just the system prompt.
 _MAX_LENGTH_GROWTH = 1.15
 
+# Wording that adds length but no claim. A draft that is only slightly over the cap
+# is trimmed with these before it is rejected (decision 027); the result still goes
+# through every other check.
+_FILLER_EDITS = (
+    (re.compile(r"\bin order to\b", re.I), "to"),
+    (re.compile(r"\bwith the (?:goal|aim) of\b", re.I), "to"),
+    (re.compile(r"\bas well as\b", re.I), "and"),
+    (re.compile(r"\butiliz(?:ed|ing)\b", re.I), lambda m: "used" if m.group(0).lower().endswith("ed") else "using"),
+    (re.compile(r"\ba (?:wide )?variety of\b", re.I), "various"),
+    (re.compile(r"\b(?:successfully|effectively|actively)\s+", re.I), ""),
+    (re.compile(r"\s+(?:successfully|effectively)\b", re.I), ""),
+    (re.compile(r",\s+and\b"), " and"),
+)
+
+
+def compact_to_length(text: str, max_len: int) -> str | None:
+    """`text` with filler removed so it fits in `max_len` characters, or None if it can't."""
+    for pattern, replacement in _FILLER_EDITS:
+        if len(text) <= max_len:
+            break
+        text = pattern.sub(replacement, text)
+        text = re.sub(r"\s+([,.;])", r"\1", re.sub(r"\s{2,}", " ", text)).strip()
+    if len(text) > max_len:
+        return None
+    return text[0].upper() + text[1:] if text else text
+
 
 @dataclass
 class BulletEdit:
@@ -74,6 +100,7 @@ class BulletEdit:
     # the original -- distinct from a plain "keep" the model chose itself,
     # so callers can tell "left alone on purpose" from "tried and blocked."
     rejected_reason: str | None = None
+    rejected_text: str | None = None  # the blocked draft, so a repair call can fix it
 
 
 @dataclass
@@ -156,22 +183,25 @@ class DocxBulletTailorer:
         items = []
         for edit in rejected:
             bullet = by_index[edit.paragraph_index]
-            items.append(
-                {
-                    "paragraph_index": bullet.paragraph_index,
-                    "section": bullet.section,
-                    "text": bullet.text,
-                    "text_length": len(bullet.text),
-                    "max_new_text_length": round(len(bullet.text) * _MAX_LENGTH_GROWTH),
-                    "your_previous_attempt_was_rejected_because": edit.rejected_reason,
-                }
-            )
+            item = {
+                "paragraph_index": bullet.paragraph_index,
+                "section": bullet.section,
+                "text": bullet.text,
+                "text_length": len(bullet.text),
+                "max_new_text_length": round(len(bullet.text) * _MAX_LENGTH_GROWTH),
+                "your_previous_attempt_was_rejected_because": edit.rejected_reason,
+            }
+            if edit.rejected_text:
+                item["your_rejected_attempt"] = edit.rejected_text
+                item["your_rejected_attempt_length"] = len(edit.rejected_text)
+            items.append(item)
         bullets_json = json.dumps(items, indent=2)
         return f"""Your previous rewrite for the bullets below was rejected by a safety check -- each
 one shows exactly why. Propose a SAFER alternative that fixes that specific problem (e.g. if
 rejected for dropping a word, add job-relevant language without removing that word; if rejected
 for an unverified term, remove that term or replace it with something the evidence actually
-supports). If no safe improvement is possible without repeating the same problem, use "change":
+supports; if rejected for length, start from your rejected attempt and cut words until it is at
+most "max_new_text_length" characters -- count them). If no safe improvement is possible without repeating the same problem, use "change":
 "keep" for that bullet rather than trying again with the same issue.
 
 BULLETS TO REPAIR:
@@ -476,6 +506,8 @@ Return the JSON array now:"""
                 continue
 
             max_len = round(len(bullet.text) * _MAX_LENGTH_GROWTH)
+            if len(new_text) > max_len and (trimmed := compact_to_length(new_text, max_len)):
+                new_text = trimmed
             if len(new_text) > max_len:
                 warnings.append(
                     f"Rejected a rewrite for paragraph {paragraph_index}: {len(new_text)} chars "
@@ -483,7 +515,8 @@ Return the JSON array now:"""
                     f"{len(bullet.text)} chars); kept original."
                 )
                 resolved[paragraph_index] = BulletEdit(
-                    paragraph_index, bullet.text, bullet.text, changed=False, rejected_reason="length cap exceeded"
+                    paragraph_index, bullet.text, bullet.text, changed=False, rejected_reason="length cap exceeded",
+                    rejected_text=new_text,
                 )
                 continue
 
@@ -499,7 +532,8 @@ Return the JSON array now:"""
             if drift_issues:
                 warnings.append(f"Rejected a rewrite for paragraph {paragraph_index}: {drift_issues[0]}")
                 resolved[paragraph_index] = BulletEdit(
-                    paragraph_index, bullet.text, bullet.text, changed=False, rejected_reason="semantic drift"
+                    paragraph_index, bullet.text, bullet.text, changed=False, rejected_reason="semantic drift",
+                    rejected_text=new_text,
                 )
                 continue
 
@@ -517,7 +551,8 @@ Return the JSON array now:"""
             if fabrication_issues:
                 warnings.append(f"Rejected a rewrite for paragraph {paragraph_index}: {fabrication_issues[0]}")
                 resolved[paragraph_index] = BulletEdit(
-                    paragraph_index, bullet.text, bullet.text, changed=False, rejected_reason="unverified content"
+                    paragraph_index, bullet.text, bullet.text, changed=False, rejected_reason="unverified content",
+                    rejected_text=new_text,
                 )
                 continue
 
