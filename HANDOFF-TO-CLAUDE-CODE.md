@@ -25,7 +25,7 @@ Read this file first, then `CLAUDE.md`, then the decisions listed below. Do not 
   it still needs one).
 - **Apply:** Assist is a copy-ready application kit (`ui/application_kit.py`). Auto is not
   offered.
-- **Test baseline:** `product/` 1023 passed, `apps/api/` 70 passed.
+- **Test baseline:** `product/` 1043 passed (1 LibreOffice test runs only where LibreOffice is installed, e.g. CI), `apps/api/` 70 passed.
 
 ## Latest update (2026-10-04, later) — Jobs workspace and site polish
 

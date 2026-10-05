@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Job Copilot form helper</title>
+  <style>
+    body { width: 320px; margin: 0; padding: 12px; font: 14px/1.4 system-ui, sans-serif; color: #1b1f24; }
+    h1 { font-size: 15px; margin: 0 0 6px; }
+    p { margin: 6px 0; color: #4b5563; }
+    textarea { width: 100%; box-sizing: border-box; height: 70px; font: 12px ui-monospace, monospace; }
+    button { margin: 6px 6px 0 0; padding: 6px 10px; border-radius: 4px; border: 1px solid #aab4c0; background: #fff; cursor: pointer; }
+    button.primary { background: #1d4ed8; color: #fff; border-color: #1d4ed8; }
+    #status { margin-top: 8px; font-weight: 600; }
+  </style>
+</head>
+<body>
+  <h1>Job Copilot form helper</h1>
+  <p id="who">No kit saved yet.</p>
+  <label for="code">Paste the helper code from Apply in Job Copilot</label>
+  <textarea id="code" spellcheck="false"></textarea>
+  <div>
+    <button id="save">Save kit</button>
+    <button id="fill" class="primary">Fill this page</button>
+    <button id="forget">Forget my kit</button>
+  </div>
+  <p>Fills only from your kit, outlines what it filled (green) and what it left for you (amber). It never submits.</p>
+  <div id="status" role="status"></div>
+  <script src="popup.js"></script>
+</body>
+</html>

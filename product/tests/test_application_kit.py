@@ -47,3 +47,34 @@ def test_empty_record_is_all_missing_and_summarised():
     fields = build_kit({}, None)
     assert all(f.state != READY for f in fields)
     assert kit_summary(fields).startswith("0 answers ready to copy. Missing: First name")
+
+
+def test_helper_code_carries_only_ready_values():
+    import json
+
+    from resume_tailorer.ui.application_kit import helper_payload
+
+    code = json.loads(helper_payload(build_kit(RECORD, HANDOFF, [{"question": "Why Acme?", "answer": "Analytics."}])))
+    assert code["jobCopilotKit"] == 1
+    assert code["fields"]["first_name"] == "Riley" and code["fields"]["full_name"] == "Riley Ann Park"
+    assert code["fields"]["authorized_to_work"] == "Yes"
+    assert "needs_sponsorship" not in code["fields"]  # never answered, so never sent
+    assert "location" not in code["fields"] and "portfolio" not in code["fields"]
+    assert code["answers"] == [{"question": "Why Acme?", "answer": "Analytics."}]
+
+
+def test_the_browser_helper_cannot_submit():
+    """The helper fills; it must never submit or press a button (spec 006)."""
+    import re
+    from pathlib import Path
+
+    extension = Path(__file__).resolve().parents[2] / "extension"
+    text = (extension / "fill.js").read_text(encoding="utf-8")
+    source = "\n".join(line.split("//")[0] for line in text.splitlines())  # code only, not comments
+    assert not re.search(r"\.submit\(|requestSubmit|dispatchEvent\(new (?:Submit)?Event\(\"submit", source)
+    # Every .click() is on a chosen radio or dropdown option.
+    for line in source.splitlines():
+        if ".click()" in line:
+            assert re.search(r"\bpick\.click\(\)", line), line
+    manifest = (extension / "manifest.json").read_text(encoding="utf-8")
+    assert '"host_permissions"' not in manifest and '"content_scripts"' not in manifest  # runs only on request

@@ -42,11 +42,11 @@ a brand new session act like a colleague who already knows what you are working 
   single-user mode* (no `[auth]` secrets, no durable disk). It is for supervised demos only;
   don't share it as a multi-user product. The deployment checklist is in `decisions/023`.
 - **Not built (specs only):**
-  - status sync (`specs/005`);
-  - the browser helper that fills employer forms (`specs/006`), which waits on the ATS
-    terms-of-service and packaging questions. Assist is the copy-ready kit meanwhile
-    (`decisions/027`), and Auto is not offered;
-  - LinkedIn, Indeed and Handshake are demo data only.
+  - status sync from Gmail (`specs/005` slice 2; slice 1, pasting an email into Tracker, is built);
+  - resume upload in the browser helper (`extension/`, spec 006 v0.1 fills the form and never
+    submits; not yet tried on a live form). Auto is not offered;
+  - LinkedIn, Indeed and Handshake are not offered (no public job API). Live sources:
+    Greenhouse, Lever, Ashby and SmartRecruiters.
 - **Biggest open risk:** nobody other than the builder has used the full search → tailor → apply
   loop. Next: supervised tests with 2–3 people, then the Sprint 2 review.
 - **Where to see it:** `product/resume_tailorer/app.py` (Home) and
@@ -67,7 +67,7 @@ a brand new session act like a colleague who already knows what you are working 
 
 - **Stack:** Python (resume_tailorer package), Streamlit UI with built-in Google sign-in, any LiteLLM-supported model (`product/resume_tailorer/llm/`), pytest, reportlab/PyMuPDF for PDFs, python-docx for the DOCX splice pipeline, Greenhouse live job search (LinkedIn/Indeed/Handshake demo only), FastAPI backend in `apps/api/`.
 - **How work ships:** push to `main` → Streamlit Community Cloud redeploys `product/resume_tailorer/app.py`. Multi-user deployment needs the `decisions/023` checklist first (Google OAuth secrets, durable `JOB_COPILOT_DATA_DIR`).
-- **Testing and style:** pytest; CI (`.github/workflows/tests.yml`) runs both suites on every push, on Python 3.14 with the pinned versions in `product/requirements.txt`. Run both before claiming anything is done: `product/` currently 1023 tests, `apps/api/` currently 70.
+- **Testing and style:** pytest; CI (`.github/workflows/tests.yml`) runs both suites on every push, on Python 3.14 with the pinned versions in `product/requirements.txt`. Run both before claiming anything is done: `product/` currently 1043 tests, `apps/api/` currently 70.
 
 ## Working with me
 

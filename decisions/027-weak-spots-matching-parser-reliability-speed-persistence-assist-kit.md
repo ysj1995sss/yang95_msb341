@@ -124,6 +124,28 @@ doesn't contain the check yet.
 a bookmark URL and inject script into third-party sites, which is the same terms-of-service
 question as spec 006 with weaker safeguards.
 
+## 9. Follow-ups the same day
+
+- **Word to PDF on the server.** `docx2pdf` needs Microsoft Word, so on Streamlit Cloud a Word
+  resume produced no PDF and could never reach Apply. The converter now falls back to headless
+  LibreOffice (a private profile per call). `packages.txt` installs it with metric-compatible
+  fonts (Carlito, Caladea, Liberation). CI installs the same packages and runs a real
+  conversion.
+- **Sources.** LinkedIn, Indeed and Handshake are no longer offered. None has a public job API:
+  scraping LinkedIn or Indeed breaks their terms, and Handshake needs a school login. Their
+  demo generators remain only as test fixtures. SmartRecruiters' public postings API (no key)
+  is a fourth live source with 12 companies. The search text goes to the API, titles are
+  checked here, and full postings are fetched for matches only: 15 per company, with a
+  5-second budget, while late ones keep filling the cache.
+- **Fact Vault's separate login** was unreachable since spec 007; the dead client was removed
+  (see decision 023).
+- **Status sync, slice 1 (spec 005).** Paste a recruiter email into Tracker. Phrase rules
+  suggest the status, and the application is matched by company, sender domain and role. It's
+  chosen for the user only when exactly one clearly matches, and nothing changes until the user
+  confirms.
+- **Browser helper (spec 006)**, built as an extension that fills from the kit and never
+  submits. See the spec's Decisions section.
+
 ## What would change our mind
 
 - **Term matching:** if users report missed matches for an ambiguous term written in lowercase

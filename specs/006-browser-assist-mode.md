@@ -1,8 +1,7 @@
 # Spec 006: Browser-based Assist mode
 
-**Status:** Draft (separate project, not scheduled). Interim: Assist ships as a copy-ready
-application kit on Apply (decision 027); this spec's open questions still need the builder's answer.
-**Date:** 2026-09-29
+**Status:** v0.1 built 2026-10-04 as a browser extension (`extension/`, decision 027). The open
+questions below were decided by Claude at the builder's request; see "Decisions" at the end.
 
 ## Problem
 
@@ -54,3 +53,27 @@ A browser-driven helper that fills a real application form and **always stops be
       Nothing is guessed.
 - [ ] Shipped: 2 testers completed real applications with it on their own computers.
 - [ ] Measured: fields filled automatically versus fields left for the user, per platform.
+
+## Decisions (2026-10-04)
+
+- **Packaging:** a Chrome/Edge extension (manifest v3, `activeTab` + `scripting` + `storage`
+  only). There is no browser binary to ship, and it runs in the user's own browser with the
+  user present.
+- **Terms of service:** the helper only does what a password manager or autofill does: it types
+  the user's own answers into a page the user opened, when the user clicks, and never submits.
+  No automation runs unattended, from a server or at scale. This is a judgment, not legal
+  advice; the builder should re-check if an ATS objects.
+- **Selectors:** labels, not per-site selectors (`aria-label`, `aria-labelledby`, `label[for]`,
+  then the question container). A field it can't place is left amber for the user instead of
+  being guessed.
+- **Getting data into the extension:** the user copies a helper code from Apply into the
+  extension. The hosted app exposes no API to it.
+
+## Definition of done, current state
+
+- [x] Fills contact fields and stops with Submit untouched: verified on a local page built from
+      live Greenhouse and Lever form structures. Not yet on a live form.
+- [x] Every value traces to the kit (profile, authorization answers, approved answers).
+- [ ] Resume upload (left to the user in v0.1).
+- [ ] Shipped: 2 testers used it on real applications.
+- [ ] Measured: fields filled versus left, per platform.

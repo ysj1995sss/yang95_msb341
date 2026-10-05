@@ -98,3 +98,27 @@ def kit_summary(fields: Iterable[KitField]) -> str:
     if missing:
         line += f" Missing: {', '.join(missing)}."
     return line
+
+
+# Kit labels -> the browser helper's field keys (extension/fill.js).
+_HELPER_KEYS = {
+    "First name": "first_name", "Last name": "last_name", "Email": "email", "Phone": "phone",
+    "Location": "location", "LinkedIn": "linkedin", "Website or portfolio": "portfolio", "GitHub": "github",
+    "Current or most recent employer": "current_company", "Current or most recent title": "current_title",
+    "School": "school", "Degree": "degree",
+    "Legally authorized to work here?": "authorized_to_work",
+    "Will you need visa sponsorship?": "needs_sponsorship",
+}
+
+
+def helper_payload(fields: Iterable[KitField]) -> str:
+    """The code the user pastes into the browser helper: only ready values, nothing guessed."""
+    import json
+
+    fields = tuple(fields)
+    values = {_HELPER_KEYS[f.label]: f.value for f in fields if f.state == READY and f.label in _HELPER_KEYS}
+    if values.get("first_name"):
+        values["full_name"] = " ".join(v for v in (values.get("first_name"), values.get("last_name")) if v)
+    answers = [{"question": f.label, "answer": f.value} for f in fields
+               if f.state == READY and f.source == "Your saved answers"]
+    return json.dumps({"jobCopilotKit": 1, "fields": values, "answers": answers}, ensure_ascii=False)

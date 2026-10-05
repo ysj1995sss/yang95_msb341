@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><title>Helper fixture</title>
+<style>.select__menu{border:1px solid #ccc}.hidden{display:none}</style></head>
+<body>
+<!-- Shapes copied from a live Greenhouse form (2026-10-04): aria-label inputs, react-select comboboxes. -->
+<form id="gh" onsubmit="window.__submitted = true; return false;">
+  <label for="first_name">First Name*</label><input id="first_name" aria-label="First Name" aria-required="true">
+  <label for="last_name">Last Name*</label><input id="last_name" aria-label="Last Name" aria-required="true">
+  <label for="email">Email*</label><input id="email" aria-label="Email" aria-required="true">
+  <label for="phone">Phone</label><input id="phone" type="tel" aria-label="Phone">
+  <label for="resume">Attach</label><input id="resume" type="file">
+  <label for="q1">LinkedIn Profile</label><input id="q1" aria-label="LinkedIn Profile">
+  <label for="q2">What's the name you'd prefer us to use?</label><input id="q2" aria-label="What's the name you'd prefer us to use?">
+  <div><label id="q3-label">Will you now or in the future require sponsorship for a visa?*</label>
+    <input id="q3" role="combobox" aria-labelledby="q3-label" aria-required="true" class="select__input">
+    <div class="select__menu hidden" id="q3-menu">
+      <div class="select__option" role="option">Yes</div><div class="select__option" role="option">No</div>
+    </div><span id="q3-value"></span></div>
+  <div><label id="q4-label">Why do you want to work at Acme?*</label>
+    <textarea id="q4" aria-labelledby="q4-label" required></textarea></div>
+  <div><label id="gender-label">Gender</label><input id="gender" role="combobox" aria-labelledby="gender-label"></div>
+  <div><label id="q5-label">Have you previously worked at Acme?*</label>
+    <input id="q5" role="combobox" aria-labelledby="q5-label" aria-required="true"></div>
+  <button type="submit" id="gh-submit">Submit application</button>
+</form>
+
+<!-- Shapes copied from a live Lever form (2026-10-04): name attributes, li.application-question, radio cards. -->
+<form id="lever" onsubmit="window.__submitted = true; return false;">
+  <ul>
+    <li class="application-question"><div class="application-label">Full name ✱</div>
+      <div class="application-field"><input name="name" required></div></li>
+    <li class="application-question"><div class="application-label">Current company</div>
+      <div class="application-field"><input name="org"></div></li>
+    <li class="application-question"><div class="application-label">Current location</div>
+      <div class="application-field"><input name="location" value="Already typed"></div></li>
+    <li class="application-question"><div class="application-label">Are you legally authorized to work in the United States? ✱</div>
+      <div class="application-field"><ul>
+        <li><label><input type="radio" name="cards[x][field4]" value="Yes" required>Yes</label></li>
+        <li><label><input type="radio" name="cards[x][field4]" value="No" required>No</label></li>
+      </ul></div></li>
+    <li class="application-question"><div class="application-label">How did you hear about us? ✱</div>
+      <div class="application-field"><select name="cards[x][field5]" required>
+        <option value="">Select…</option><option>LinkedIn</option><option>Friend</option></select></div></li>
+  </ul>
+  <button type="submit" id="lever-submit">Submit application</button>
+</form>
+<script>
+  // A minimal react-select stand-in: typing opens the menu, choosing an option records it.
+  const input = document.getElementById("q3"), menu = document.getElementById("q3-menu");
+  input.addEventListener("input", () => menu.classList.remove("hidden"));
+  menu.querySelectorAll("[role=option]").forEach((o) => o.addEventListener("click", () => {
+    document.getElementById("q3-value").textContent = o.textContent; menu.classList.add("hidden");
+  }));
+</script>
+</body>
+</html>

@@ -124,7 +124,7 @@ def _render_modes(view) -> None:
 
 def _render_kit(record: dict, handoff, answers: list) -> None:
     """Assist: the answers the employer's form asks for, ready to copy (decision 027)."""
-    from resume_tailorer.ui.application_kit import MISSING, OPTIONAL, READY, build_kit, kit_summary
+    from resume_tailorer.ui.application_kit import MISSING, OPTIONAL, READY, build_kit, helper_payload, kit_summary
 
     fields = build_kit(record, handoff, answers)
     st.markdown("### Assist: your application kit")
@@ -147,6 +147,15 @@ def _render_kit(record: dict, handoff, answers: list) -> None:
     optional = [f.label for f in fields if f.state == OPTIONAL]
     if optional:
         st.caption("Not in your profile (often optional): " + ", ".join(optional) + ".")
+    with st.expander("Fill the form for me with the browser helper"):
+        st.markdown(
+            "1. Install the Job Copilot form helper in Chrome or Edge (the repo's `extension` folder; "
+            "its README has the steps).\n"
+            "2. Copy the helper code below and paste it into the helper once. It stays in your browser only.\n"
+            "3. Open the employer's application and click **Fill this page**. Green fields were filled from your "
+            "kit; amber ones are left for you. Attach your resume, check everything, then submit yourself."
+        )
+        st.code(helper_payload(fields), language="json", wrap_lines=True)
 
 
 def _render_questions(service: JobService, job_id: str, profile, handoff) -> None:
