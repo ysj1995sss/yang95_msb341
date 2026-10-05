@@ -74,8 +74,6 @@ Set these in your shell, in a `.env` file (loaded via `python-dotenv`), or in yo
 - `[auth]` in Streamlit secrets: turns on Google sign-in, so each person gets a private
   workspace. Without it the app runs in local single-user mode and warns not to share the
   link. See `decisions/023` for the full deployment checklist.
-- `JOB_COPILOT_API_BASE`: the profile API address used by Fact Vault (default
-  `http://localhost:8000`).
 
 ## Usage
 

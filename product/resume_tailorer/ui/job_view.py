@@ -16,7 +16,8 @@ from resume_tailorer.job_search.job_attributes import employment_type_for, exper
 from resume_tailorer.job_search.job_quality import evaluate_job_quality, quality_label
 from resume_tailorer.job_search.models import FitResult, JobPosting, JobQualityStatus, TriageAction, canonicalize_triage_action
 
-LIVE_SOURCE_LABELS = {"greenhouse": "Greenhouse", "lever": "Lever", "ashby": "Ashby"}
+LIVE_SOURCE_LABELS = {"greenhouse": "Greenhouse", "lever": "Lever", "ashby": "Ashby",
+                      "smartrecruiters": "SmartRecruiters"}
 DEMO_SOURCES = {"linkedin", "indeed", "handshake"}
 
 ACTION_LABELS = {

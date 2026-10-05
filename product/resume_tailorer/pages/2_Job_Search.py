@@ -19,6 +19,11 @@ import streamlit as st
 from resume_tailorer.active_job import remember
 from resume_tailorer.analyzers.ats_keywords import check_keywords, profile_text
 from resume_tailorer.job_search.job_attributes import (
+    ASHBY_BOARDS,
+    COMPANY_DIRECTORY,
+    LEVER_BOARDS,
+    LIVE_BOARD_COUNT,
+    SMARTRECRUITERS_BOARDS,
     EMPLOYMENT_TYPE_OPTIONS,
     EXPERIENCE_LEVEL_OPTIONS,
     INDUSTRY_OPTIONS,
@@ -54,15 +59,12 @@ from resume_tailorer.ui.onboarding import (
 st.set_page_config(page_title="Jobs · Job Copilot", page_icon="\U0001F50D", layout="wide")
 
 WORK_MODES = ["any", "remote", "hybrid", "onsite"]
-LIVE_SOURCES = [JobSource.GREENHOUSE, JobSource.LEVER, JobSource.ASHBY]
-DEMO_SOURCES = [JobSource.LINKEDIN, JobSource.INDEED, JobSource.HANDSHAKE]
+LIVE_SOURCES = [JobSource.GREENHOUSE, JobSource.LEVER, JobSource.ASHBY, JobSource.SMARTRECRUITERS]
 SOURCE_LABELS = {
-    JobSource.GREENHOUSE: "Greenhouse (live, 36 company boards)",
-    JobSource.LEVER: "Lever (live, 8 company boards)",
-    JobSource.ASHBY: "Ashby (live, 19 company boards)",
-    JobSource.LINKEDIN: "LinkedIn (demo listings, not real jobs)",
-    JobSource.INDEED: "Indeed (demo listings, not real jobs)",
-    JobSource.HANDSHAKE: "Handshake (demo listings, not real jobs)",
+    JobSource.GREENHOUSE: f"Greenhouse ({len(COMPANY_DIRECTORY)} companies)",
+    JobSource.LEVER: f"Lever ({len(LEVER_BOARDS)} companies)",
+    JobSource.ASHBY: f"Ashby ({len(ASHBY_BOARDS)} companies)",
+    JobSource.SMARTRECRUITERS: f"SmartRecruiters ({len(SMARTRECRUITERS_BOARDS)} companies)",
 }
 _LABEL_TO_SOURCE = {v: k for k, v in SOURCE_LABELS.items()}
 
@@ -72,7 +74,7 @@ SELECTED_KEY = "selected_job_id"
 EDITING_KEY = "jobs_editing"
 PENDING_SEARCH_KEY = "jobs_pending_search"
 LAST_FORM_KEY = "jobs_last_form"
-SEARCHING_HTML = '<div class="jc-status action">Searching 63 company boards…{}</div>'
+SEARCHING_HTML = f'<div class="jc-status action">Searching {LIVE_BOARD_COUNT} company boards…{{}}</div>'
 
 
 def _service() -> JobService:
@@ -130,7 +132,7 @@ def _render_form(compact: bool) -> None:
         f2.checkbox("I'm open to relocating", key="relocation_willing")
         f1.text_input("Only these companies (comma-separated)", key="target_companies")
         f2.text_input("Skip these companies (comma-separated)", key="exclude_companies")
-        st.multiselect("Sources", [SOURCE_LABELS[s] for s in LIVE_SOURCES + DEMO_SOURCES], key="selected_sources",
+        st.multiselect("Sources", [SOURCE_LABELS[s] for s in LIVE_SOURCES], key="selected_sources",
                        help="Greenhouse, Lever and Ashby list real openings. Demo sources show sample listings only.")
     with st.container(horizontal=True):
         if st.button("Find matching jobs", type="primary", key="jobs_find"):
@@ -389,7 +391,7 @@ def _render_setup_card() -> None:
     with main:
         with st.container(border=True):
             st.markdown('<h2 class="jc-card-title">Find a role worth preparing for</h2>'
-                        '<p class="jc-meta">Live openings from 63 company boards on Greenhouse, Lever and Ashby.</p>',
+                        f'<p class="jc-meta">Live openings from {LIVE_BOARD_COUNT} company boards on Greenhouse, Lever, Ashby and SmartRecruiters.</p>',
                         unsafe_allow_html=True)
             _render_form(compact=False)
     with side:
@@ -408,7 +410,7 @@ def _render_ready_card() -> None:
         with st.container(border=True):
             st.markdown(f'<div class="jc-eyebrow">Your search</div><div class="jc-search-summary">'
                         f"{escape(goals_summary_line(goals))}</div>"
-                        '<p class="jc-meta">Live openings from 63 company boards on Greenhouse, Lever and Ashby.</p>',
+                        f'<p class="jc-meta">Live openings from {LIVE_BOARD_COUNT} company boards on Greenhouse, Lever, Ashby and SmartRecruiters.</p>',
                         unsafe_allow_html=True)
             with st.container(horizontal=True):
                 if st.button("Find matching jobs", type="primary", key="jobs_find_saved"):

@@ -7,6 +7,7 @@ from resume_tailorer.job_search.scrapers.handshake_scraper import HandshakeScrap
 from resume_tailorer.job_search.scrapers.greenhouse_scraper import GreenhouseScraper
 from resume_tailorer.job_search.scrapers.lever_scraper import LeverScraper
 from resume_tailorer.job_search.scrapers.ashby_scraper import AshbyScraper
+from resume_tailorer.job_search.scrapers.smartrecruiters_scraper import SmartRecruitersScraper
 
 __all__ = [
     "BaseScraper",
@@ -16,4 +17,5 @@ __all__ = [
     "GreenhouseScraper",
     "LeverScraper",
     "AshbyScraper",
+    "SmartRecruitersScraper",
 ]

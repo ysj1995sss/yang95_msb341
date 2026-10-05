@@ -89,7 +89,25 @@ ASHBY_BOARDS: Dict[str, tuple] = {
     "cohere": ("Cohere", "Technology"),
 }
 
-_ALL_COMPANIES = [*COMPANY_DIRECTORY.values(), *LEVER_BOARDS.values(), *ASHBY_BOARDS.values()]
+# SmartRecruiters company id -> (display name, industry). Confirmed live on 2026-10-04.
+SMARTRECRUITERS_BOARDS: Dict[str, tuple] = {
+    "AbbVie": ("AbbVie", "Healthcare"),
+    "Equinox": ("Equinox", "Consumer Goods"),
+    "ServiceNow": ("ServiceNow", "Technology"),
+    "BoschGroup": ("Bosch Group", "Technology"),
+    "NBCUniversal3": ("NBCUniversal", "Media"),
+    "LinkedIn3": ("LinkedIn", "Technology"),
+    "Continental": ("Continental", "Transportation"),
+    "WesternDigital": ("Western Digital", "Technology"),
+    "Wise": ("Wise", "Finance"),
+    "Experian": ("Experian", "Finance"),
+    "Canva": ("Canva", "Technology"),
+    "Ubisoft2": ("Ubisoft", "Media"),
+}
+
+_ALL_COMPANIES = [*COMPANY_DIRECTORY.values(), *LEVER_BOARDS.values(), *ASHBY_BOARDS.values(),
+                  *SMARTRECRUITERS_BOARDS.values()]
+LIVE_BOARD_COUNT = len(_ALL_COMPANIES)
 INDUSTRY_OPTIONS = sorted({industry for _, industry in _ALL_COMPANIES})
 _INDUSTRY_BY_COMPANY = {name.lower(): industry for name, industry in _ALL_COMPANIES}
 

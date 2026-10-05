@@ -20,7 +20,8 @@ _LIST_SEP = r"\s*(?:,|/|&|\band\b|\bor\b)\s*(?:and\s+|or\s+)?"
 _GO_IN_CONTEXT = (
     rf"(?i:(?<![\w+#]){_LANGS}{_LIST_SEP}go\b(?![-\w])"
     rf"|\bgo{_LIST_SEP}{_LANGS}(?![\w+#])"
-    r"|\b(?:in|using|with)\s+go(?=\s*(?:[.,;:)/]|$)))"
+    r"|\b(?:in|using|with)\s+go(?=\s*(?:[.,;:)/]|$))"
+    r"|\bgo-(?:based|powered|written|native)\b)"
 )
 
 # Ordinary English words that are also technologies: (case-sensitive pattern, exclusions).

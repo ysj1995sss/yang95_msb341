@@ -29,6 +29,7 @@ SAVED_VIEW = "Saved"
 VIEWS = (BEST, NEWEST, SAVED_VIEW)
 
 SOURCE_NAMES = {"greenhouse": "Greenhouse", "lever": "Lever", "ashby": "Ashby",
+                "smartrecruiters": "SmartRecruiters",
                 "linkedin": "LinkedIn (demo)", "indeed": "Indeed (demo)", "handshake": "Handshake (demo)"}
 
 

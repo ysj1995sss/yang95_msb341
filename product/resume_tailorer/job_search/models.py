@@ -15,6 +15,7 @@ class JobSource(Enum):
     ASHBY = "ashby"
     WORKDAY = "workday"
     COMPANY_PAGES = "company_pages"
+    SMARTRECRUITERS = "smartrecruiters"
 
 
 class TriageAction(Enum):

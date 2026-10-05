@@ -23,6 +23,7 @@ class JobDeduplicator:
         JobSource.MONSTER: 2,
         JobSource.LEVER: 2,
         JobSource.ASHBY: 2,
+        JobSource.SMARTRECRUITERS: 2,
         JobSource.WORKDAY: 1,
     }
 

@@ -77,14 +77,14 @@ def test_a_list_requirement_keeps_every_item():
 
 @pytest.mark.parametrize("text", [
     "experience in go and python", "Python, go, and Rust", "python/go", "written in go.",
-    "services using go", "c# or go",
+    "services using go", "c# or go", "experience with go-based services", "go-powered APIs",
 ])
 def test_lowercase_go_counts_in_a_programming_context(text):
     assert mentions("go", text)
 
 
 @pytest.mark.parametrize("text", [
-    "python and go-to-market", "ready to go", "We go and build", "good to go.", "in go mode",
+    "python and go-to-market", "ready to go", "a go-getter attitude", "We go and build", "good to go.", "in go mode",
     "go above and beyond with python",
 ])
 def test_lowercase_go_in_ordinary_english_still_does_not(text):

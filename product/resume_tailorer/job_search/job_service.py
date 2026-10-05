@@ -23,12 +23,10 @@ from resume_tailorer.job_search.job_attributes import apply_goal_filters
 from resume_tailorer.job_search.deduplicator import JobDeduplicator
 from resume_tailorer.job_search.candidate_fit import CandidateFitScorer
 from resume_tailorer.job_search.scrapers import (
-    LinkedInScraper,
-    IndeedScraper,
-    HandshakeScraper,
+    AshbyScraper,
     GreenhouseScraper,
     LeverScraper,
-    AshbyScraper,
+    SmartRecruitersScraper,
 )
 from resume_tailorer.models.career_profile import CareerTruthProfile
 from resume_tailorer.applications.database import ApplicationDatabase
@@ -92,13 +90,14 @@ class JobService:
         self._submission_engine = SubmissionEngine(self.applications_db)
 
         # Mapping of JobSource to scraper classes (initialized here for mockability)
+        # Live sources only. LinkedIn, Indeed and Handshake have no public job API (their terms
+        # forbid scraping, Handshake needs a school login), so the product offers no listings
+        # from them; their demo generators are kept only as test fixtures (decision 027).
         self.scraper_map = {
-            JobSource.LINKEDIN: LinkedInScraper,
-            JobSource.INDEED: IndeedScraper,
-            JobSource.HANDSHAKE: HandshakeScraper,
             JobSource.GREENHOUSE: GreenhouseScraper,
             JobSource.LEVER: LeverScraper,
             JobSource.ASHBY: AshbyScraper,
+            JobSource.SMARTRECRUITERS: SmartRecruitersScraper,
         }
 
         # Cache of instantiated scrapers, keyed by JobSource. This ensures the

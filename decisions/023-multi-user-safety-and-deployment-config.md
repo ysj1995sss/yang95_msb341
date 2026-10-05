@@ -87,6 +87,12 @@ Fact Vault still signs in to the API with its own email and password, separate f
 identity. Linking the two (sending the Google identity to the API) is the next step once the
 API is deployed.
 
+**Resolved 2026-10-04 (decision 027).** Since spec 007 the Streamlit app keeps the Career
+Profile itself (`profile_store.py`) and never calls the API, so this separate login could no
+longer be reached. The unused client (`profile_review/api_client.py`) and the
+`JOB_COPILOT_API_BASE` setting were removed. Step 3 of the checklist above applies only if the
+API is deployed for its own clients.
+
 ## Review after the first real-resume run (2026-09-30)
 
 - **Per-user storage works as designed.** Jobs, applications, the answer bank and the tailored

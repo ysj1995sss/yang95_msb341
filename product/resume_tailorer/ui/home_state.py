@@ -14,6 +14,7 @@ from datetime import date
 from typing import Optional
 
 from resume_tailorer.ui.profile_readiness import ProfileReadiness
+from resume_tailorer.job_search.job_attributes import LIVE_BOARD_COUNT
 
 PROFILE_PAGE = "pages/1_Profile_Review.py"
 JOBS_PAGE = "pages/2_Job_Search.py"
@@ -135,7 +136,7 @@ def _first_time_action(index: int, inputs: HomeInputs) -> NextAction:
         )
     if index == 3:
         return NextAction(
-            "Choose a real role", "Search live openings on 63 company boards with your goals.",
+            "Choose a real role", f"Search live openings on {LIVE_BOARD_COUNT} company boards with your goals.",
             "See why each role matches you and what is genuinely missing.",
             "Find jobs", page=JOBS_PAGE,
         )
