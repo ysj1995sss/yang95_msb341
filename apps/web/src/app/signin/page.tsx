@@ -36,6 +36,9 @@ export default async function SignInPage({ searchParams }: { searchParams: Promi
           className="mt-6 flex min-h-11 items-center justify-center rounded-[var(--radius-control)] bg-primary px-4 font-semibold text-on-primary hover:bg-primary-hover">
           Sign in with Google
         </a>
+        <p className="mt-4 text-center text-[14px] text-muted">
+          <a href="/privacy" className="underline underline-offset-2">How Job Copilot handles your data</a>
+        </p>
       </div>
     </main>
   );

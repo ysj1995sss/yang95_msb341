@@ -11,6 +11,6 @@ export async function proxy(request: NextRequest) {
 }
 
 export const config = {
-  // Everything except sign-in, auth callbacks, the API proxy (it answers 401 itself) and static files.
-  matcher: ["/((?!signin|api/|_next/|favicon.ico|.*\\.(?:svg|png|ico|webp|woff2?)$).*)"],
+  // Everything except sign-in, the privacy page, auth callbacks, the API proxy (it answers 401 itself) and static files.
+  matcher: ["/((?!signin|privacy|api/|_next/|favicon.ico|.*\\.(?:svg|png|ico|webp|woff2?)$).*)"],
 };

@@ -25,7 +25,7 @@ export function AppShell({ children, signInEnabled, userName }: {
   children: ReactNode; signInEnabled: boolean; userName: string | null;
 }) {
   const pathname = usePathname();
-  if (pathname === "/signin") return <ToastProvider>{children}</ToastProvider>;
+  if (pathname === "/signin" || pathname === "/privacy") return <ToastProvider>{children}</ToastProvider>;
   const profileActive = isActive(pathname, "/profile");
 
   return (
@@ -83,7 +83,10 @@ export function AppShell({ children, signInEnabled, userName }: {
         </div>
       </header>
 
-      <main id="main" className="mx-auto max-w-6xl px-4 pt-6 pb-28 md:pb-12">{children}</main>
+      <main id="main" className="mx-auto max-w-6xl px-4 pt-6 pb-6">{children}</main>
+      <footer className="mx-auto max-w-6xl px-4 pb-28 text-[14px] text-muted md:pb-12">
+        <Link href="/privacy" className="underline underline-offset-2 hover:text-ink">Privacy</Link>
+      </footer>
 
       <nav aria-label="Main" className="fixed inset-x-0 bottom-0 z-40 border-t border-line bg-paper md:hidden">
         <ul className="grid grid-cols-5">
