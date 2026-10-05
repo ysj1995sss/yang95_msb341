@@ -9,7 +9,23 @@ Read this file first, then `CLAUDE.md`, then the decisions listed below. Do not 
 
 ---
 
-## Latest update (2026-10-05) — new Next.js frontend (spec 009, decisions 028–029)
+## Latest update (2026-10-05, latest) — weak spots closed (decision 030)
+
+- **Tests:** Playwright browser tests (`apps/web/e2e`, `npm run test:e2e`) cover the full journey,
+  keyboard use, phone layout, accessibility in light and dark, the browser helper and the Gmail
+  card. CI runs them in the `web-e2e` job.
+- **Product:** tailoring runs survive an API restart; Tailor takes a pasted job description and an
+  optional model and key for one run; Career Profile has Your data (download, delete, sign out
+  everywhere); usage limits; request ids on errors; Jobs paging; a dark theme; the helper attaches
+  the tailored resume; Gmail status sync for signed-in users in Google testing mode.
+- **Not done here:** a screen-reader pass, the Chrome Web Store, a real Google sign-in and Gmail
+  check, deployment.
+- **Builder's PC:** `C:\Users\ysj19\.env` belongs to another project and is loaded by litellm
+  (decision 030, section 11).
+- **Test baseline:** `product/` 1049 passed, `apps/api/` 110 passed, web lint and types clean,
+  16 browser tests passed.
+
+## Update (2026-10-05) — new Next.js frontend (spec 009, decisions 028–029)
 
 - **`apps/web`:** Next.js 16 + Tailwind, a calm teal design. Home, Career Profile, Jobs, Tailor,
   Apply and Tracker are all built. Google sign-in is our own small OIDC code, and

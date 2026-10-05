@@ -1,7 +1,8 @@
 # Spec 009: A new Job Copilot frontend (Next.js) on one FastAPI backend
 
-**Status:** Built 2026-10-05, all four phases (decision 029). Not deployed: hosting and the Google OAuth
-client are the builder's to set up (see "Deploying" below).
+**Status:** Built 2026-10-05, all four phases (decision 029); weak spots closed the same day
+(decision 030). Not deployed: hosting and the Google OAuth client are the builder's to set up (see
+"Deploying" below).
 **Date:** 2026-10-05
 **Decision:** `decisions/028-new-frontend-on-one-fastapi-backend.md`
 
@@ -140,6 +141,10 @@ with the palette adjusted so primary text meets AA contrast.
    and the same `WORKSPACE_TOKEN_SECRET`.
 3. **Google client (appendix A):** add the Vercel address as an origin and
    `<address>/api/auth/callback/google` as a redirect.
-4. **Check:** sign in as two different Google accounts and confirm neither sees the other's data.
+4. **Gmail status sync (optional, decision 030):** give the API `GOOGLE_CLIENT_ID` and
+   `GOOGLE_CLIENT_SECRET` (the same client), add `<address>/api/gmail/callback` as a redirect,
+   enable the Gmail API in the Google project, add the `gmail.readonly` scope to the consent
+   screen, and list each tester as a test user.
+5. **Check:** sign in as two different Google accounts and confirm neither sees the other's data.
 
 The Streamlit app keeps running on Streamlit Community Cloud as before.
