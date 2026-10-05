@@ -387,12 +387,8 @@ def _render_review_room(pending: dict) -> None:
                 "Job Copilot will not add them.</div>",
                 unsafe_allow_html=True,
             )
-            seen = set()
-            for gap in groups.true_gaps:
+            for gap in groups.true_gaps:  # already unique; two gaps may share a short label
                 label = short_requirement(gap)
-                if label.lower() in seen:
-                    continue
-                seen.add(label.lower())
                 st.markdown(f"- {md_literal(label)}", help=gap if label != gap else None)
             for change in groups.blocked:
                 st.markdown(

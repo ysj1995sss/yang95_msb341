@@ -24,7 +24,7 @@ _AMBIGUOUS: dict[str, tuple[str, str]] = {
     "hive": (r"\bHive\b", ""),
     "spark": (r"\bSpark\b|\bPySpark\b", ""),
     "swift": (r"\bSwift\b", ""),
-    "testing": (r"\btesting\b", r"\btesting\s+(?:the\s+)?(?:waters|limits|boundaries)"),
+    "testing": (r"(?i)\btesting\b", r"(?i)testing\s+(?:the\s+)?(?:waters|limits|boundaries)"),
 }
 
 
@@ -63,7 +63,8 @@ _QUALIFIERS = re.compile(
     r"expertise|background|track\s+record|ability|skills?|comfort)\b(?:\s+(?:with|in|of|using|to|on))?\s*)+",
     re.IGNORECASE,
 )
-_TAIL = re.compile(r"\s*(?:[;:(]|,\s*(?:and|or|including|such\s+as|e\.g\.|ideally|preferably)\b|\.\s|\s+-\s).*$",
+# Cut at a qualifying clause, never at a list separator: "SQL, Python, and Tableau" stays whole.
+_TAIL = re.compile(r"\s*(?:[;:(]|,\s*(?:including|such\s+as|e\.g\.|ideally|preferably)\b|\.\s|\s+-\s).*$",
                    re.IGNORECASE)
 
 

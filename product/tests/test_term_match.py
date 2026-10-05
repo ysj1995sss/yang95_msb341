@@ -64,3 +64,12 @@ def test_short_requirement(sentence, expected):
 def test_short_requirement_caps_length():
     label = short_requirement("Experience building and scaling distributed data pipelines across many teams and regions worldwide")
     assert label.endswith("…") and len(label.split()) <= 8
+
+
+def test_testing_matches_at_the_start_of_a_sentence():
+    assert mentions("testing", "Testing frameworks such as pytest")
+    assert not mentions("testing", "Testing the waters with new markets")
+
+
+def test_a_list_requirement_keeps_every_item():
+    assert short_requirement("Experience with SQL, Python, and Tableau") == "SQL, Python, and Tableau"

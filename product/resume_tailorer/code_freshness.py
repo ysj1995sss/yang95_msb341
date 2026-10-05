@@ -32,6 +32,11 @@ def fingerprint(root: Path = _ROOT) -> tuple:
 
 
 _LOADED = fingerprint()
+# Identifies the code this process is running. Each session records the version it last ran
+# on: a session that outlives a reload (another session triggered it) still holds objects
+# made by the old classes, and plain Enums from two module copies never compare equal.
+CODE_VERSION = str(hash(_LOADED))
+SESSION_KEY = "_job_copilot_code_version"
 
 
 def code_changed_on_disk() -> bool:

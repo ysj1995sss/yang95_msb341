@@ -32,3 +32,20 @@ def test_the_running_code_matches_disk():
 def test_a_deploy_is_detected(monkeypatch):
     monkeypatch.setattr(code_freshness, "_LOADED", ())
     assert code_freshness.code_changed_on_disk()
+
+
+def test_a_session_from_older_code_is_reset(tmp_path, monkeypatch):
+    """Another session may have triggered the reload; this one still holds old-class objects."""
+    from pathlib import Path
+
+    from streamlit.testing.v1 import AppTest
+
+    monkeypatch.setenv("JOB_COPILOT_DATA_DIR", str(tmp_path / "data"))
+    app = str(Path(__file__).resolve().parent.parent / "resume_tailorer" / "app.py")
+    at = AppTest.from_file(app, default_timeout=60)
+    at.session_state[code_freshness.SESSION_KEY] = "older-code"
+    at.session_state["object_from_old_code"] = object()
+    at.run()
+    assert not at.exception, at.exception
+    assert "object_from_old_code" not in at.session_state
+    assert at.session_state[code_freshness.SESSION_KEY] == code_freshness.CODE_VERSION

@@ -25,15 +25,18 @@ def require_identity() -> Identity:
     """Stop the page with a sign-in screen until the visitor is identified."""
     import streamlit as st
 
-    from resume_tailorer.code_freshness import code_changed_on_disk, drop_stale_modules
+    from resume_tailorer import code_freshness
 
-    if code_changed_on_disk():
+    stale_session = st.session_state.get(code_freshness.SESSION_KEY) not in (None, code_freshness.CODE_VERSION)
+    if code_freshness.code_changed_on_disk() or stale_session:
         # A new version was deployed. Objects in this session belong to the old code, and
         # everything that matters (profile, chosen job, tailored resume, review) is on disk.
-        drop_stale_modules()
+        if code_freshness.code_changed_on_disk():
+            code_freshness.drop_stale_modules()
         for key in list(st.session_state.keys()):
             del st.session_state[key]
         st.rerun()
+    st.session_state[code_freshness.SESSION_KEY] = code_freshness.CODE_VERSION
 
     auth = _auth_config()
     user_info = dict(st.user) if auth else {}

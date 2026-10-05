@@ -25,7 +25,7 @@ Read this file first, then `CLAUDE.md`, then the decisions listed below. Do not 
   it still needs one).
 - **Apply:** Assist is a copy-ready application kit (`ui/application_kit.py`). Auto is not
   offered.
-- **Test baseline:** `product/` 1001 passed, `apps/api/` 70 passed.
+- **Test baseline:** `product/` 1004 passed, `apps/api/` 70 passed.
 
 ## Latest update (2026-10-04, later) — Jobs workspace and site polish
 
