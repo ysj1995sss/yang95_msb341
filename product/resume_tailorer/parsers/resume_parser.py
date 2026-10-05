@@ -408,6 +408,20 @@ class ResumeParser:
         is_bullet_line = lambda line: line.strip().startswith(("•", "-"))
         blocks = find_anchor_blocks(lines, get_text=lambda line: line, is_bullet=is_bullet_line)
 
+        # A section written entirely with one-line headers ("Title | Company | Dates") has no
+        # title lines, so a non-bullet line just above a header is the previous bullet wrapping
+        # onto a second line, not a title. Only when the first job has no title line and every
+        # header names a role, so two-line resumes ("Title" then "Company | Dates") never change.
+        headers = [split_one_line_header(lines[b.anchor_index].strip()) for b in blocks]
+        one_line_style = bool(blocks) and blocks[0].title_index is None and all(
+            h and _TITLE_WORDS.search(h[0]) for h in headers
+        )
+        if one_line_style:
+            for previous, block in zip(blocks, blocks[1:]):
+                if block.title_index is not None:
+                    previous.body_indices.append(block.title_index)
+                    block.title_index = None
+
         for block in blocks:
             idx = block.anchor_index
             company_line = lines[idx].strip()

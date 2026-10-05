@@ -8,16 +8,39 @@ result, never placeholder data. Values a board does not state stay unknown.
 from __future__ import annotations
 
 import html
+import json
 import re
 import threading
 import time
+import zlib
 from concurrent.futures import ThreadPoolExecutor
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Dict, List, Optional, Tuple
 
 from resume_tailorer.job_search.job_attributes import title_matches
 from resume_tailorer.job_search.models import JobPosting, SearchGoals
 from resume_tailorer.job_search.scrapers.base_scraper import BaseScraper
+
+@dataclass(frozen=True)
+class BoardIndex:
+    """One board, as cached: every posting's title, and all postings compressed together.
+
+    A search reads only the titles, then unpacks a board only when a title matches. Kept
+    as parsed JSON, the live boards held about 280 MB of Python objects; packed like this
+    they take about 15 MB (decision 027)."""
+
+    titles: tuple[str, ...]
+    packed: bytes
+
+    @classmethod
+    def build(cls, raw_jobs: list, title_key: str) -> "BoardIndex":
+        titles = tuple(str(job.get(title_key) or "") if isinstance(job, dict) else "" for job in raw_jobs)
+        return cls(titles, zlib.compress(json.dumps(raw_jobs).encode("utf-8"), 6))
+
+    def jobs(self) -> list:
+        return json.loads(zlib.decompress(self.packed))
+
 
 # One cache for the whole process, so a board fetched for one session (or by the
 # background warm-up) serves every other session too (decision 027).
@@ -51,7 +74,7 @@ def warm_board_cache(scrapers) -> bool:
         work = [(scraper, token) for scraper in scrapers for token in scraper.board_tokens()]
         try:
             with ThreadPoolExecutor(max_workers=16) as pool:
-                list(pool.map(lambda item: item[0]._fetch_board(item[1]), work))
+                list(pool.map(lambda item: item[0]._board_index(item[1]), work))
         except Exception:  # a warm-up is only a head start; a search fetches anyway
             pass
 
@@ -177,6 +200,16 @@ class BoardApiScraper(BaseScraper):
             return []
 
     def _fetch_board(self, token: str):
+        """The board's raw response, straight from the network (no cache)."""
+        return self._make_get_request(self.board_url(token), timeout=self.REQUEST_TIMEOUT)
+
+    def _index_for(self, token: str) -> Optional[BoardIndex]:
+        data = self._fetch_board(token)
+        raw_jobs = self.jobs_in(data) if data is not None else None
+        return None if raw_jobs is None else BoardIndex.build(raw_jobs, self.RAW_TITLE_KEY)
+
+    def _board_index(self, token: str) -> Optional[BoardIndex]:
+        """The board's cached index; None when the board didn't answer (never cached)."""
         url = self.board_url(token)
         with self._cache_lock:
             cached = self._board_cache.get(url)
@@ -192,13 +225,13 @@ class BoardApiScraper(BaseScraper):
                 cached = self._board_cache.get(url)
             if cached:
                 return cached[1]
-            return self._make_get_request(url, timeout=self.REQUEST_TIMEOUT)
+            return self._index_for(token)
         try:
-            data = self._make_get_request(url, timeout=self.REQUEST_TIMEOUT)
-            if data is not None:
+            index = self._index_for(token)
+            if index is not None:
                 with self._cache_lock:
-                    self._board_cache[url] = (time.monotonic(), data)
-            return data
+                    self._board_cache[url] = (time.monotonic(), index)
+            return index
         finally:
             with self._cache_lock:
                 event = _IN_FLIGHT.pop(url, None)
@@ -208,19 +241,24 @@ class BoardApiScraper(BaseScraper):
     def _scrape_real(self, goals: SearchGoals) -> List[JobPosting]:
         tokens = self.board_tokens()
         with ThreadPoolExecutor(max_workers=self.MAX_PARALLEL_BOARDS) as pool:
-            responses = list(pool.map(self._fetch_board, tokens))
+            indexes = list(pool.map(self._board_index, tokens))
 
         all_jobs: List[JobPosting] = []
         boards_answered = 0
-        for token, data in zip(tokens, responses):
-            raw_jobs = self.jobs_in(data) if data is not None else None
-            if raw_jobs is None:
+        for token, index in zip(tokens, indexes):
+            if index is None:
                 continue
             boards_answered += 1
-            for raw_job in raw_jobs:
+            # Titles first: mapping cleans the full HTML description, and boards list
+            # thousands of other roles.
+            wanted = [i for i, title in enumerate(index.titles)
+                      if not goals.job_title or title_matches(goals.job_title, title)]
+            if not wanted:
+                continue
+            raw_jobs = index.jobs()
+            for i in wanted:
+                raw_job = raw_jobs[i]
                 if not isinstance(raw_job, dict):
-                    continue
-                if goals.job_title and not title_matches(goals.job_title, str(raw_job.get(self.RAW_TITLE_KEY) or "")):
                     continue
                 job = self.map_job(raw_job, token)
                 if job is not None:

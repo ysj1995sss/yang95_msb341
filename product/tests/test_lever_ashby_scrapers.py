@@ -122,11 +122,11 @@ def test_board_responses_are_reused_for_fifteen_minutes(monkeypatch):
     clock = [1000.0]
     monkeypatch.setattr("resume_tailorer.job_search.scrapers.board_scraper.time.monotonic", lambda: clock[0])
 
-    scraper._fetch_board("ramp")
-    scraper._fetch_board("ramp")
+    scraper._board_index("ramp")
+    scraper._board_index("ramp")
     assert len(calls) == 1
     clock[0] += AshbyScraper.CACHE_SECONDS + 1
-    scraper._fetch_board("ramp")
+    scraper._board_index("ramp")
     assert len(calls) == 2
 
 
@@ -134,8 +134,8 @@ def test_failed_board_responses_are_not_cached(monkeypatch):
     scraper = LeverScraper()
     calls = []
     monkeypatch.setattr(scraper, "_make_get_request", lambda url, timeout=0: calls.append(url))
-    scraper._fetch_board("spotify")
-    scraper._fetch_board("spotify")
+    scraper._board_index("spotify")
+    scraper._board_index("spotify")
     assert len(calls) == 2
 
 

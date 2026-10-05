@@ -114,3 +114,31 @@ def test_two_line_headers_still_work():
 
 def test_strip_typed_bullet_leaves_plain_text_alone():
     assert strip_typed_bullet("Plain sentence") == "Plain sentence"
+
+
+def test_a_wrapped_bullet_before_a_one_line_header_stays_with_its_job():
+    text = (
+        "Riley Park\n\nEXPERIENCE\n"
+        "Data Analyst | Acme Corp | Jan 2021 - Present\n"
+        "• Built SQL dashboards used by 40 regional managers across the\n"
+        "sales organization\n"
+        "Junior Analyst | Globex | 2019 - 2020\n"
+        "• Cleaned data in Excel\n"
+        "\nEDUCATION\nBS Economics, State U, 2018\n"
+    )
+    jobs = ResumeParser()._parse_text(text).work_experience
+    assert [j.title for j in jobs] == ["Data Analyst", "Junior Analyst"]
+    assert jobs[0].responsibilities == [
+        "Built SQL dashboards used by 40 regional managers across the sales organization"
+    ]
+
+
+def test_two_line_resumes_keep_their_title_lines():
+    text = (
+        "Riley Park\n\nEXPERIENCE\nData Analyst\nAcme Corp | Denver, CO | 2021 - Present\n"
+        "• Built dashboards\nJunior Analyst\nGlobex | Boston, MA | 2019 - 2020\n• Cleaned data\n"
+        "\nEDUCATION\nBS Economics, 2018\n"
+    )
+    jobs = ResumeParser()._parse_text(text).work_experience
+    assert [(j.title, j.employer) for j in jobs] == [("Data Analyst", "Acme Corp"), ("Junior Analyst", "Globex")]
+    assert jobs[0].responsibilities == ["Built dashboards"]

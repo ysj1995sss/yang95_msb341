@@ -11,9 +11,22 @@ from __future__ import annotations
 import re
 from functools import lru_cache
 
+# Languages that make a lowercase "go" next to them mean the language ("go and python").
+_LANGS = (r"(?:python|java(?:script)?|typescript|rust|ruby|c\+\+|c#|kotlin|scala|php|swift|sql|"
+          r"node(?:\.js)?|elixir|haskell|perl|bash|docker|kubernetes|aws|gcp|grpc)")
+_LIST_SEP = r"\s*(?:,|/|&|\band\b|\bor\b)\s*(?:and\s+|or\s+)?"
+# Lowercase "go" counts only in a programming context: listed with a language, or ending a
+# phrase after "in/using/with" ("written in go."). "ready to go", "on the go" still don't.
+_GO_IN_CONTEXT = (
+    rf"(?i:(?<![\w+#]){_LANGS}{_LIST_SEP}go\b(?![-\w])"
+    rf"|\bgo{_LIST_SEP}{_LANGS}(?![\w+#])"
+    r"|\b(?:in|using|with)\s+go(?=\s*(?:[.,;:)/]|$)))"
+)
+
 # Ordinary English words that are also technologies: (case-sensitive pattern, exclusions).
 _AMBIGUOUS: dict[str, tuple[str, str]] = {
-    "go": (r"\b(?:Go|Golang|golang|GoLang)\b", r"\bGo(?:-to|\s+to\b|\s+above\b|\s+beyond\b|\s+live\b|-live)"),
+    "go": (r"\b(?:Go|Golang|golang|GoLang)\b|" + _GO_IN_CONTEXT,
+           r"\bGo(?:-to|\s+to\b|\s+above\b|\s+beyond\b|\s+live\b|-live)"),
     "rest": (r"\bREST(?:ful)?\b|\bRESTful\b", ""),
     "spring": (r"\bSpring\b", r"\bSpring\s+(?:\d|semester|term|quarter|break|intern)"),
     "express": (r"\bExpress(?:\.js)?\b|\bexpress\.js\b|\bexpressjs\b", ""),

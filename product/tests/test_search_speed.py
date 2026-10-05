@@ -39,8 +39,8 @@ def test_a_board_fetched_by_one_scraper_serves_another():
     first, second = GreenhouseScraper(), GreenhouseScraper()
     with patch.object(first, "_make_get_request", return_value=_board(["Data Analyst"])) as one, \
          patch.object(second, "_make_get_request", return_value=None) as two:
-        first._fetch_board("acme")
-        assert second._fetch_board("acme") == _board(["Data Analyst"])
+        first._board_index("acme")
+        assert second._board_index("acme").titles == ("Data Analyst",)
     assert one.call_count == 1 and two.call_count == 0
 
 
@@ -55,12 +55,30 @@ def test_concurrent_fetches_of_one_board_share_a_single_request():
 
     with patch.object(scraper, "_make_get_request", side_effect=slow):
         results = []
-        threads = [threading.Thread(target=lambda: results.append(scraper._fetch_board("acme"))) for _ in range(4)]
+        threads = [threading.Thread(target=lambda: results.append(scraper._board_index("acme"))) for _ in range(4)]
         for t in threads:
             t.start()
         for t in threads:
             t.join()
     assert len(calls) == 1 and len(results) == 4 and all(results)
+
+
+def test_the_cache_keeps_titles_and_packed_postings_not_parsed_json():
+    scraper = GreenhouseScraper()
+    board = _board(["Data Analyst"] * 200)
+    with patch.object(scraper, "_make_get_request", return_value=board):
+        index = scraper._board_index("acme")
+    assert isinstance(index.packed, bytes) and len(index.packed) < len(str(board)) / 5
+    assert index.jobs() == board["jobs"]
+
+
+def test_boards_without_a_matching_title_are_never_unpacked():
+    scraper = GreenhouseScraper()
+    scraper.board_tokens = lambda: ["acme"]
+    with patch.object(scraper, "_make_get_request", return_value=_board(["Account Executive"])), \
+         patch("resume_tailorer.job_search.scrapers.board_scraper.BoardIndex.jobs") as unpack:
+        assert scraper.scrape(_goals()) == []
+    unpack.assert_not_called()
 
 
 def test_warm_up_runs_at_most_once_per_cache_window():

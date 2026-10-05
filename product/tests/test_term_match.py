@@ -73,3 +73,19 @@ def test_testing_matches_at_the_start_of_a_sentence():
 
 def test_a_list_requirement_keeps_every_item():
     assert short_requirement("Experience with SQL, Python, and Tableau") == "SQL, Python, and Tableau"
+
+
+@pytest.mark.parametrize("text", [
+    "experience in go and python", "Python, go, and Rust", "python/go", "written in go.",
+    "services using go", "c# or go",
+])
+def test_lowercase_go_counts_in_a_programming_context(text):
+    assert mentions("go", text)
+
+
+@pytest.mark.parametrize("text", [
+    "python and go-to-market", "ready to go", "We go and build", "good to go.", "in go mode",
+    "go above and beyond with python",
+])
+def test_lowercase_go_in_ordinary_english_still_does_not(text):
+    assert not mentions("go", text)
