@@ -98,7 +98,9 @@ export default function JobsPage() {
   const current = rows.find((r) => r.job_id === selected)?.job_id ?? rows[0]?.job_id ?? null;
   const meta = data ? (view === "saved"
     ? [`${rows.length} saved ${rows.length === 1 ? "job" : "jobs"}`]
-    : [`${rows.length} matching ${rows.length === 1 ? "role" : "roles"}`, data.searched_at, data.source_note]).filter(Boolean).join(" · ") : "";
+    : [`${rows.length} matching ${rows.length === 1 ? "role" : "roles"}`,
+      data.searched_at ? `searched ${new Date(data.searched_at).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" })}` : "",
+      data.source_note]).filter(Boolean).join(" · ") : "";
 
   return (
     <>
@@ -150,7 +152,7 @@ export default function JobsPage() {
                 return (
                   <li key={r.job_id}>
                     <button type="button" aria-current={active ? "true" : undefined}
-                      onClick={() => { setSelected(r.job_id); setShowDetail(true); }}
+                      onClick={() => { setSelected(r.job_id); setShowDetail(true); window.scrollTo({ top: 0 }); }}
                       className={cx("flex w-full flex-col gap-1 border-l-4 px-4 py-3 text-left transition-colors duration-150 cursor-pointer",
                         active ? "border-primary bg-primary-soft" : "border-transparent hover:bg-canvas", r.status === "Passed" && "opacity-60")}>
                       <span className="font-semibold">{r.title}</span>

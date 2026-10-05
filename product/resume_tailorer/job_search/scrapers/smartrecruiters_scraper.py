@@ -147,7 +147,7 @@ class SmartRecruitersScraper(BaseScraper):
             source_id=str(job_id),
             company=(raw_job.get("company") or {}).get("name") or self.company_name(token),
             title=str(title),
-            location=location.get("fullLocation") or "Unknown",
+            location=_clean_location(location.get("fullLocation")) or "Unknown",
             description="\n\n".join(parts) or "Unknown",
             posted_date=parse_iso(raw_job.get("releasedDate")),
             salary_min=None,
@@ -161,6 +161,11 @@ class SmartRecruitersScraper(BaseScraper):
             raw_json={"id": job_id, "company": token},
             employment_type=normalize_job_type((raw_job.get("typeOfEmployment") or {}).get("label")),
         )
+
+
+def _clean_location(text: str | None) -> str:
+    """'London, , United Kingdom' -> 'London, United Kingdom' (an empty region leaves a gap)."""
+    return ", ".join(part.strip() for part in (text or "").split(",") if part.strip())
 
 
 def _quote(text: str) -> str:

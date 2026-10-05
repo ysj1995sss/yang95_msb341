@@ -104,7 +104,7 @@ export type JobRow = {
 
 export type JobsList = {
   view: "best" | "newest" | "saved"; state: string; partial_failure: boolean; source_note: string;
-  summary_line: string; searched_at: string; coverage_notes: string[]; rows: JobRow[];
+  summary_line: string; searched_at: string | null; coverage_notes: string[]; rows: JobRow[];
 };
 
 export type Evidence = { requirement: string; evidence: string };

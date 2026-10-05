@@ -95,3 +95,10 @@ def test_slow_postings_do_not_hold_up_the_search(monkeypatch):
     assert scraper.scrape(_goals()) == []
     assert time.monotonic() - started < 0.9
     assert "still loading" in scraper.coverage_note
+
+
+def test_an_empty_region_leaves_no_gap_in_the_location():
+    from resume_tailorer.job_search.scrapers.smartrecruiters_scraper import _clean_location
+
+    assert _clean_location("London, , United Kingdom") == "London, United Kingdom"
+    assert _clean_location(None) == ""
