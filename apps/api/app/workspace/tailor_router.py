@@ -172,6 +172,7 @@ def tailor_page(show_all: bool = False, ws: Workspace = Depends(workspace)):
                 "fit": None if fit is None else round(fit)} if pending else None,
         "resume": {"label": source[2], "one_off": ws.owner_id in _ONE_OFF} if source else None,
         "model_ready": model_ready,
+        "custom_api_base_allowed": not ws.owner.signed_in,
         "run": run,
         "review": _review_view(ws, state, show_all) if state else None,
         "existing": {"version": handoff.get("version"), "status": handoff.get("validation_status"),
@@ -183,11 +184,25 @@ def tailor_page(show_all: bool = False, ws: Workspace = Depends(workspace)):
 class RunRequest(BaseModel):
     length: Literal["preserve", "1_page", "2_page"] = "preserve"
     conservative: bool = False
+    # Optional model for this run only (never stored or logged), like the Streamlit sidebar.
+    model: Optional[str] = None
+    api_key: Optional[str] = None
+    api_base: Optional[str] = None
 
 
-def _worker(ws: Workspace, job_id: str, pending: dict, source, request: RunRequest) -> None:
-    from resume_tailorer.llm.client import LLMClient
+def _settings_for(body: RunRequest, ws: Workspace):
+    """The server's model, or the user's for this run. A custom API address is allowed only in
+    local mode: on a shared server it would let anyone make the server call any address."""
     from resume_tailorer.llm.settings import resolve_settings
+
+    if body.api_base and ws.owner.signed_in:
+        raise HTTPException(400, "A custom API address is only available when running Job Copilot locally.")
+    return resolve_settings(model=(body.model or "").strip() or None, api_key=(body.api_key or "").strip() or None,
+                            api_base=(body.api_base or "").strip() or None)
+
+
+def _worker(ws: Workspace, job_id: str, pending: dict, source, request: RunRequest, settings) -> None:
+    from resume_tailorer.llm.client import LLMClient
     from resume_tailorer.tailoring_service import TailoringError, regenerate, run_tailoring
     from resume_tailorer.ui.tailoring_view import safe_default_dispositions
 
@@ -198,7 +213,7 @@ def _worker(ws: Workspace, job_id: str, pending: dict, source, request: RunReque
     try:
         state = run_tailoring(
             ws.session, original_bytes=source[1], filename=source[0], job_description=pending.get("description") or "",
-            pending=pending, llm=LLMClient(resolve_settings()), target_length=LENGTHS[request.length],
+            pending=pending, llm=LLMClient(settings), target_length=LENGTHS[request.length],
             conservative=request.conservative, progress=step,
         )
         # Same first step as the Streamlit review room: changes that claim a missing
@@ -222,7 +237,6 @@ def _worker(ws: Workspace, job_id: str, pending: dict, source, request: RunReque
 
 @router.post("/tailor/run")
 def start_run(body: RunRequest, ws: Workspace = Depends(workspace)):
-    from resume_tailorer.llm.settings import resolve_settings
     from resume_tailorer.review_store import discard_review
 
     _load_local_env()
@@ -235,15 +249,16 @@ def start_run(body: RunRequest, ws: Workspace = Depends(workspace)):
     if source is None:
         raise HTTPException(409, "Import your resume in Career Profile first.")
     try:
-        resolve_settings()
+        settings = _settings_for(body, ws)
     except ValueError as exc:
-        raise HTTPException(503, "The writing model isn't set up on this server.") from exc
+        raise HTTPException(503, "The writing model isn't set up on this server. Enter a model and key under "
+                                 "Settings to use your own.") from exc
     with _RUNS_LOCK:
         if (_RUNS.get(ws.owner_id) or {}).get("status") == "running":
             raise HTTPException(409, "A tailoring run is already in progress.")
         _RUNS[ws.owner_id] = {"status": "running", "step": "Starting", "job_id": pending["job_id"], "started": time.time()}
     discard_review(ws.session["artifacts_dir"], pending["job_id"])
-    threading.Thread(target=_worker, args=(ws, pending["job_id"], pending, source, body),
+    threading.Thread(target=_worker, args=(ws, pending["job_id"], pending, source, body, settings),
                      name=f"tailor-{ws.owner_id[:8]}", daemon=True).start()
     return _run_status(ws.owner_id)
 
@@ -342,6 +357,44 @@ def download(kind: Literal["pdf", "docx"], ws: Workspace = Depends(workspace)):
         "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
     return Response(data, media_type=media,
                     headers={"Content-Disposition": f'attachment; filename="{name}_tailored_resume_v{state.get("version", 1)}.{kind}"'})
+
+
+class PastedJob(BaseModel):
+    title: str
+    company: str = ""
+    description: str
+    url: str = ""
+
+
+@router.post("/tailor/pasted")
+def use_pasted_job(body: PastedJob, ws: Workspace = Depends(workspace)):
+    """A job description the user pasted becomes a stored job, so Tailor, Apply and Tracker
+    treat it like one found in Jobs."""
+    import hashlib
+    from datetime import datetime
+
+    from resume_tailorer.active_job import remember
+    from resume_tailorer.job_search.job_service import PENDING_TAILOR_JOB_KEY
+    from resume_tailorer.job_search.models import JobPosting, JobSource
+
+    description = body.description.strip()
+    if not body.title.strip():
+        raise HTTPException(400, "Add the job title.")
+    if len(description.split()) < 40:
+        raise HTTPException(400, "Paste the whole job description (at least a few paragraphs), so requirements can be found.")
+    url = body.url.strip()
+    if url and not url.lower().startswith(("http://", "https://")):
+        raise HTTPException(400, "The link should start with https://")
+    source_id = "pasted-" + hashlib.sha256(f"{body.title}|{body.company}|{description}".encode()).hexdigest()[:12]
+    job = JobPosting(source=JobSource.COMPANY_PAGES, source_id=source_id, company=body.company.strip() or "Not stated",
+                     title=body.title.strip(), location="Unknown", description=description,
+                     posted_date=datetime.now(), url=url, ats_platform="Unknown")
+    job_id = ws.service.db.save_job_posting(job)
+    record = ws.record
+    remember(record, job_id)
+    ws.save_record(record)
+    ws.session.pop(PENDING_TAILOR_JOB_KEY, None)
+    return tailor_page(False, Workspace(ws.owner))
 
 
 @router.post("/tailor/one-off")

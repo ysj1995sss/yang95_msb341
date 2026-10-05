@@ -2,7 +2,7 @@
 
 import { ArrowRight, Loader2, Wand2 } from "lucide-react";
 import { useEffect, useState } from "react";
-import { Alert, Button, Card, Checkbox, Chip, ErrorBox, LinkButton, PageHeader, RadioGroup, Spinner, toneOf, useToast } from "@/components/ui";
+import { Alert, Button, Card, Checkbox, Chip, ErrorBox, LinkButton, PageHeader, RadioGroup, Spinner, TextArea, TextField, toneOf, useToast } from "@/components/ui";
 import { api, useResource } from "@/lib/api";
 import type { Review, RunStatus, TailorPage } from "@/lib/types";
 import { ReviewRoom } from "./review";
@@ -30,6 +30,34 @@ function Context({ page }: { page: TailorPage }) {
   );
 }
 
+function PastedJobForm({ onDone }: { onDone: (page: TailorPage) => void }) {
+  const [job, setJob] = useState({ title: "", company: "", url: "", description: "" });
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  return (
+    <form className="flex flex-col gap-4" onSubmit={async (e) => {
+      e.preventDefault();
+      setBusy(true);
+      setError(null);
+      try { onDone(await api<TailorPage>("/tailor/pasted", { method: "POST", json: job })); }
+      catch (err) { setError((err as Error).message); } finally { setBusy(false); }
+    }}>
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+        <TextField label="Job title" required value={job.title} onChange={(e) => setJob({ ...job, title: e.target.value })} />
+        <TextField label="Company" value={job.company} onChange={(e) => setJob({ ...job, company: e.target.value })} />
+      </div>
+      <TextField label="Link to the posting" help="Optional. Apply uses it to open the employer's application." type="url"
+        value={job.url} onChange={(e) => setJob({ ...job, url: e.target.value })} />
+      <TextArea label="Job description" help="Paste the whole posting, including requirements." rows={10} required
+        value={job.description} onChange={(e) => setJob({ ...job, description: e.target.value })} />
+      {error && <Alert tone="blocked" role="alert">{error}</Alert>}
+      <Button type="submit" variant="primary" className="self-start" busy={busy} disabled={!job.title.trim() || !job.description.trim()}>
+        Use this job
+      </Button>
+    </form>
+  );
+}
+
 export default function TailorPageView() {
   const toast = useToast();
   const { data, error, loading, reload, set } = useResource<TailorPage>("/tailor");
@@ -38,6 +66,7 @@ export default function TailorPageView() {
   const [starting, setStarting] = useState(false);
   const [startError, setStartError] = useState<string | null>(null);
   const [redo, setRedo] = useState(false);
+  const [model, setModel] = useState({ model: "", api_key: "", api_base: "" });
   const running = data?.run.status === "running";
 
   // While a run is in progress, ask for its status every 1.5 s (never more than one request in flight).
@@ -61,7 +90,7 @@ export default function TailorPageView() {
     setStarting(true);
     setStartError(null);
     try {
-      const run = await api<RunStatus>("/tailor/run", { method: "POST", json: { length, conservative: lightTouch } });
+      const run = await api<RunStatus>("/tailor/run", { method: "POST", json: { length, conservative: lightTouch, ...model } });
       set({ ...data!, run, review: null });
       setRedo(false);
     } catch (e) {
@@ -103,6 +132,11 @@ export default function TailorPageView() {
           <h2 className="text-[22px] font-semibold">Choose a job first</h2>
           <p className="mt-1 text-muted">Tailoring works against one real posting. Pick a role in Jobs and choose <span className="font-semibold">Prepare this application</span>.</p>
           <LinkButton href="/jobs" variant="primary" className="mt-5">Find a job <ArrowRight aria-hidden className="size-4" /></LinkButton>
+        </Card>
+        <Card className="mt-6">
+          <h2 className="text-[20px] font-semibold">Or paste a job description</h2>
+          <p className="mt-1 mb-4 text-muted">For a role you found elsewhere. It&apos;s kept with your jobs, marked as pasted by you.</p>
+          <PastedJobForm onDone={set} />
         </Card>
       </>
     );
@@ -156,7 +190,7 @@ export default function TailorPageView() {
             ) : (
               <div className="mt-3"><Alert tone="review" title="No resume yet">Import your resume in <a className="font-semibold underline" href="/profile">Career Profile</a> first.</Alert></div>
             )}
-            {!data.model_ready && <div className="mt-3"><Alert tone="review" title="The writing model isn't set up">Set LLM_MODEL and LLM_API_KEY on the server to tailor resumes.</Alert></div>}
+            {!data.model_ready && <div className="mt-3"><Alert tone="review" title="The writing model isn't set up">Enter your own model and key under Settings, or set LLM_MODEL and LLM_API_KEY on the server.</Alert></div>}
             <details className="mt-5 rounded-[var(--radius-card)] border border-line p-4">
               <summary className="cursor-pointer font-semibold">Settings</summary>
               <div className="mt-4 flex flex-col gap-4">
@@ -167,10 +201,22 @@ export default function TailorPageView() {
                   <input id="one-off" type="file" accept=".docx,.pdf" className="mt-1 block text-[15px]" onChange={(e) => void oneOff(e.target.files?.[0] ?? null)} />
                   {data.resume?.one_off && <Button variant="ghost" className="mt-1" onClick={() => void oneOff(null)}>Use my Career Profile resume instead</Button>}
                 </div>
+                <fieldset className="flex flex-col gap-3 rounded-[var(--radius-card)] border border-line p-3">
+                  <legend className="px-1 text-[15px] font-semibold">Your own model (optional)</legend>
+                  <p className="text-[14px] text-muted">Used for this run only. Your key is never stored.</p>
+                  <TextField label="Model" placeholder="e.g. gemini/gemini-flash-latest" value={model.model}
+                    onChange={(e) => setModel({ ...model, model: e.target.value })} />
+                  <TextField label="API key" type="password" autoComplete="off" value={model.api_key}
+                    onChange={(e) => setModel({ ...model, api_key: e.target.value })} />
+                  {data.custom_api_base_allowed && (
+                    <TextField label="API address (local only)" placeholder="Leave empty for the provider's default" value={model.api_base}
+                      onChange={(e) => setModel({ ...model, api_base: e.target.value })} />
+                  )}
+                </fieldset>
               </div>
             </details>
             {startError && <div className="mt-4"><Alert tone="blocked" role="alert">{startError}</Alert></div>}
-            <Button variant="primary" className="mt-5" busy={starting} disabled={!data.resume || !data.model_ready} onClick={start}>
+            <Button variant="primary" className="mt-5" busy={starting} disabled={!data.resume || (!data.model_ready && !(model.model.trim() && model.api_key.trim()))} onClick={start}>
               <Wand2 aria-hidden className="size-4" /> Tailor my resume
             </Button>
           </Card>

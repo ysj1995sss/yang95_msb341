@@ -142,6 +142,7 @@ export type TailorPage = {
   job: { job_id: string; title: string; company: string; fit: number | null } | null;
   resume: { label: string; one_off: boolean } | null;
   model_ready: boolean;
+  custom_api_base_allowed: boolean;
   run: RunStatus;
   review: Review | null;
   existing: { version: number; status: string; review_complete: boolean } | null;

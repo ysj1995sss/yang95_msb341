@@ -103,3 +103,42 @@ def test_discard_starts_over(tailor_client):
     assert tailor_client.delete("/v2/tailor/review").json() == {"discarded": True}
     assert tailor_client.get("/v2/tailor").json()["review"] is None
     assert tailor_client.post("/v2/tailor/decisions", json={"change_id": "x", "decision": "ACCEPTED"}).status_code == 404
+
+
+JD = ("Data Analyst at Northwind. Requirements: SQL, Tableau and dashboard reporting for business partners. "
+      "You will own weekly KPI reporting, partner with sales leaders, build self-serve dashboards, explain "
+      "trends to executives, and keep data definitions consistent across teams. Preferred: Python and "
+      "experience with experimentation in a fast-growing company.")
+
+
+def test_a_pasted_job_description_can_be_tailored(tailor_client):
+    tailor_client.post("/v2/profile/resume", files={"file": ("r.docx", resume_docx(), "application/octet-stream")})
+    assert tailor_client.post("/v2/tailor/pasted", json={"title": "Analyst", "description": "too short"}).status_code == 400
+    page = tailor_client.post("/v2/tailor/pasted", json={"title": "Data Analyst", "company": "Northwind",
+                                                         "description": JD, "url": "https://northwind.example/jobs/1"}).json()
+    assert page["job"]["title"] == "Data Analyst" and page["job"]["job_id"].startswith("company_pages_pasted-")
+    assert _run(tailor_client)["status"] == "done"
+    assert tailor_client.get("/v2/jobs/" + page["job"]["job_id"]).json()["row"]["source"] == "Pasted by you"
+
+
+def test_a_model_for_one_run_works_without_server_settings(tailor_client, monkeypatch):
+    monkeypatch.delenv("LLM_MODEL")
+    monkeypatch.delenv("LLM_API_KEY")
+    monkeypatch.setattr("app.workspace.tailor_router._load_local_env", lambda: None)
+    _ready(tailor_client)
+    assert tailor_client.get("/v2/tailor").json()["model_ready"] is False
+    assert tailor_client.post("/v2/tailor/run", json={}).status_code == 503
+    r = tailor_client.post("/v2/tailor/run", json={"model": "openai/gpt-4o-mini", "api_key": "user-key"})
+    assert r.status_code == 200
+    assert "user-key" not in str(tailor_client.get("/v2/tailor/run").json())
+
+
+def test_a_custom_api_address_is_refused_on_a_shared_server(tailor_client, monkeypatch):
+    from tests.workspace_helpers import SECRET, token
+
+    monkeypatch.setenv("WORKSPACE_TOKEN_SECRET", SECRET)
+    headers = {"Authorization": f"Bearer {token()}"}
+    r = tailor_client.post("/v2/tailor/run", headers=headers,
+                           json={"model": "x/y", "api_key": "k", "api_base": "http://169.254.169.254/"})
+    assert r.status_code in (400, 409)  # 409 if no job yet; never accepted
+    assert "custom API address" in r.json()["detail"] or "Choose a job" in r.json()["detail"]
