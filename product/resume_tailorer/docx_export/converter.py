@@ -1,16 +1,23 @@
 """
-The ONLY function in the entire DOCX master-template pipeline that touches
-Microsoft Word. Every other module (structure extraction, LLM tailoring,
-splicing, length/fabrication checks) is pure Python + python-docx object
-manipulation and needs no Word installation to test. Confirmed live
-(2026-09-22) that docx2pdf's Word COM automation works fine both on the
-main thread and from a worker thread (FastAPI's sync-endpoint threadpool),
-so no extra CoInitialize/CoUninitialize wrapping was needed on this
-machine -- if that ever changes on a different environment, this is the
-one place to add it.
+DOCX to PDF, the only step in the DOCX master-template pipeline that needs an
+office suite. Every other module (structure extraction, LLM tailoring, splicing,
+length/fabrication checks) is pure Python + python-docx.
+
+Two converters, tried in order:
+1. Microsoft Word through docx2pdf, on Windows and macOS where Word exists.
+2. LibreOffice (`soffice --headless`), everywhere else, which is how the Linux
+   server (Streamlit Community Cloud) converts: `packages.txt` installs it with
+   metric-compatible fonts (decision 027). Before this, a Word resume produced no
+   PDF there, so it could never be handed to Apply.
 """
 
+import os
+import shutil
+import subprocess
+import sys
+import tempfile
 import time
+from pathlib import Path
 
 # docx2pdf's convert() calls word.Quit() after each conversion, then the
 # NEXT convert() call's win32com.client.Dispatch("Word.Application")
@@ -33,7 +40,62 @@ class DocxConversionUnavailable(RuntimeError):
     unavailable," never as a reason to fail the whole tailoring request."""
 
 
+_LIBREOFFICE_TIMEOUT_SECONDS = 120
+_WINDOWS_SOFFICE = (
+    r"C:\Program Files\LibreOffice\program\soffice.exe",
+    r"C:\Program Files (x86)\LibreOffice\program\soffice.exe",
+)
+
+
+def _word_platform() -> bool:
+    return sys.platform in ("win32", "darwin")
+
+
+def _soffice() -> str | None:
+    found = shutil.which("soffice") or shutil.which("libreoffice")
+    if found:
+        return found
+    return next((p for p in _WINDOWS_SOFFICE if os.path.isfile(p)), None)
+
+
 def convert_docx_to_pdf(docx_path: str, pdf_path: str) -> None:
+    """Word where it exists, otherwise LibreOffice. Raises DocxConversionUnavailable
+    only when neither can convert."""
+    word_error: Exception | None = None
+    if _word_platform():
+        try:
+            _convert_with_word(docx_path, pdf_path)
+            return
+        except DocxConversionUnavailable as exc:
+            word_error = exc
+    soffice = _soffice()
+    if soffice is None:
+        raise word_error or DocxConversionUnavailable(
+            "No converter for Word files here: install LibreOffice (packages.txt on Streamlit Cloud)."
+        )
+    _convert_with_libreoffice(soffice, docx_path, pdf_path)
+
+
+def _convert_with_libreoffice(soffice: str, docx_path: str, pdf_path: str) -> None:
+    with tempfile.TemporaryDirectory() as work:
+        # A private profile per call: concurrent sessions would otherwise fight over one lock.
+        profile = Path(work, "profile").as_uri()
+        out_dir = Path(work, "out")
+        command = [soffice, "--headless", "--norestore", f"-env:UserInstallation={profile}",
+                   "--convert-to", "pdf", "--outdir", str(out_dir), str(docx_path)]
+        try:
+            result = subprocess.run(command, capture_output=True, text=True,
+                                    timeout=_LIBREOFFICE_TIMEOUT_SECONDS, check=False)
+        except (OSError, subprocess.TimeoutExpired) as exc:
+            raise DocxConversionUnavailable(f"LibreOffice could not convert the resume: {exc}") from exc
+        produced = out_dir / (Path(docx_path).stem + ".pdf")
+        if not produced.is_file():
+            detail = (result.stderr or result.stdout or "no output").strip()[:200]
+            raise DocxConversionUnavailable(f"LibreOffice could not convert the resume: {detail}")
+        shutil.move(str(produced), pdf_path)
+
+
+def _convert_with_word(docx_path: str, pdf_path: str) -> None:
     try:
         from docx2pdf import convert
     except ImportError as exc:
