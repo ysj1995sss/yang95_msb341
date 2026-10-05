@@ -142,3 +142,26 @@ def test_a_custom_api_address_is_refused_on_a_shared_server(tailor_client, monke
                            json={"model": "x/y", "api_key": "k", "api_base": "http://169.254.169.254/"})
     assert r.status_code in (400, 409)  # 409 if no job yet; never accepted
     assert "custom API address" in r.json()["detail"] or "Choose a job" in r.json()["detail"]
+
+
+def test_a_restart_never_leaves_a_run_spinning(tailor_client, monkeypatch):
+    from app.workspace import tailor_router
+
+    _ready(tailor_client)
+    assert _run(tailor_client)["status"] == "done"
+    tailor_router._write_run("local", {"status": "running", "step": "Writing", "job_id": "greenhouse_101",
+                                       "boot": "an-earlier-server-start"})
+    status = tailor_client.get("/v2/tailor/run").json()
+    assert status["status"] == "failed" and "restarted" in status["error"] and "boot" not in status
+    assert tailor_client.post("/v2/tailor/run", json={}).status_code == 200  # not stuck
+
+
+def test_a_one_off_resume_survives_a_restart(tailor_client):
+    from app.workspace import tailor_router
+
+    _ready(tailor_client)
+    tailor_client.post("/v2/tailor/one-off", files={"file": ("other.docx", resume_docx(), "application/octet-stream")})
+    assert tailor_router._one_off("local")[0] == "other.docx"  # on disk, not in memory
+    assert tailor_client.get("/v2/tailor").json()["resume"]["one_off"] is True
+    tailor_client.delete("/v2/tailor/one-off")
+    assert tailor_router._one_off("local") is None

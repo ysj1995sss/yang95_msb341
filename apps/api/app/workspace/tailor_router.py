@@ -5,8 +5,11 @@ from decisions, preview and download. The pipeline is resume_tailorer.tailoring_
 
 from __future__ import annotations
 
+import json
+import os
 import threading
 import time
+import uuid
 from pathlib import Path
 from typing import Any, Literal, Optional
 
@@ -17,9 +20,46 @@ from app.workspace.context import Workspace, jsonable, workspace
 
 router = APIRouter(prefix="/v2", tags=["workspace"])
 
-_RUNS: dict[str, dict[str, Any]] = {}
+# Run status and one-off resumes live in the user's data folder, so a restart loses neither
+# (decision 030). BOOT_ID marks which server start a "running" status belongs to: a run from an
+# earlier start can't still be running, and is reported as interrupted.
+BOOT_ID = uuid.uuid4().hex
 _RUNS_LOCK = threading.Lock()
-_ONE_OFF: dict[str, tuple[str, bytes]] = {}  # owner -> (filename, bytes) for a single job
+
+
+def _user_file(owner_id: str, *parts: str) -> Path:
+    from resume_tailorer.identity import user_dir
+
+    path = user_dir(owner_id).joinpath(*parts)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    return path
+
+
+def _write_run(owner_id: str, data: dict) -> None:
+    path = _user_file(owner_id, "tailor", "run.json")
+    tmp = path.with_suffix(".tmp")
+    tmp.write_text(json.dumps(data), encoding="utf-8")
+    os.replace(tmp, path)
+
+
+def _read_run(owner_id: str) -> dict:
+    path = _user_file(owner_id, "tailor", "run.json")
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {"status": "idle"}
+    if data.get("status") == "running" and data.get("boot") != BOOT_ID:
+        data.update(status="failed", error="The server restarted while tailoring. Start again.")
+    return data
+
+
+def _one_off(owner_id: str) -> Optional[tuple[str, bytes]]:
+    meta = _user_file(owner_id, "tailor", "one_off.json")
+    try:
+        name = json.loads(meta.read_text(encoding="utf-8"))["filename"]
+        return name, _user_file(owner_id, "tailor", "one_off.bin").read_bytes()
+    except (OSError, ValueError, KeyError):
+        return None
 MAX_RESUME_BYTES = 10 * 1024 * 1024
 LENGTHS = {"preserve": "preserve", "1_page": "1_page", "2_page": "2_page"}
 
@@ -65,7 +105,7 @@ def _persist_handoff(ws: Workspace, review_complete: bool) -> None:
 
 
 def _resume_source(ws: Workspace):
-    one_off = _ONE_OFF.get(ws.owner_id)
+    one_off = _one_off(ws.owner_id)
     if one_off:
         return one_off[0], one_off[1], f"One-off file for this job: {one_off[0]}"
     meta = ws.record.get("resume")
@@ -144,7 +184,9 @@ def _review_view(ws: Workspace, state: dict, show_all: bool = False) -> dict:
 
 def _run_status(owner_id: str) -> dict:
     with _RUNS_LOCK:
-        return dict(_RUNS.get(owner_id) or {"status": "idle"})
+        data = _read_run(owner_id)
+    data.pop("boot", None)
+    return data
 
 
 @router.get("/tailor")
@@ -170,7 +212,7 @@ def tailor_page(show_all: bool = False, ws: Workspace = Depends(workspace)):
     return {
         "job": {"job_id": pending.get("job_id"), "title": pending.get("title"), "company": pending.get("company"),
                 "fit": None if fit is None else round(fit)} if pending else None,
-        "resume": {"label": source[2], "one_off": ws.owner_id in _ONE_OFF} if source else None,
+        "resume": {"label": source[2], "one_off": _one_off(ws.owner_id) is not None} if source else None,
         "model_ready": model_ready,
         "custom_api_base_allowed": not ws.owner.signed_in,
         "run": run,
@@ -208,7 +250,7 @@ def _worker(ws: Workspace, job_id: str, pending: dict, source, request: RunReque
 
     def step(message: str) -> None:
         with _RUNS_LOCK:
-            _RUNS[ws.owner_id]["step"] = message
+            _write_run(ws.owner_id, {**_read_run(ws.owner_id), "step": message})
 
     try:
         state = run_tailoring(
@@ -232,7 +274,7 @@ def _worker(ws: Workspace, job_id: str, pending: dict, source, request: RunReque
     except Exception as exc:  # never leave a run stuck as "running"
         outcome = {"status": "failed", "error": f"Tailoring didn't finish: {exc}. Try again."}
     with _RUNS_LOCK:
-        _RUNS[ws.owner_id].update(outcome, finished=time.time())
+        _write_run(ws.owner_id, {**_read_run(ws.owner_id), **outcome, "finished": time.time()})
 
 
 @router.post("/tailor/run")
@@ -254,9 +296,10 @@ def start_run(body: RunRequest, ws: Workspace = Depends(workspace)):
         raise HTTPException(503, "The writing model isn't set up on this server. Enter a model and key under "
                                  "Settings to use your own.") from exc
     with _RUNS_LOCK:
-        if (_RUNS.get(ws.owner_id) or {}).get("status") == "running":
+        if _read_run(ws.owner_id).get("status") == "running":
             raise HTTPException(409, "A tailoring run is already in progress.")
-        _RUNS[ws.owner_id] = {"status": "running", "step": "Starting", "job_id": pending["job_id"], "started": time.time()}
+        _write_run(ws.owner_id, {"status": "running", "step": "Starting", "job_id": pending["job_id"],
+                                 "started": time.time(), "boot": BOOT_ID})
     discard_review(ws.session["artifacts_dir"], pending["job_id"])
     threading.Thread(target=_worker, args=(ws, pending["job_id"], pending, source, body, settings),
                      name=f"tailor-{ws.owner_id[:8]}", daemon=True).start()
@@ -405,11 +448,16 @@ async def use_one_off(file: UploadFile = File(...), ws: Workspace = Depends(work
     data = await file.read()
     if not data or len(data) > MAX_RESUME_BYTES:
         raise HTTPException(400, "That file is empty or larger than 10 MB.")
-    _ONE_OFF[ws.owner_id] = (name, data)
+    _user_file(ws.owner_id, "tailor", "one_off.bin").write_bytes(data)
+    _user_file(ws.owner_id, "tailor", "one_off.json").write_text(json.dumps({"filename": name}), encoding="utf-8")
     return {"label": f"One-off file for this job: {name}"}
 
 
 @router.delete("/tailor/one-off")
 def clear_one_off(ws: Workspace = Depends(workspace)):
-    _ONE_OFF.pop(ws.owner_id, None)
+    for part in ("one_off.json", "one_off.bin"):
+        try:
+            _user_file(ws.owner_id, "tailor", part).unlink()
+        except OSError:
+            pass
     return {"cleared": True}
