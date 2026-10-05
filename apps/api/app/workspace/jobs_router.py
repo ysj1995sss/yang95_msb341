@@ -12,6 +12,7 @@ from typing import Any, Literal, Optional
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
+from app.workspace import limits
 from app.workspace.context import Workspace, jsonable, workspace
 
 router = APIRouter(prefix="/v2", tags=["workspace"])
@@ -125,6 +126,7 @@ def search(body: SearchForm, ws: Workspace = Depends(workspace)):
         raise HTTPException(400, "Add a target role to search, for example “Product marketing manager”.")
     if not sources:
         raise HTTPException(400, "Choose at least one source.")
+    limits.use(ws.owner_id, "search")
     form["job_title"] = form["job_title"].strip()
     form["max_salary"] = 0
     try:

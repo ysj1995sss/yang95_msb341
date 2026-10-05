@@ -8,6 +8,7 @@ from typing import Any, Optional
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from pydantic import BaseModel, Field
 
+from app.workspace import limits
 from app.workspace.context import Workspace, jsonable, workspace
 
 router = APIRouter(prefix="/v2", tags=["workspace"])
@@ -75,6 +76,7 @@ async def import_resume_file(file: UploadFile = File(...), ws: Workspace = Depen
     data = await file.read()
     if not data or len(data) > MAX_RESUME_BYTES:
         raise HTTPException(400, "That file is empty or larger than 10 MB.")
+    limits.use(ws.owner_id, "import")
     try:
         import_resume(ws.store(), name, data)
     except Exception as exc:

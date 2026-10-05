@@ -1,4 +1,9 @@
-from fastapi import FastAPI
+import logging
+import time
+import uuid
+
+from fastapi import FastAPI, Request
+from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from app.config import get_settings
 from app.db import Base, engine
@@ -56,6 +61,32 @@ app.include_router(workspace_tailor_router)
 app.include_router(workspace_apply_router)
 app.include_router(workspace_tracker_router)
 app.include_router(workspace_account_router)
+
+
+logger = logging.getLogger("job_copilot.api")
+if not logging.getLogger().handlers:  # the host captures stdout/stderr (e.g. Render's log stream)
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
+
+
+@app.middleware("http")
+async def request_log(request: Request, call_next):
+    """One line per request, and every unexpected error logged with a reference the user sees
+    (the host's logs, e.g. Render's, are where failures show up; decision 030)."""
+    reference = uuid.uuid4().hex[:10]
+    started = time.perf_counter()
+    try:
+        response = await call_next(request)
+    except Exception:
+        logger.exception("Unhandled error %s on %s %s", reference, request.method, request.url.path)
+        return JSONResponse(status_code=500, content={
+            "detail": f"Something went wrong on our side. If it keeps happening, mention reference {reference}."})
+    if response.status_code >= 500:
+        logger.error("%s %s -> %s (%s)", request.method, request.url.path, response.status_code, reference)
+    else:
+        logger.info("%s %s -> %s in %.0f ms", request.method, request.url.path, response.status_code,
+                    (time.perf_counter() - started) * 1000)
+    response.headers["X-Request-Id"] = reference
+    return response
 
 
 @app.get("/health")

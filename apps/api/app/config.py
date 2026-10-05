@@ -27,6 +27,10 @@ class Settings(BaseSettings):
     # The older account/profile/tailor routes (password sign-in, SQL database). The web app
     # uses only /v2, so a deployment for it sets LEGACY_ROUTES=false and needs no database.
     legacy_routes: bool = True
+    # Usage limits per person (0 turns one off). Tailoring spends the model key.
+    tailor_runs_per_day: int = 15
+    searches_per_hour: int = 30
+    imports_per_day: int = 20
 
     @model_validator(mode="after")
     def _refuse_unsafe_production_defaults(self) -> "Settings":

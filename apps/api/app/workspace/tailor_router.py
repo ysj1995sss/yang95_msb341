@@ -6,6 +6,7 @@ from decisions, preview and download. The pipeline is resume_tailorer.tailoring_
 from __future__ import annotations
 
 import json
+import logging
 import os
 import threading
 import time
@@ -16,6 +17,7 @@ from typing import Any, Literal, Optional
 from fastapi import APIRouter, Depends, File, HTTPException, Response, UploadFile
 from pydantic import BaseModel
 
+from app.workspace import limits
 from app.workspace.context import Workspace, jsonable, workspace
 
 router = APIRouter(prefix="/v2", tags=["workspace"])
@@ -24,6 +26,7 @@ router = APIRouter(prefix="/v2", tags=["workspace"])
 # (decision 030). BOOT_ID marks which server start a "running" status belongs to: a run from an
 # earlier start can't still be running, and is reported as interrupted.
 BOOT_ID = uuid.uuid4().hex
+logger = logging.getLogger("job_copilot.tailor")
 _RUNS_LOCK = threading.Lock()
 
 
@@ -272,6 +275,7 @@ def _worker(ws: Workspace, job_id: str, pending: dict, source, request: RunReque
     except TailoringError as exc:
         outcome = {"status": "failed", "error": str(exc)}
     except Exception as exc:  # never leave a run stuck as "running"
+        logger.exception("Tailoring run failed for owner %s", ws.owner_id[:8])
         outcome = {"status": "failed", "error": f"Tailoring didn't finish: {exc}. Try again."}
     with _RUNS_LOCK:
         _write_run(ws.owner_id, {**_read_run(ws.owner_id), **outcome, "finished": time.time()})
@@ -298,6 +302,7 @@ def start_run(body: RunRequest, ws: Workspace = Depends(workspace)):
     with _RUNS_LOCK:
         if _read_run(ws.owner_id).get("status") == "running":
             raise HTTPException(409, "A tailoring run is already in progress.")
+        limits.use(ws.owner_id, "tailor")
         _write_run(ws.owner_id, {"status": "running", "step": "Starting", "job_id": pending["job_id"],
                                  "started": time.time(), "boot": BOOT_ID})
     discard_review(ws.session["artifacts_dir"], pending["job_id"])
