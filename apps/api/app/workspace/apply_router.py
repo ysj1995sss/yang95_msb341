@@ -106,8 +106,24 @@ def apply_page(ws: Workspace = Depends(workspace)):
         "application_id": application.application_id if application else None,
         "kit": jsonable(kit),
         "kit_summary": kit_summary(kit),
-        "helper_code": helper_payload(kit),
+        "helper_code": _helper_code(kit, handoff),
     }
+
+
+def _helper_code(kit, handoff: Optional[dict]) -> str:
+    """The browser helper's code, with the tailored PDF inside so it can attach it (decision 030)."""
+    import base64
+    import json
+
+    from resume_tailorer.ui.application_kit import helper_payload
+
+    code = json.loads(helper_payload(kit))
+    path = (handoff or {}).get("pdf_path") or ""
+    if path and os.path.exists(path):
+        with open(path, "rb") as f:
+            code["resume"] = {"filename": f"tailored_resume_v{handoff.get('version', 1)}.pdf",
+                              "data": base64.b64encode(f.read()).decode("ascii")}
+    return json.dumps(code, ensure_ascii=False)
 
 
 class Select(BaseModel):

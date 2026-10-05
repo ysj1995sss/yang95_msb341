@@ -46,6 +46,10 @@ def test_ready_track_and_mark_applied(jobs_client, tmp_path):  # noqa: F811
     labels = {f["label"]: f for f in page["kit"]}
     assert labels["Email"]["value"] and labels["Resume"]["value"] == "tailored_resume_v2.pdf"
     assert '"jobCopilotKit": 1' in page["helper_code"]
+    import base64
+    import json
+    resume = json.loads(page["helper_code"])["resume"]
+    assert resume["filename"] == "tailored_resume_v2.pdf" and base64.b64decode(resume["data"]).startswith(b"%PDF")
     assert {m["name"]: m["available"] for m in page["view"]["modes"]}["Auto"] is False
     assert jobs_client.post("/v2/apply/applied").status_code == 409  # track first
 

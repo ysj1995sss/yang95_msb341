@@ -15,8 +15,9 @@ submits (spec 006, decision 027).
   CAPTCHAs, or anything you've already typed.
 - Never submits. It never calls submit and never clicks a button. The only clicks are on the
   radio option or dropdown option it chose.
-- Doesn't attach your resume. Each site's upload widget differs, so you attach the tailored PDF
-  yourself.
+- Attaches your tailored resume to the form's resume field when the helper code includes it
+  (Apply adds it once your tailored resume is ready). If a site's upload control doesn't accept
+  it, the field is outlined amber so you attach the PDF yourself.
 
 Your kit is stored only in this browser (`chrome.storage.local`). **Forget my kit** removes it.
 

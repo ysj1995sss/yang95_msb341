@@ -130,6 +130,21 @@
     return true;
   }
 
+  function attachResume(el, resume) {
+    if (!resume || !resume.data) return false;
+    try {
+      const bytes = Uint8Array.from(atob(resume.data), (c) => c.charCodeAt(0));
+      const transfer = new DataTransfer();
+      transfer.items.add(new File([bytes], resume.filename || "resume.pdf", { type: "application/pdf" }));
+      el.files = transfer.files;
+      el.dispatchEvent(new Event("input", { bubbles: true }));
+      el.dispatchEvent(new Event("change", { bubbles: true }));
+      return el.files.length === 1;
+    } catch (error) {
+      return false;
+    }
+  }
+
   const visible = (el) => !!(el.offsetWidth || el.offsetHeight || el.getClientRects().length);
   const outline = (el, ok) => { (el.type === "file" ? el.parentElement || el : el).style.outline = ok ? GREEN : AMBER; };
 
@@ -148,7 +163,11 @@
       }
       const label = labelOf(el);
       if (el.type === "file") {
-        if (/resume|cv/i.test(`${label} ${el.id} ${el.name}`)) { outline(el, false); left.push("Resume (attach your tailored resume)"); }
+        if (/resume|cv/i.test(`${label} ${el.id} ${el.name}`) && !(el.files && el.files.length)) {
+          const ok = attachResume(el, kit.resume);
+          outline(el, ok);
+          if (ok) filled.push("resume"); else left.push("Resume (attach your tailored resume)");
+        }
         continue;
       }
       if (NEVER.test(label) || /captcha/i.test(`${el.id} ${el.name}`)) continue;
