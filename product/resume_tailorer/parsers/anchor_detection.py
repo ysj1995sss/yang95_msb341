@@ -27,6 +27,13 @@ from typing import Callable, Generic, TypeVar
 import re
 
 YEAR_PATTERN = re.compile(r"(?:19|20)\d{2}")
+DATES_PATTERN = re.compile(
+    r"\b(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\.?,?\s*(?:19|20)\d{2}"  # May 2026
+    r"|(?:19|20)\d{2}\s*(?:-|\u2013|\u2014|to)\s*(?:(?:19|20)\d{2}|present|current|now)\b"  # 2024-2025
+    r"|\b(?:present|current)\b"
+    r"|\b\d{1,2}/(?:19|20)\d{2}",  # 05/2026
+    re.IGNORECASE,
+)
 
 T = TypeVar("T")
 
@@ -43,11 +50,21 @@ def find_anchor_blocks(
     get_text: Callable[[T], str],
     is_bullet: Callable[[T], bool],
 ) -> list[AnchorBlock[T]]:
-    anchor_idxs = [
-        i
-        for i, line in enumerate(lines)
-        if YEAR_PATTERN.search(get_text(line)) and not is_bullet(line)
-    ]
+    # A wrapped bullet line can mention a year ("...for implementation by 2027", found
+    # 2026-10-05 on a real resume). Directly after a bullet, a line with a year starts a new job
+    # only when it reads like job dates; otherwise it is that bullet's continuation.
+    anchor_idxs = []
+    after_bullet = False  # the previous non-blank line is a bullet
+    for i, line in enumerate(lines):
+        text = get_text(line).strip()
+        if not text:
+            continue
+        if is_bullet(line):
+            after_bullet = True
+            continue
+        if YEAR_PATTERN.search(text) and (not after_bullet or DATES_PATTERN.search(text)):
+            anchor_idxs.append(i)
+        after_bullet = False
 
     blocks: list[AnchorBlock[T]] = []
     for a, idx in enumerate(anchor_idxs):

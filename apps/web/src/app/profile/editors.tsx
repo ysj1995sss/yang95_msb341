@@ -11,6 +11,28 @@ import type { Education, ProfileResponse, SavedAnswer } from "@/lib/types";
 
 type EditorProps = { data: ProfileResponse; onSaved: (p: ProfileResponse) => void };
 const lines = (text: string) => text.split("\n").map((l) => l.trim()).filter(Boolean);
+// Bullet points are shown with a "• " in front, like on the resume; the symbol isn't saved.
+const BULLET = "\u2022 ";
+const bulletLines = (text: string) => lines(text).map((l) => l.replace(/^[\u2022\u25aa\u25e6\u00b7*-]\s*/, "").trim()).filter(Boolean);
+const withBullets = (items: string[]) => items.map((b) => BULLET + b).join("\n");
+
+function BulletArea({ label, value, onChange }: { label: string; value: string; onChange: (v: string) => void }) {
+  return (
+    <TextArea label={label} rows={10} value={value}
+      help="Press Enter for a new bullet point."
+      onFocus={() => { if (!value.trim()) onChange(BULLET); }}
+      onKeyDown={(e) => {
+        if (e.key !== "Enter" || e.shiftKey) return;
+        e.preventDefault(); // a new line starts with its own bullet
+        const el = e.currentTarget;
+        const next = `${value.slice(0, el.selectionStart)}\n${BULLET}${value.slice(el.selectionEnd)}`;
+        const caret = el.selectionStart + 1 + BULLET.length;
+        onChange(next);
+        requestAnimationFrame(() => el.setSelectionRange(caret, caret));
+      }}
+      onChange={(e) => onChange(e.target.value)} />
+  );
+}
 const edited = (data: ProfileResponse, path: string) => data.edited.includes(path);
 const tag = (label: string, data: ProfileResponse, path: string) => (edited(data, path) ? `${label} · edited by you` : label);
 
@@ -88,7 +110,7 @@ export function WorkEditor({ data, onSaved }: EditorProps) {
   return (
     <form className="flex flex-col gap-4" onSubmit={(e) => {
       e.preventDefault();
-      void save("/profile/work", { index, ...form, bullets: lines(form.bullets) }, changedMessage);
+      void save("/profile/work", { index, ...form, bullets: bulletLines(form.bullets) }, changedMessage);
     }}>
       <SelectField label="Role" value={String(index)}
         options={jobs.map((j, i) => ({ value: String(i), label: `${j.title || "Role"} · ${j.employer || "Employer"}` }))}
@@ -98,7 +120,7 @@ export function WorkEditor({ data, onSaved }: EditorProps) {
         <TextField label="Employer" value={form.employer} onChange={(e) => setForm({ ...form, employer: e.target.value })} />
         <TextField label="Dates" value={form.dates} placeholder="e.g. Jan 2021 – Present" onChange={(e) => setForm({ ...form, dates: e.target.value })} />
       </div>
-      <TextArea label="Bullet points (one per line)" rows={8} value={form.bullets} onChange={(e) => setForm({ ...form, bullets: e.target.value })} />
+      <BulletArea label="Bullet points" value={form.bullets} onChange={(bullets) => setForm({ ...form, bullets })} />
       <Actions busy={busy} error={error} label="Save role" />
     </form>
   );
@@ -107,7 +129,7 @@ export function WorkEditor({ data, onSaved }: EditorProps) {
 function roleForm(job: ProfileResponse["profile"]["work_experience"][number] | undefined) {
   return {
     title: job?.title ?? "", employer: job?.employer ?? "", dates: job?.dates ?? "",
-    bullets: [...(job?.responsibilities ?? []), ...(job?.accomplishments ?? [])].join("\n"),
+    bullets: withBullets([...(job?.responsibilities ?? []), ...(job?.accomplishments ?? [])]),
   };
 }
 

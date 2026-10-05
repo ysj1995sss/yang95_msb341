@@ -377,3 +377,35 @@ class TestCompanyLineDates:
             ("Initech", "Remote", "03/2021 to Present"),
             ("Hooli Hotel", "Layton, UT", "Summer 2020"),
         ]
+
+
+def test_a_wrapped_bullet_line_with_a_year_does_not_start_a_new_job():
+    """Found 2026-10-05 on a real resume: "...potential targeted for implementation by 2027", the
+    second line of a wrapped bullet, was taken as the next job's dates, so the job kept only its
+    first bullet's first line and lost the rest."""
+    from resume_tailorer.parsers.resume_parser import ResumeParser
+
+    text = (
+        "Riley Park\nriley@example.com\n"
+        "PROFESSIONAL EXPERIENCE\n"
+        "Strategy Intern\n"
+        "Acme Health | Springfield, RI May 2026\u2013Aug 2026\n"
+        "\u2022 Developed a growth strategy by synthesizing data, identifying up to $120M in incremental sales\n"
+        "potential targeted for implementation by 2027\n"
+        "\u2022 Built a customer framework targeting 3\u00d7 visit frequency and 2\u00d7 basket size\n"
+        "\u2022 Aligned 30+ stakeholders and distilled research into executive-ready\n"
+        "recommendations adopted across 9,000+ stores\n"
+        "\n"
+        "Marketing Manager\n"
+        "Northwind Shoes | Zhengzhou, China Aug 2024-Jul 2025\n"
+        "\u2022 Drove 75% YoY sales growth with a market entry strategy\n"
+        "EDUCATION\n"
+        "State University | 2019\nBS Economics\n"
+    )
+    jobs = ResumeParser()._parse_text(text).work_experience
+    assert [j.employer for j in jobs] == ["Acme Health", "Northwind Shoes"]
+    first = jobs[0].accomplishments + jobs[0].responsibilities
+    assert len(first) == 3
+    assert any(b.endswith("potential targeted for implementation by 2027") for b in first)
+    assert any("9,000+ stores" in b for b in first)
+    assert jobs[0].dates == "May 2026\u2013Aug 2026"
