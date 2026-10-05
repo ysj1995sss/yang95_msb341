@@ -11,7 +11,9 @@ match. There were four copies of that regex (fit scorer, job analyzer, gap check
 score), so they now share one matcher. Terms that are also English words (Go, REST, Spring,
 Express, Lambda, Rust, Windows, Apache, Hive, Spark, Swift, testing) count only in their
 technology spelling; for example, "Go" counts but "Go-to"/"Go to" does not. Other terms match
-case-insensitively as whole tokens, and `+`/`#` count as part of the token.
+case-insensitively as whole tokens, and `+`/`#` count as part of the token. A lowercase
+"go" also counts in a programming context, either listed with a language ("go and python") or
+ending a phrase after "in", "using" or "with" ("written in go.").
 
 Tailor's "Missing, never added" list now shows a short key phrase, for example "SQL and
 Tableau" instead of the whole requirement sentence. The full sentence appears on hover.
@@ -27,6 +29,9 @@ and fit scores must be reproducible.
 - **PDF text.** Lines starting with ▪ ◦ * ➤ and similar markers are read as bullets.
 - **One-line job headers.** "Title | Company | Location | Dates" (also with commas or "at") is
   parsed when no separate title line exists. Before, the whole job was dropped.
+- **Wrapped bullets.** In a section that uses one-line headers throughout, a non-bullet line
+  just above a header is the previous bullet wrapping onto a second line, and is joined back to
+  it. Two-line resumes are unchanged.
 
 ## 3. Tailoring reliability
 
@@ -57,7 +62,12 @@ postings before the title filter kept 44 of them.
   one request.
 - A background warm-up runs whenever a page loads, at most once per 15-minute cache window.
 - **Result:** the same search takes 9.5 s cold and 0.1–0.6 s once the boards are cached. A cold
-  search is now limited by bandwidth (about 30–40 MB of postings with descriptions).
+  search is now limited by bandwidth.
+- **Cache memory (revised the same day).** The cache held about 280 MB of parsed JSON for 10,888
+  postings, not the 40 MB first estimated. Each board is now cached as its titles plus one
+  zlib-packed copy (about 15 MB in total), and a search unpacks only boards with a matching
+  title. Warm searches take 1.1 s for a broad title (487 jobs) and 0.35 s for a narrow one,
+  with the same results.
 
 **Rejected:** fetching Greenhouse without descriptions and then each matching posting
 separately. A broad title (about 500 matches) makes that slower.
@@ -68,8 +78,10 @@ The whole Tailor review (changes, decisions, manual edits and the built files) i
 in the user's data folder whenever a decision changes. The next session reopens it, and "Discard
 and tailor again" deletes it.
 
-It uses pickle because the review holds the app's own dataclasses and file bytes. The file is
-written only by this app, inside the user's folder, and a file that fails to load is ignored.
+**Format (revised the same day).** The first version used pickle. The review is now JSON with
+explicit type tags: dataclasses, enums, bytes (base64), sets and tuples. Loading can rebuild
+only this app's own dataclasses and enums (modules under `resume_tailorer`), never run code. A
+file that fails to load is ignored, and old pickle files are deleted without being read.
 
 **Rejected:**
 - Saving only the decisions: they are meaningless without the exact proposed changes.
@@ -116,7 +128,5 @@ question as spec 006 with weaker safeguards.
 
 - **Term matching:** if users report missed matches for an ambiguous term written in lowercase
   ("go"), add a context rule rather than reverting to plain word boundaries.
-- **Review persistence:** if reviews ever need to be shared or synced across devices, replace
-  pickle with an explicit schema.
 - **Browser helper:** once the builder settles the terms-of-service and packaging questions in
   spec 006, build it.

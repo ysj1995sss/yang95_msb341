@@ -89,3 +89,47 @@ def test_a_new_session_reopens_the_saved_review(tmp_path, monkeypatch):
     at.run()
     saved = load_review(artifacts_dir("local"), JOB["job_id"])
     assert change_id in saved["decided"] and saved["dispositions"][change_id] == "REJECTED"
+
+
+def test_the_file_is_readable_json_with_a_real_job_analysis(tmp_path):
+    import json
+
+    from resume_tailorer.analyzers.job_analyzer import JobAnalyzer
+
+    state = _state()
+    state["job_analysis"] = JobAnalyzer().analyze(
+        "Data Analyst. Requirements: 3+ years of SQL and Tableau. Preferred: Python.")
+    state["decided"].add("c1")
+    assert save_review(str(tmp_path), "job-1", state)
+    (path,) = (tmp_path / "reviews").iterdir()
+    assert path.suffix == ".json"
+    assert json.loads(path.read_text(encoding="utf-8"))["format"] == 2
+    loaded = load_review(str(tmp_path), "job-1")
+    assert loaded["job_analysis"] == state["job_analysis"]
+    assert loaded["report"] == state["report"] and loaded["changes"] == state["changes"]
+    assert loaded["profile"] == state["profile"] and loaded["decided"] == {"c1"}
+    assert loaded["pdf_bytes"] == b"%PDF-1.4"
+
+
+def test_loading_never_builds_types_from_outside_the_app(tmp_path):
+    import json
+
+    from resume_tailorer.review_store import _path
+
+    path = _path(str(tmp_path), "job-1")
+    path.parent.mkdir(parents=True)
+    evil = {"$dataclass": "subprocess:Popen", "fields": {"args": ["calc"]}}
+    path.write_text(json.dumps({"format": 2, "job_id": "job-1", "state": {"$dict": [["changes", evil]]}}))
+    assert load_review(str(tmp_path), "job-1") is None
+
+
+def test_an_old_pickle_review_is_removed_not_loaded(tmp_path):
+    import pickle
+
+    from resume_tailorer.review_store import _path
+
+    old = _path(str(tmp_path), "job-1").with_suffix(".review")
+    old.parent.mkdir(parents=True)
+    old.write_bytes(pickle.dumps({"format": 1, "job_id": "job-1", "state": {"changes": []}}))
+    assert load_review(str(tmp_path), "job-1") is None
+    assert not old.exists()

@@ -20,12 +20,12 @@ Read this file first, then `CLAUDE.md`, then the decisions listed below. Do not 
   before rejection.
 - **Search:** title check before mapping, a shared board cache with a background warm-up, and
   batched saves. 17.9 s became 9.5 s cold and under 1 s cached.
-- **Persistence:** the Tailor review is saved per job (`review_store.py`).
+- **Persistence:** the Tailor review is saved per job as typed JSON (`review_store.py`).
 - **Deploys:** `code_freshness.py` reloads changed code without a reboot (the first deploy of
   it still needs one).
 - **Apply:** Assist is a copy-ready application kit (`ui/application_kit.py`). Auto is not
   offered.
-- **Test baseline:** `product/` 1004 passed, `apps/api/` 70 passed.
+- **Test baseline:** `product/` 1023 passed, `apps/api/` 70 passed.
 
 ## Latest update (2026-10-04, later) — Jobs workspace and site polish
 
