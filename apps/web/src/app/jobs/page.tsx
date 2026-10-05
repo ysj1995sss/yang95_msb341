@@ -136,9 +136,9 @@ export default function JobsPage() {
       {searchError && !editing && <div className="mb-4"><Alert tone="blocked" role="alert">{searchError}</Alert></div>}
       {editing && <Card className="mb-6"><h2 className="mb-4 text-[18px] font-semibold">Edit search</h2>{form(true)}</Card>}
 
-      <div role="tablist" aria-label="Show" className="mb-4 inline-flex rounded-[var(--radius-control)] border border-line-strong bg-paper p-1">
+      <div role="group" aria-label="Show" className="mb-4 inline-flex rounded-[var(--radius-control)] border border-line-strong bg-paper p-1">
         {VIEWS.map((v) => (
-          <button key={v.key} role="tab" aria-selected={view === v.key} type="button"
+          <button key={v.key} aria-pressed={view === v.key} type="button"
             onClick={() => { setView(v.key); setSelected(null); setShowDetail(false); }}
             className={cx("min-h-10 rounded-[3px] px-4 text-[15px] font-semibold transition-colors duration-150 cursor-pointer",
               view === v.key ? "bg-primary text-on-primary" : "text-muted hover:text-ink")}>

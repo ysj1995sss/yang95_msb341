@@ -282,9 +282,9 @@ export default function TrackerPage() {
       <EmailPanel onApplied={reload} />
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,1fr)_300px]">
         <div className="min-w-0">
-          <div role="tablist" aria-label="Saved views" className="mb-3 flex flex-wrap gap-1.5">
+          <div role="group" aria-label="Saved views" className="mb-3 flex flex-wrap gap-1.5">
             {data.views.map((v) => (
-              <button key={v.name} role="tab" type="button" aria-selected={data.view === v.name}
+              <button key={v.name} type="button" aria-pressed={data.view === v.name}
                 onClick={() => { setView(v.name); setSelected(null); setShowDetail(false); }}
                 className={cx("min-h-11 rounded-full border px-3.5 text-[14px] font-semibold transition-colors duration-150 cursor-pointer",
                   data.view === v.name ? "border-primary bg-primary text-on-primary" : "border-line-strong bg-paper hover:bg-canvas")}>
