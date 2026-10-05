@@ -10,7 +10,7 @@ from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
-from app.workspace.context import Workspace, workspace
+from app.workspace.context import Workspace, stamp, workspace
 
 router = APIRouter(prefix="/v2", tags=["workspace"])
 
@@ -37,7 +37,7 @@ def _row_json(row) -> dict:
         "status": row.status.value, "status_label": STATUS_WORDS.get(row.status, row.status.value),
         "applied": row.applied.isoformat() if row.applied else None, "next_action": row.next_action,
         "due": row.due.isoformat() if row.due else None, "fit": row.fit, "resume_version": row.resume_version,
-        "source": row.source, "mode": row.mode, "last_update": row.last_update.isoformat(), "url": row.url,
+        "source": row.source, "mode": row.mode, "last_update": stamp(row.last_update), "url": row.url,
     }
 
 
@@ -108,7 +108,7 @@ def application_detail(application_id: str, ws: Workspace = Depends(workspace)):
         ],
         "answers": [{"question": q, "answer": a} for q, a in ((sub.custom_answers if sub else {}) or {}).items()],
         "history": [
-            {"when": e.status_updated.isoformat(), "status": STATUS_WORDS.get(e.status, e.status.value),
+            {"when": stamp(e.status_updated), "status": STATUS_WORDS.get(e.status, e.status.value),
              "who": WHO.get(e.source.value, e.source.value.replace("_", " ")), "note": e.notes}
             # Newest first; entries made in the same instant keep the order they were made in.
             for _i, e in sorted(enumerate(history), key=lambda p: (p[1].status_updated, p[0]), reverse=True)

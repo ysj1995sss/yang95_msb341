@@ -3,7 +3,7 @@
 import json
 import sqlite3
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import List, Optional
 
 from resume_tailorer.applications.models import (
@@ -34,6 +34,16 @@ _ADDITIVE_STATUS_HISTORY_COLUMNS: list[tuple[str, str]] = [
     ("confidence", "TEXT DEFAULT NULL"),
     ("evidence", "TEXT DEFAULT ''"),
 ]
+
+
+def _local_from_sqlite_utc(value) -> datetime:
+    """Status history times come from SQLite's CURRENT_TIMESTAMP, which is UTC without a zone.
+    Everything else here uses naive server-local times (datetime.now()), so convert to that;
+    otherwise history is off by the server's UTC offset and dates can land on the wrong day."""
+    when = datetime.fromisoformat(value) if isinstance(value, str) else value
+    if when.tzinfo is None:
+        when = when.replace(tzinfo=timezone.utc)
+    return when.astimezone().replace(tzinfo=None)
 
 
 class ApplicationDatabase:
@@ -426,8 +436,7 @@ class ApplicationDatabase:
             job_posting_id=row["job_posting_id"],
             status=ApplicationStatus(row["status"]),
             notes=row["notes"] or "",
-            status_updated=datetime.fromisoformat(row["status_updated"])
-            if isinstance(row["status_updated"], str) else row["status_updated"],
+            status_updated=_local_from_sqlite_utc(row["status_updated"]),
             source=StatusSource(self._get(row, "source") or "user"),
             confidence=self._get(row, "confidence"),
             evidence=self._get(row, "evidence") or "",

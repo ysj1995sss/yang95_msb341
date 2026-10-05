@@ -337,3 +337,16 @@ class TestStatusProvenance:
         )
         assert temp_db.update_status(app_id, ApplicationStatus.INTERVIEW, source=StatusSource.USER) is True
         assert temp_db.get_current_status(app_id) == ApplicationStatus.INTERVIEW
+
+
+def test_status_history_times_are_server_local_like_everything_else():
+    """SQLite stamps history in UTC; reading it must give server-local time (decision 030)."""
+    from datetime import datetime, timezone
+
+    from resume_tailorer.applications.database import _local_from_sqlite_utc
+
+    utc_text = "2026-10-05 18:29:00"
+    expected = datetime(2026, 10, 5, 18, 29, tzinfo=timezone.utc).astimezone().replace(tzinfo=None)
+    assert _local_from_sqlite_utc(utc_text) == expected
+    # A history entry written just now reads back as about now, in local time.
+    assert abs((_local_from_sqlite_utc(datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")) - datetime.now()).total_seconds()) < 5

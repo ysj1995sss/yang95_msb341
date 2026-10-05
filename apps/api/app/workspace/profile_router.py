@@ -9,7 +9,7 @@ from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from pydantic import BaseModel, Field
 
 from app.workspace import limits
-from app.workspace.context import Workspace, jsonable, workspace
+from app.workspace.context import Workspace, jsonable, stamp, workspace
 
 router = APIRouter(prefix="/v2", tags=["workspace"])
 
@@ -45,7 +45,7 @@ def _view(ws: Workspace) -> dict:
         "preferences": record.get("preferences") or {},
         "authorization": record.get("authorization") or {},
         "no_education": bool(record.get("no_education")),
-        "resume": record.get("resume"),
+        "resume": _resume_info(record.get("resume")),
         "resume_versions": len(record.get("resume_history") or []),
         "facts_confirmed_at": record.get("facts_confirmed_at"),
         "answers": answers,
@@ -65,6 +65,18 @@ def _view(ws: Workspace) -> dict:
 def get_profile(ws: Workspace = Depends(workspace)):
     return _view(ws)
 
+
+
+def _resume_info(resume):
+    """The stored upload time is naive server-local text; send it with its offset."""
+    if not resume or not resume.get("uploaded_at"):
+        return resume
+    from datetime import datetime
+
+    try:
+        return {**resume, "uploaded_at": stamp(datetime.fromisoformat(resume["uploaded_at"]))}
+    except ValueError:
+        return resume
 
 @router.post("/profile/resume")
 async def import_resume_file(file: UploadFile = File(...), ws: Workspace = Depends(workspace)):

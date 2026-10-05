@@ -90,3 +90,17 @@ def test_results_come_one_page_at_a_time(jobs_client):
     second = jobs_client.get("/v2/jobs", params={"offset": 50}).json()
     assert len(second["rows"]) == 50 and second["rows"][0]["job_id"] not in {r["job_id"] for r in first["rows"]}
     assert len(jobs_client.get("/v2/jobs", params={"offset": 100}).json()["rows"]) == 20
+
+
+def test_times_reach_the_browser_with_their_utc_offset():
+    """Naive server-local times would be read as the browser's own local time (decision 030)."""
+    from datetime import date, datetime, timezone
+
+    from app.workspace.context import jsonable, stamp
+
+    naive = datetime(2026, 10, 5, 18, 29)
+    sent = datetime.fromisoformat(stamp(naive))
+    assert sent.tzinfo is not None and sent == naive.astimezone()
+    aware = datetime(2026, 10, 5, 18, 29, tzinfo=timezone.utc)
+    assert stamp(aware) == "2026-10-05T18:29:00+00:00"
+    assert jsonable({"d": date(2026, 10, 5), "t": aware}) == {"d": "2026-10-05", "t": "2026-10-05T18:29:00+00:00"}

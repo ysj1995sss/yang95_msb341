@@ -6,7 +6,7 @@ from datetime import date, timedelta
 
 from fastapi import APIRouter, Depends
 
-from app.workspace.context import Workspace, jsonable, route_for, workspace
+from app.workspace.context import Workspace, jsonable, route_for, stamp, workspace
 
 router = APIRouter(prefix="/v2", tags=["workspace"])
 
@@ -85,7 +85,7 @@ def home(ws: Workspace = Depends(workspace)):
         view[key] = _with_routes(view[key])
     weekly = build_weekly_summary([(r.status, r.applied) for r in rows], date.today())
     recent = [
-        {"date": r.last_update.date().isoformat(), "role": r.role, "company": r.company,
+        {"date": stamp(r.last_update), "role": r.role, "company": r.company,
          "status": r.status.value.replace("_", " ")}
         for r in sorted(rows, key=lambda r: r.last_update, reverse=True)[:5]
     ]

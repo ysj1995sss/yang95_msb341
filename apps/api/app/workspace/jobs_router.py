@@ -13,7 +13,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
 from app.workspace import limits
-from app.workspace.context import Workspace, jsonable, workspace
+from app.workspace.context import Workspace, jsonable, stamp, workspace
 
 router = APIRouter(prefix="/v2", tags=["workspace"])
 
@@ -142,7 +142,7 @@ def search(body: SearchForm, ws: Workspace = Depends(workspace)):
         save_goals(record, form_to_goals(form))
     record[LAST_SEARCH_FIELD] = {
         "form": form, "sources": [s.value for s in sources],
-        "started_at": summary.started_at.isoformat(),
+        "started_at": stamp(summary.started_at),
         "providers": [{"source": p.source.value, "status": p.status.value, "scraped": p.scraped,
                        "note": p.error} for p in summary.providers],
     }
@@ -187,7 +187,7 @@ def list_jobs(view: Literal["best", "newest", "saved"] = "best", offset: int = 0
         "source_note": state.source_note,
         "summary_line": goals_summary_line(_goals(ws)),
         # ISO time; the browser shows it in the user's own time zone.
-        "searched_at": started.isoformat() if started and view != "saved" else None,
+        "searched_at": stamp(started) if started and view != "saved" else None,
         "coverage_notes": [p["note"] for p in last.get("providers") or [] if p.get("note")] if view != "saved" else [],
         # One page at a time: a broad search can match hundreds of roles.
         "total": len(jobs),

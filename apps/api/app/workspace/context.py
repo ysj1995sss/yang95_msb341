@@ -117,13 +117,24 @@ def workspace(owner: Owner = Depends(current_owner)) -> Workspace:
     return Workspace(owner)
 
 
+def stamp(value: datetime) -> str:
+    """A moment in time for the browser, always with its UTC offset. The shared modules store
+    naive server-local times (datetime.now()); without an offset a browser in another time zone
+    reads them as its own local time and shows the wrong hour or day (decision 030)."""
+    if value.tzinfo is None:
+        value = value.astimezone()  # naive means server-local
+    return value.isoformat()
+
+
 def jsonable(value: Any) -> Any:
     """Dataclasses, enums, dates, tuples and sets as plain JSON values."""
     if dataclasses.is_dataclass(value) and not isinstance(value, type):
         return {f.name: jsonable(getattr(value, f.name)) for f in dataclasses.fields(value)}
     if isinstance(value, enum.Enum):
         return jsonable(value.value)
-    if isinstance(value, (datetime, date)):
+    if isinstance(value, datetime):
+        return stamp(value)
+    if isinstance(value, date):
         return value.isoformat()
     if isinstance(value, dict):
         return {str(k.value if isinstance(k, enum.Enum) else k): jsonable(v) for k, v in value.items()}
