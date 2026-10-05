@@ -2,7 +2,7 @@
 // issuer and audience are verified before a session cookie is set.
 import { createRemoteJWKSet, jwtVerify } from "jose";
 import { NextResponse, type NextRequest } from "next/server";
-import { SESSION_COOKIE, STATE_COOKIE, createSession, googleConfigured, sessionCookieOptions } from "@/lib/auth";
+import { SESSION_COOKIE, STATE_COOKIE, createSession, currentSessionVersion, googleConfigured, sessionCookieOptions } from "@/lib/auth";
 
 const GOOGLE_KEYS = createRemoteJWKSet(new URL("https://www.googleapis.com/oauth2/v3/certs"));
 
@@ -39,9 +39,8 @@ export async function GET(request: NextRequest) {
       audience: process.env.AUTH_GOOGLE_ID!,
     });
     if (!payload.sub || payload.email_verified === false) return fail(request, "unverified");
-    const session = await createSession({
-      sub: payload.sub, name: String(payload.name ?? ""), email: String(payload.email ?? ""),
-    });
+    const identity = { sub: payload.sub, name: String(payload.name ?? ""), email: String(payload.email ?? "") };
+    const session = await createSession({ ...identity, sv: await currentSessionVersion(identity) });
     const response = NextResponse.redirect(new URL("/", request.url));
     response.cookies.set(SESSION_COOKIE, session, sessionCookieOptions);
     response.cookies.delete(STATE_COOKIE);

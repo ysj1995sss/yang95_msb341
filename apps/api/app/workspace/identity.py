@@ -30,6 +30,7 @@ class Owner:
     name: str
     signed_in: bool
     email: str = ""
+    session_version: int = 0  # bumped by "sign out everywhere" (decision 030)
 
 
 def owner_from_token(token: str, secret: str) -> Owner:
@@ -41,7 +42,11 @@ def owner_from_token(token: str, secret: str) -> Owner:
     if not subject:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Sign in again.")
     identity = resolve_identity(True, {"is_logged_in": True, "sub": subject, "name": claims.get("name") or ""})
-    return Owner(identity.owner_id, identity.display_name, True, str(claims.get("email") or ""))
+    try:
+        version = int(claims.get("sv") or 0)
+    except (TypeError, ValueError):
+        version = 0
+    return Owner(identity.owner_id, identity.display_name, True, str(claims.get("email") or ""), version)
 
 
 def current_owner(authorization: Optional[str] = Header(default=None)) -> Owner:

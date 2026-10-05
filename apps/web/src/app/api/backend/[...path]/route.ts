@@ -37,6 +37,10 @@ async function forward(request: NextRequest, context: { params: Promise<{ path: 
     const value = upstream.headers.get(name);
     if (value) out.set(name, value);
   }
+  if (upstream.status === 401 && googleConfigured()) {
+    // The API refused this session (e.g. "sign out everywhere"): forget it in this browser too.
+    out.append("set-cookie", `${SESSION_COOKIE}=; Path=/; Max-Age=0; HttpOnly; SameSite=Lax`);
+  }
   return new Response(upstream.body, { status: upstream.status, headers: out });
 }
 

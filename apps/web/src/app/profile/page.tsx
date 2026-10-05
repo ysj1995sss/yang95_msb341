@@ -3,6 +3,7 @@
 import { X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { ResumeUpload } from "@/components/resume-upload";
+import { YourData } from "@/components/your-data";
 import { Alert, Button, Card, Chip, ErrorBox, PageHeader, Spinner, cx, toneOf, useToast } from "@/components/ui";
 import { api, useResource } from "@/lib/api";
 import type { ProfileResponse } from "@/lib/types";
@@ -11,6 +12,7 @@ import { EDITORS } from "./editors";
 export default function ProfilePage() {
   const toast = useToast();
   const { data, error, loading, reload, set } = useResource<ProfileResponse>("/profile");
+  const me = useResource<{ signed_in: boolean }>("/me");
   // undefined: not chosen yet, so the first section needing a look opens (as on the Streamlit page).
   const [chosen, setOpen] = useState<string | null | undefined>(undefined);
   const [confirming, setConfirming] = useState(false);
@@ -149,6 +151,7 @@ export default function ProfilePage() {
           )}
         </div>
       </div>
+      <YourData signedIn={Boolean(me.data?.signed_in)} />
     </>
   );
 }

@@ -44,6 +44,14 @@ def job_service(owner_id: str):
         return service
 
 
+def forget_owner(owner_id: str) -> None:
+    """Close and drop one owner's databases (before deleting their folder)."""
+    with _SERVICES_LOCK:
+        service = _SERVICES.pop(owner_id, None)
+    if service is not None:
+        service.close()
+
+
 def forget_services() -> None:
     """Tests: each test gets fresh databases."""
     with _SERVICES_LOCK:
@@ -83,7 +91,23 @@ class Workspace:
         return saved
 
 
+def session_version(owner_id: str) -> int:
+    """The user's current session version; sessions made before a "sign out everywhere" are older."""
+    import json
+
+    from resume_tailorer.identity import user_dir
+
+    try:
+        return int(json.loads((user_dir(owner_id) / "account.json").read_text(encoding="utf-8")).get("session_version", 0))
+    except (OSError, ValueError, TypeError):
+        return 0
+
+
 def workspace(owner: Owner = Depends(current_owner)) -> Workspace:
+    from fastapi import HTTPException
+
+    if owner.signed_in and owner.session_version != session_version(owner.owner_id):
+        raise HTTPException(401, "You were signed out on all devices. Sign in again.")
     return Workspace(owner)
 
 
