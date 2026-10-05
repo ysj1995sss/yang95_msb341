@@ -1,0 +1,81 @@
+"""Workspace API, phase 2: Jobs (spec 009). Boards are stubbed; synthetic data only."""
+
+from unittest.mock import patch
+
+import pytest
+
+from resume_tailorer.job_search.scrapers import AshbyScraper, GreenhouseScraper, LeverScraper
+from resume_tailorer.job_search.scrapers.board_scraper import clear_board_cache
+from resume_tailorer.job_search.scrapers.smartrecruiters_scraper import SmartRecruitersScraper
+from tests.workspace_helpers import resume_docx
+
+BOARD = {"jobs": [
+    {"id": 101, "title": "Senior Data Analyst", "absolute_url": "https://job-boards.greenhouse.io/gitlab/jobs/101",
+     "location": {"name": "Remote, US"}, "updated_at": "2026-09-20T12:00:00-00:00",
+     "content": "&lt;p&gt;Requirements: SQL, Tableau, Python. 3+ years of analytics.&lt;/p&gt;"},
+    {"id": 102, "title": "Account Executive", "absolute_url": "https://job-boards.greenhouse.io/gitlab/jobs/102",
+     "location": {"name": "Remote, US"}, "updated_at": "2026-09-20T12:00:00-00:00", "content": "Sales."},
+]}
+
+
+@pytest.fixture()
+def jobs_client(workspace_client):
+    clear_board_cache()
+    with patch.object(GreenhouseScraper, "_fetch_board", lambda self, token: BOARD if token == "gitlab" else {"jobs": []}), \
+         patch.object(LeverScraper, "_fetch_board", lambda self, token: []), \
+         patch.object(AshbyScraper, "_fetch_board", lambda self, token: {"jobs": []}), \
+         patch.object(SmartRecruitersScraper, "_make_get_request", lambda self, url, timeout=10: {"content": [], "totalFound": 0}):
+        yield workspace_client
+    clear_board_cache()
+
+
+def _search(client, **form):
+    r = client.post("/v2/jobs/search", json={"job_title": "Data Analyst", **form})
+    assert r.status_code == 200, r.text
+    return r.json()
+
+
+def test_setup_before_any_search(jobs_client):
+    setup = jobs_client.get("/v2/jobs/setup").json()
+    assert setup["has_goals"] is False and setup["searched"] is False
+    assert {s["value"] for s in setup["options"]["sources"]} == {"greenhouse", "lever", "ashby", "smartrecruiters"}
+    assert jobs_client.get("/v2/jobs").json()["state"] == "no_goals"
+
+
+def test_search_lists_matching_roles_and_remembers_the_search(jobs_client):
+    result = _search(jobs_client)
+    assert [r["title"] for r in result["rows"]] == ["Senior Data Analyst"]
+    assert result["state"] in ("results", "detail_selected")
+    assert result["summary_line"].startswith("Data Analyst roles")
+    # A new request (or another device) sees the same search.
+    again = jobs_client.get("/v2/jobs").json()
+    assert [r["job_id"] for r in again["rows"]] == ["greenhouse_101"]
+    assert jobs_client.get("/v2/jobs/setup").json()["searched"] is True
+
+
+def test_detail_has_evidence_once_a_profile_exists(jobs_client):
+    _search(jobs_client)
+    bare = jobs_client.get("/v2/jobs/greenhouse_101").json()
+    assert bare["fit_measured"] is False and bare["keywords"] is None
+    jobs_client.post("/v2/profile/resume", files={"file": ("r.docx", resume_docx(), "application/octet-stream")})
+    detail = jobs_client.get("/v2/jobs/greenhouse_101").json()
+    assert detail["fit_measured"] is True and detail["row"]["fit"].startswith("Fit ")
+    assert "SQL" in detail["keywords"]["present"]
+    assert "Requirements" in detail["description"]
+    assert jobs_client.get("/v2/jobs/nope_1").status_code == 404
+
+
+def test_save_pass_and_prepare(jobs_client):
+    _search(jobs_client)
+    jobs_client.post("/v2/jobs/greenhouse_101/action", json={"action": "save"})
+    saved = jobs_client.get("/v2/jobs", params={"view": "saved"}).json()
+    assert saved["state"] == "saved" and saved["rows"][0]["status"] == "Saved"
+    prepared = jobs_client.post("/v2/jobs/greenhouse_101/action", json={"action": "apply"}).json()
+    assert prepared["next"] == "/tailor"
+    assert jobs_client.get("/v2/jobs/greenhouse_101").json()["active"] is True
+    assert jobs_client.post("/v2/jobs/greenhouse_101/action", json={"action": "delete"}).status_code == 422
+
+
+def test_search_needs_a_role_and_a_source(jobs_client):
+    assert jobs_client.post("/v2/jobs/search", json={"job_title": " "}).status_code == 400
+    assert jobs_client.post("/v2/jobs/search", json={"job_title": "Analyst", "sources": ["linkedin"]}).status_code == 400

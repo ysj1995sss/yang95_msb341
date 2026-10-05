@@ -79,3 +79,39 @@ export type ProfileResponse = {
     work_modes: Array<{ value: string; label: string }>;
   };
 };
+
+// --- Jobs (phase 2) ---
+
+export type JobForm = {
+  job_title: string; location: string; remote_preference: string; experience_level: string[];
+  industries: string[]; min_salary: number; employment_type: string[]; sponsorship_required: boolean;
+  relocation_willing: boolean; target_companies: string; exclude_companies: string; sources: string[];
+};
+
+export type Option = { value: string; label: string };
+
+export type JobsSetup = {
+  form: JobForm; has_goals: boolean; searched: boolean; summary_line: string; suggested_titles: string[];
+  board_count: number; saved_count: number;
+  options: { experience_levels: string[]; industries: string[]; employment_types: string[]; work_modes: Option[]; sources: Option[] };
+};
+
+export type JobRow = {
+  job_id: string; title: string; company: string; location: string; work_mode: string; salary: string;
+  source: string; is_demo: boolean; freshness: string; quality: string; quality_tone: string;
+  fit: string; fit_tone: string; status: string;
+};
+
+export type JobsList = {
+  view: "best" | "newest" | "saved"; state: string; partial_failure: boolean; source_note: string;
+  summary_line: string; searched_at: string; coverage_notes: string[]; rows: JobRow[];
+};
+
+export type Evidence = { requirement: string; evidence: string };
+
+export type JobDetail = {
+  row: JobRow; url: string; facts: Array<[string, string]>; strong: Evidence[]; partial: Evidence[];
+  gaps: string[]; hard_gates: string[]; unknowns: string[]; fit_parts: Array<[string, string]>; summary: string;
+  fit_measured: boolean; keywords: { summary: string; present: string[]; missing: string[] } | null;
+  description: string; active: boolean;
+};
