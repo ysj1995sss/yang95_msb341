@@ -176,7 +176,7 @@ a[data-testid="stBaseLinkButton-primary"], a[data-testid="stBaseLinkButton-prima
 [data-testid="stHeaderActionElements"] { display: none !important; }
 button:disabled, button[disabled] { opacity: .45 !important; cursor: not-allowed !important; }
 div.stButton > button:not([kind="primary"]) { border-radius: 4px; border-color: #AAB4C0; }
-[data-testid="stVerticalBlockBorderWrapper"] { border-radius: 4px; }
+[data-testid="stVerticalBlock"] { border-radius: 4px; }  /* bordered st.container() in 1.64 */
 a:focus-visible, button:focus-visible, input:focus-visible, textarea:focus-visible, [tabindex]:focus-visible { outline: 3px solid #FFBF47 !important; outline-offset: 2px !important; }
 /* --- spec 008: work-page composition --- */
 .jc-page-header { padding: 0 0 .75rem; margin-bottom: 1rem; }
