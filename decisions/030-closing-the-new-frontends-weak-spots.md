@@ -21,8 +21,8 @@ Only the outside world is stubbed: the job boards, the language model and the PD
 
 CI (`.github/workflows/tests.yml`) runs them in the `web-e2e` job.
 
-**Not done:** a screen-reader pass (NVDA or VoiceOver). Automated checks can't hear what is read
-aloud. A person has to do it.
+**Not done:** a screen-reader pass with NVDA or VoiceOver by a person. Automated checks can't
+hear what is read aloud. The accessibility tree of every page was reviewed instead (section 12).
 
 ## 2. Work survives an API restart
 
@@ -70,7 +70,7 @@ the person's own copy.
   person a reference to quote, and the full trace goes to the log.
 
 **Rejected: an error-monitoring service (Sentry or similar).** It needs an account and sends
-data to a third party. That is the builder's choice when deploying.
+data to a third party. Instead there is an optional `ERROR_WEBHOOK_URL` (section 12).
 
 ## 6. Search results in pages
 
@@ -92,6 +92,7 @@ form's resume field through a `DataTransfer`. If a site's upload control refuses
 is outlined amber for the person to attach the file. It still never submits.
 
 **Not done:** publishing to the Chrome Web Store, which needs the builder's developer account.
+Everything else for it is ready (section 12).
 
 ## 9. Gmail status sync (spec 005 slice 2)
 
@@ -135,7 +136,42 @@ litellm loads the first `.env` it finds above its install folder. On the builder
 `C:\Users\ysj19\.env`, which belongs to a different project. It sets `DATABASE_URL`, Google
 client settings and an OpenAI key, which leak into any Job Copilot process that imports
 litellm. The values were never read or printed. The test server sets its own values before
-litellm is imported. The builder should move or rename that file.
+litellm is imported. Fixed in code later the same day (section 12). The builder should still
+move or rename that file, since other tools may read it too.
+
+## 12. Second pass: what could be fixed without a person or an account
+
+- **The stray `.env`:** `llm/client.py` sets `LITELLM_MODE=PRODUCTION` before importing litellm,
+  which turns off only litellm's `.env` loading. The app's own `product/.env` loading is
+  unchanged. A test shows a stray `.env` leaking in without the setting and not with it.
+- **Wrong times:** SQLite stamps status history in UTC, while everything else uses the server's
+  local time. Tracker history was 6 hours off here, and Home's dates could land on the wrong
+  day.
+  - History now reads back as server-local time (`_local_from_sqlite_utc`).
+  - The API sends every moment with its UTC offset (`context.stamp`).
+  - A browser test checks Tracker from Auckland.
+  - The Streamlit app gets the same fix, through the shared database code.
+- **Accessibility tree review:** every page's tree was read as a screen reader would read it.
+  The Jobs "Show" and Tracker "Saved views" switchers claimed to be tabs without tab panels, so
+  they are now pressed buttons in a labelled group. Headings, landmarks, labels and selected
+  items (`aria-current`) were already right.
+- **Privacy policy:** `/privacy` is public and covers the website, Gmail (including Google's
+  Limited Use statement) and the form helper. It is linked from sign-in and the footer. It is
+  needed for both the Chrome Web Store and Google's Gmail review. `PRIVACY_CONTACT` sets a
+  contact address.
+- **Chrome Web Store package:**
+  - `extension/build.py` draws the icons and writes `dist/job-copilot-helper-<version>.zip`.
+  - `extension/STORE.md` has the listing text, the reason for each permission, and the
+    privacy-tab answers.
+- **Embedded forms:** company career pages that embed Greenhouse, Lever, Ashby, Workday or
+  SmartRecruiters forms now work.
+  - An optional permission for those six sites is requested only when the person clicks
+    **Allow embedded forms**.
+  - Address matching (`extension/match.js`) can't be fooled by an address that merely mentions
+    one of the sites. It is tested.
+- **Error alerts:** with `ERROR_WEBHOOK_URL` set to a Slack or Discord webhook, each server error
+  or failed tailoring run posts one line: the reference, where it happened and the error type.
+  It never includes the message or anything about the person.
 
 ## Still the builder's decisions
 
