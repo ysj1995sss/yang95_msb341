@@ -8,6 +8,16 @@ from typing import Optional, List
 from resume_tailorer.job_search.models import JobSource, SearchGoals, JobPosting, UserSelection
 
 
+def add_column_if_missing(cursor, table: str, column: str, definition: str) -> None:
+    """ALTER TABLE ... ADD COLUMN that tolerates another connection adding it first: the web
+    API opens connections per request, so two first requests can both see the column missing."""
+    try:
+        cursor.execute(f"ALTER TABLE {table} ADD COLUMN {column} {definition}")
+    except sqlite3.OperationalError as exc:
+        if "duplicate column name" not in str(exc).lower():
+            raise
+
+
 class JobDatabase:
     """Manages SQLite persistence for job postings and user selections."""
 
@@ -66,12 +76,9 @@ class JobDatabase:
         # existed won't get the column from CREATE TABLE IF NOT EXISTS.
         cursor.execute("PRAGMA table_info(job_postings)")
         existing_columns = {row[1] for row in cursor.fetchall()}
-        if "alternative_sources" not in existing_columns:
-            cursor.execute("ALTER TABLE job_postings ADD COLUMN alternative_sources TEXT")
-        if "last_seen" not in existing_columns:
-            cursor.execute("ALTER TABLE job_postings ADD COLUMN last_seen TIMESTAMP")
-        if "employment_type" not in existing_columns:
-            cursor.execute("ALTER TABLE job_postings ADD COLUMN employment_type TEXT")
+        for column, definition in (("alternative_sources", "TEXT"), ("last_seen", "TIMESTAMP"), ("employment_type", "TEXT")):
+            if column not in existing_columns:
+                add_column_if_missing(cursor, "job_postings", column, definition)
 
         # Create user_selections table
         cursor.execute("""

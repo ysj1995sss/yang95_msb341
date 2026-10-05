@@ -6,6 +6,7 @@ import uuid
 from datetime import datetime, timezone
 from typing import List, Optional
 
+from resume_tailorer.job_search.database import add_column_if_missing
 from resume_tailorer.applications.models import (
     ApplicationMode,
     ApplicationStatus,
@@ -127,7 +128,7 @@ class ApplicationDatabase:
             existing = {row["name"] for row in cursor.execute(f"PRAGMA table_info({table})")}
             for column, definition in columns:
                 if column not in existing:
-                    cursor.execute(f"ALTER TABLE {table} ADD COLUMN {column} {definition}")
+                    add_column_if_missing(cursor, table, column, definition)
         self.conn.commit()
 
     def save_answer(self, question_key: str, question: str, answer: str) -> None:

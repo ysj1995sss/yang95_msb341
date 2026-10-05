@@ -139,7 +139,7 @@ def select_staged(body: Select, ws: Workspace = Depends(workspace)):
     record = ws.record
     remember(record, body.job_id)
     ws.save_record(record)
-    return apply_page(Workspace(ws.owner))
+    return apply_page(Workspace(ws.owner, ws.service))
 
 
 @router.post("/apply/track")

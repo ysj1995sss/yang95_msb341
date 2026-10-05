@@ -94,7 +94,7 @@ async def import_resume_file(file: UploadFile = File(...), ws: Workspace = Depen
     except Exception as exc:
         raise HTTPException(422, f"We couldn't read that file: {exc}. Try the Word version, or a PDF with "
                                  "selectable text.") from exc
-    return _view(Workspace(ws.owner))
+    return _view(Workspace(ws.owner, ws.service))
 
 
 class Contact(BaseModel):

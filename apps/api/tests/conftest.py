@@ -44,12 +44,8 @@ def auth_headers(client, email: str = "p@example.com") -> dict:
 @pytest.fixture()
 def workspace_client(tmp_path, monkeypatch):
     """The workspace API in local single-user mode, with its own data folder."""
-    from app.workspace.context import forget_services
-
     monkeypatch.setenv("JOB_COPILOT_DATA_DIR", str(tmp_path / "data"))
     monkeypatch.setenv("JOB_COPILOT_PREFETCH", "0")
     monkeypatch.delenv("WORKSPACE_TOKEN_SECRET", raising=False)
-    forget_services()
     with TestClient(app) as c:
         yield c
-    forget_services()

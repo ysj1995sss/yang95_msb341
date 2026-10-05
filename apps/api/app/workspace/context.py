@@ -6,10 +6,9 @@ from __future__ import annotations
 
 import dataclasses
 import enum
-import threading
 from datetime import date, datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, Iterator
 
 from fastapi import Depends
 
@@ -18,8 +17,6 @@ from resume_tailorer.identity import applications_db_path, artifacts_dir, job_db
 from resume_tailorer.profile_import import RECORD_KEY, load_into_session, store_for
 
 OWNER_KEY = "owner_id"
-_SERVICES: dict[str, Any] = {}
-_SERVICES_LOCK = threading.Lock()
 
 # Streamlit page paths used by the shared view models -> routes of the web app.
 ROUTES = {
@@ -33,36 +30,22 @@ ROUTES = {
 
 
 def job_service(owner_id: str):
-    """One JobService per owner per process (its SQLite connections allow any thread)."""
+    """A JobService with its own SQLite connections, for one request or one background run.
+
+    Never shared: one person's requests run on several threads at once (two tabs, React's double
+    fetch), and a Python SQLite connection used from two threads at the same time fails with
+    "bad parameter or other API misuse". Opening one costs about 3 ms (decision 030)."""
     from resume_tailorer.job_search.job_service import JobService
 
-    with _SERVICES_LOCK:
-        service = _SERVICES.get(owner_id)
-        if service is None:
-            service = JobService(db_path=job_db_path(owner_id), applications_db_path=applications_db_path(owner_id))
-            _SERVICES[owner_id] = service
-        return service
-
-
-def forget_owner(owner_id: str) -> None:
-    """Close and drop one owner's databases (before deleting their folder)."""
-    with _SERVICES_LOCK:
-        service = _SERVICES.pop(owner_id, None)
-    if service is not None:
-        service.close()
-
-
-def forget_services() -> None:
-    """Tests: each test gets fresh databases."""
-    with _SERVICES_LOCK:
-        _SERVICES.clear()
+    return JobService(db_path=job_db_path(owner_id), applications_db_path=applications_db_path(owner_id))
 
 
 class Workspace:
-    def __init__(self, owner: Owner):
+    def __init__(self, owner: Owner, service=None):
+        """`service`: reuse a request's open connections when re-reading state in that request."""
         self.owner = owner
         self.session: dict[str, Any] = {OWNER_KEY: owner.owner_id, "artifacts_dir": artifacts_dir(owner.owner_id)}
-        self.service = job_service(owner.owner_id)
+        self.service = service or job_service(owner.owner_id)
         load_into_session(self.session, owner.owner_id)
         try:
             from resume_tailorer.active_job import restore_handoff, restore_pending_job
@@ -79,6 +62,9 @@ class Workspace:
             restore_handoff(self.session, self.record)
         except Exception:  # the chosen job is a convenience; never fail a request on it
             pass
+
+    def close(self) -> None:
+        self.service.close()
 
     @property
     def owner_id(self) -> str:
@@ -109,12 +95,17 @@ def session_version(owner_id: str) -> int:
         return 0
 
 
-def workspace(owner: Owner = Depends(current_owner)) -> Workspace:
+def workspace(owner: Owner = Depends(current_owner)) -> Iterator[Workspace]:
+    """The person's workspace for one request; its database connections close afterwards."""
     from fastapi import HTTPException
 
     if owner.signed_in and owner.session_version != session_version(owner.owner_id):
         raise HTTPException(401, "You were signed out on all devices. Sign in again.")
-    return Workspace(owner)
+    ws = Workspace(owner)
+    try:
+        yield ws
+    finally:
+        ws.close()
 
 
 def stamp(value: datetime) -> str:

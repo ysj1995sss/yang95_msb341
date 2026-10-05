@@ -246,7 +246,17 @@ def _settings_for(body: RunRequest, ws: Workspace):
                             api_base=(body.api_base or "").strip() or None)
 
 
-def _worker(ws: Workspace, job_id: str, pending: dict, source, request: RunRequest, settings) -> None:
+def _worker(owner, job_id: str, pending: dict, source, request: RunRequest, settings) -> None:
+    """Runs on its own thread with its own workspace: the request that started it closes its
+    database connections as soon as it answers."""
+    ws = Workspace(owner)
+    try:
+        _run(ws, job_id, pending, source, request, settings)
+    finally:
+        ws.close()
+
+
+def _run(ws: Workspace, job_id: str, pending: dict, source, request: RunRequest, settings) -> None:
     from resume_tailorer.llm.client import LLMClient
     from resume_tailorer.tailoring_service import TailoringError, regenerate, run_tailoring
     from resume_tailorer.ui.tailoring_view import safe_default_dispositions
@@ -309,7 +319,7 @@ def start_run(body: RunRequest, ws: Workspace = Depends(workspace)):
         _write_run(ws.owner_id, {"status": "running", "step": "Starting", "job_id": pending["job_id"],
                                  "started": time.time(), "boot": BOOT_ID})
     discard_review(ws.session["artifacts_dir"], pending["job_id"])
-    threading.Thread(target=_worker, args=(ws, pending["job_id"], pending, source, body, settings),
+    threading.Thread(target=_worker, args=(ws.owner, pending["job_id"], pending, source, body, settings),
                      name=f"tailor-{ws.owner_id[:8]}", daemon=True).start()
     return _run_status(ws.owner_id)
 
@@ -445,7 +455,7 @@ def use_pasted_job(body: PastedJob, ws: Workspace = Depends(workspace)):
     remember(record, job_id)
     ws.save_record(record)
     ws.session.pop(PENDING_TAILOR_JOB_KEY, None)
-    return tailor_page(False, Workspace(ws.owner))
+    return tailor_page(False, Workspace(ws.owner, ws.service))
 
 
 @router.post("/tailor/one-off")

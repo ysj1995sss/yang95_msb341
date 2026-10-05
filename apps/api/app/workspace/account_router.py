@@ -12,7 +12,7 @@ from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException, Response
 from pydantic import BaseModel
 
-from app.workspace.context import Workspace, forget_owner, session_version, workspace
+from app.workspace.context import Workspace, session_version, workspace
 from app.workspace.identity import Owner, current_owner
 
 router = APIRouter(prefix="/v2", tags=["workspace"])
@@ -53,7 +53,7 @@ def delete_account(body: Confirm, ws: Workspace = Depends(workspace)):
 
     if body.confirm != "DELETE":
         raise HTTPException(400, 'Type DELETE to confirm.')
-    forget_owner(ws.owner_id)  # close this user's database connections first
+    ws.close()  # this request's database connections, before the folder goes
     shutil.rmtree(user_dir(ws.owner_id), ignore_errors=False)
     return {"deleted": True}
 
