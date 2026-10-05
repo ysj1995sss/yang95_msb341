@@ -181,3 +181,22 @@ def test_a_reviewed_resume_reaches_apply(tailor_client, monkeypatch):
     assert tailor_client.post("/v2/tailor/rebuild").json()["progress"]["can_continue"] is True
     apply = tailor_client.get("/v2/apply").json()
     assert apply["handoff"]["has_file"] is True and apply["view"]["stage"] == "ready"
+
+
+def test_codex_cli_model_only_on_your_own_computer():
+    """Signed in (a shared server), the codex-cli model would spend the owner's ChatGPT plan on
+    other people's runs; locally it needs no key (decision 031)."""
+    import pytest
+    from fastapi import HTTPException
+
+    from app.workspace.identity import Owner
+    from app.workspace.tailor_router import RunRequest, _settings_for
+
+    class FakeWorkspace:
+        def __init__(self, signed_in):
+            self.owner = Owner(owner_id="x", name="x", signed_in=signed_in)
+
+    assert _settings_for(RunRequest(model="codex-cli"), FakeWorkspace(False)).model == "codex-cli"
+    with pytest.raises(HTTPException) as refused:
+        _settings_for(RunRequest(model="codex-cli"), FakeWorkspace(True))
+    assert refused.value.status_code == 400 and "your own computer" in refused.value.detail

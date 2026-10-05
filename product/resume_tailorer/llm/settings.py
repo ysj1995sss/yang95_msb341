@@ -53,7 +53,9 @@ def resolve_settings(
     resolved_key = _pick(api_key, source.get("LLM_API_KEY"))
     resolved_base = _pick(api_base, source.get("LLM_API_BASE"))
 
-    if not resolved_model or not resolved_key:
+    if resolved_model and _uses_codex_cli(resolved_model):
+        resolved_key = resolved_key or ""  # the Codex CLI signs in with ChatGPT, not a key
+    elif not resolved_model or not resolved_key:
         raise ValueError(MISSING_CONFIG_MESSAGE)
 
     return LLMSettings(
@@ -62,6 +64,15 @@ def resolve_settings(
         api_base=resolved_base,
         fallback_models=_fallbacks(resolved_model, source.get("LLM_FALLBACK_MODELS")),
     )
+
+
+def _uses_codex_cli(model: str) -> bool:
+    return model == "codex-cli" or model.startswith("codex-cli/")
+
+
+def uses_codex_cli(settings: LLMSettings) -> bool:
+    """True when any model in these settings answers through the person's own ChatGPT plan."""
+    return any(_uses_codex_cli(m) for m in (settings.model, *settings.fallback_models))
 
 
 def _fallbacks(model: str, configured: Optional[str]) -> tuple[str, ...]:

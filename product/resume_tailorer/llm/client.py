@@ -2,7 +2,11 @@ from __future__ import annotations
 
 import os
 import re
+import shutil
+import subprocess
+import tempfile
 import time
+from pathlib import Path
 from typing import Callable
 
 # litellm otherwise loads the first .env above its own install folder (for a user install, the
@@ -20,6 +24,15 @@ _TRANSIENT_MARKERS = ("timeout", "timed out", "connection", "429", "rate limit",
 # "unavailable" also catches litellm's "ServiceUnavailableError", which has no space.
 _BUSY_MARKERS = ("overloaded", "503", "429", "rate limit", "unavailable", "temporarily")
 _THINK_BLOCK = re.compile(r"<think>.*?</think>", re.DOTALL | re.IGNORECASE)
+
+# "codex-cli" or "codex-cli/<model>": answers come from the Codex CLI signed in with the person's
+# own ChatGPT plan, for running Job Copilot on their own computer (decision 031).
+CODEX_CLI_PREFIX = "codex-cli"
+_CODEX_INSTRUCTIONS = (
+    "You are being used as a plain text-completion service by an application. Do not run commands, "
+    "read or write files, or use any tools. Follow the instructions below exactly and reply with only "
+    "the requested output, with no preamble and no closing remarks."
+)
 
 
 class _FallbackWorthy(RuntimeError):
@@ -67,6 +80,8 @@ class LLMClient:
         return text
 
     def _complete_once(self, model: str, system: str, user: str, max_tokens: int):
+        if model == CODEX_CLI_PREFIX or model.startswith(CODEX_CLI_PREFIX + "/"):
+            return self._complete_with_codex(model, system, user), False
         kwargs = {
             "model": model,
             "api_key": self.settings.api_key,
@@ -130,6 +145,38 @@ class LLMClient:
             )
         content = _THINK_BLOCK.sub("", content).strip()
         return content, getattr(choice, "finish_reason", None) == "length"
+
+    def _complete_with_codex(self, model: str, system: str, user: str) -> str:
+        """One answer from `codex exec`: a throwaway session in an empty folder, read-only
+        sandbox, no saved history. Uses the ChatGPT plan's Codex allowance, not an API key."""
+        codex = shutil.which("codex")
+        if codex is None:
+            raise RuntimeError("The Codex CLI isn't installed on this computer. Install it with "
+                               "`npm install -g @openai/codex`, then run `codex login`.")
+        prompt = f"{_CODEX_INSTRUCTIONS}\n\n<instructions>\n{system}\n</instructions>\n\n<task>\n{user}\n</task>\n"
+        with tempfile.TemporaryDirectory(prefix="jc-codex-") as work:
+            answer_file = Path(work, "answer.txt")
+            command = [codex, "exec", "--ephemeral", "--skip-git-repo-check", "--ignore-rules",
+                       "--sandbox", "read-only", "--color", "never", "-C", work,
+                       "-c", 'model_reasoning_effort="low"', "-o", str(answer_file)]
+            if "/" in model:
+                command += ["-m", model.split("/", 1)[1]]
+            command.append("-")  # the prompt comes on stdin
+            try:
+                done = subprocess.run(command, input=prompt, capture_output=True, text=True, encoding="utf-8",
+                                      errors="replace", timeout=self.TIMEOUT_SECONDS * 2)
+            except subprocess.TimeoutExpired as exc:
+                raise RuntimeError("Codex didn't answer in time. Try again.") from exc
+            answer = answer_file.read_text(encoding="utf-8").strip() if answer_file.exists() else ""
+        if done.returncode != 0 or not answer:
+            details = f"{done.stderr}\n{done.stdout}".lower()
+            if "usage limit" in details or "rate limit" in details or "429" in details:
+                raise RuntimeError("Your ChatGPT plan's Codex usage limit is used up for now. Try again "
+                                   "when it resets, or choose a different model for this run.")
+            if "login" in details or "not logged in" in details or "unauthorized" in details or "401" in details:
+                raise RuntimeError("Codex isn't signed in. Run `codex login` in a terminal, then try again.")
+            raise _FallbackWorthy("Codex returned no answer. Try again, or choose a different model.")
+        return _THINK_BLOCK.sub("", answer).strip()
 
     @staticmethod
     def _is_transient(exc: Exception) -> bool:

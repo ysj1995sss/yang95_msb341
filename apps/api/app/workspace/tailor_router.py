@@ -238,12 +238,16 @@ class RunRequest(BaseModel):
 def _settings_for(body: RunRequest, ws: Workspace):
     """The server's model, or the user's for this run. A custom API address is allowed only in
     local mode: on a shared server it would let anyone make the server call any address."""
-    from resume_tailorer.llm.settings import resolve_settings
+    from resume_tailorer.llm.settings import resolve_settings, uses_codex_cli
 
     if body.api_base and ws.owner.signed_in:
         raise HTTPException(400, "A custom API address is only available when running Job Copilot locally.")
-    return resolve_settings(model=(body.model or "").strip() or None, api_key=(body.api_key or "").strip() or None,
-                            api_base=(body.api_base or "").strip() or None)
+    settings = resolve_settings(model=(body.model or "").strip() or None, api_key=(body.api_key or "").strip() or None,
+                                api_base=(body.api_base or "").strip() or None)
+    if uses_codex_cli(settings) and ws.owner.signed_in:
+        # It would spend the server owner's ChatGPT plan on other people's requests (decision 031).
+        raise HTTPException(400, "The codex-cli model is only available when running Job Copilot on your own computer.")
+    return settings
 
 
 def _worker(owner, job_id: str, pending: dict, source, request: RunRequest, settings) -> None:
