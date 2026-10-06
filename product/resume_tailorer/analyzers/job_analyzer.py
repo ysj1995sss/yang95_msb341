@@ -170,6 +170,12 @@ class JobAnalyzer:
             )
             responsibilities = self._extract_responsibilities(job_description)
 
+        # Spec 011: a posting written as plain paragraphs, with no requirement headings at all,
+        # still has requirement sentences ("You must have an active RN license"). Found only
+        # when no required or preferred items were found the usual way.
+        if not required_qual and not preferred_qual:
+            required_qual, preferred_qual = sentence_requirements(job_description)
+
         # Extract skills and tools
         skills = self._extract_skills(job_description, required_qual)
         tools = self._extract_tools(job_description)
@@ -455,3 +461,40 @@ class JobAnalyzer:
             bumped = min(order.index(base) + 1, len(order) - 1)
             return order[bumped]
         return base
+
+
+# --- Requirement sentences in postings without headings (spec 011) ----------------------------
+
+_REQUIREMENT_CUES = re.compile(
+    r"\b(?:must|required|requires|requirements?|need to have|you have|you'?ll have|you bring|"
+    r"experience (?:with|in|using|managing|leading)|proficien(?:t|cy) (?:in|with)|knowledge of|"
+    r"familiar(?:ity)? with|expertise in|ability to|skilled in|"
+    r"\d+\s*\+?\s*(?:-\s*\d+\s*)?years?|degree|license[ds]?|licensure|certifi(?:ed|cation)|bachelor|master'?s|"
+    r"preferred|a plus|nice to have|bonus|desired|ideally)\b",
+    re.IGNORECASE,
+)
+_PREFERRED_CUES = re.compile(
+    r"\b(?:preferred|is a plus|a plus|nice to have|bonus|ideally|desired|an advantage|helpful)\b", re.IGNORECASE)
+_NOT_REQUIREMENTS = re.compile(
+    r"equal (?:employment )?opportunit|benefits?\b|we offer|pay range|salary|compensation|401\(?k|"
+    r"paid time off|pto\b|reasonable accommodation|e-verify|privacy",
+    re.IGNORECASE,
+)
+_SENTENCE_SPLIT = re.compile(r"(?<=[.!?;])\s+|\n+|\s+[•▪◦]\s+")
+
+
+def sentence_requirements(text: str) -> tuple[list[str], list[str]]:
+    """(required, preferred) requirement sentences from a posting without requirement headings.
+    Each sentence is classified by its own wording ("a plus", "preferred" mean preferred)."""
+    required: list[str] = []
+    preferred: list[str] = []
+    for raw in _SENTENCE_SPLIT.split(text or ""):
+        sentence = re.sub(r"^\s*(?:[-*•▪◦]|\d+[.)])\s*", "", raw).strip()
+        if len(sentence.split()) < 3 or len(sentence) > 300:
+            continue
+        if _NOT_REQUIREMENTS.search(sentence) or not _REQUIREMENT_CUES.search(sentence):
+            continue
+        if re.match(r"(?i)^(?:you will|you'll|in this role|responsibilities)\b", sentence):
+            continue  # what the job does, not what it asks of the candidate
+        (preferred if _PREFERRED_CUES.search(sentence) else required).append(sentence.rstrip("."))
+    return required, preferred

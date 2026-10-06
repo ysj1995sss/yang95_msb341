@@ -63,6 +63,17 @@ AMBIGUOUS_ACRONYMS: dict[str, tuple[str, ...]] = {
     "qa": ("quality assurance", "question"),
     "ops": ("operations", "devops"),
     "ea": ("executive assistant", "enterprise architect"),
+    # Spec 011
+    "pa": ("physician assistant", "personal assistant", "pennsylvania"),
+    "ot": ("occupational therap", "overtime"),
+    "pt": ("physical therap", "part-time", "part time"),
+    "da": ("data analyst", "district attorney", "dental assistant"),
+    "cs": ("computer science", "customer success", "customer service"),
+    "sa": ("solutions architect", "sales associate"),
+    "ae": ("account executive", "after effects"),
+    "am": ("account manag", "asset manag"),
+    "ds": ("data scien", "dental surg"),
+    "ux": ("user experience",),
 }
 
 # Broad concept words from the vocabulary. They help find a passage, but when a requirement names
@@ -76,6 +87,17 @@ GENERIC_TERMS = {
     "Process improvement", "Business case", "Experimentation", "Customer journey", "Forecasting",
     "Budgeting", "Segmentation", "Project management", "Program management", "Change management",
     "Stakeholder management", "Team leadership", "People management", "Executive communication",
+    # Spec 011: concept words from the wider vocabulary (things you show by doing, not tools)
+    "Data pipelines", "Data modeling", "Data warehousing", "Deep learning", "Microservices", "Unit testing",
+    "Test automation", "Financial reporting", "Financial analysis", "Variance analysis", "Month-end close",
+    "Reconciliations", "Audit", "Tax", "Valuation", "Patient care", "Acute care", "Medication administration",
+    "Triage", "Case management", "Clinical documentation", "Inventory management", "Procurement", "Sourcing",
+    "Demand planning", "Warehouse management", "Quality assurance", "Quality control", "Quota attainment",
+    "Pipeline management", "Lead qualification", "Prospecting", "Upselling", "Renewals",
+    "Customer retention", "Recruiting", "Onboarding", "Employee relations", "Compensation",
+    "Benefits administration", "Payroll", "Curriculum development", "Lesson planning", "Classroom management",
+    "Instructional design", "UX design", "UI design", "Wireframing", "Prototyping", "Accessibility",
+    "Contract negotiation", "Contracts", "Compliance", "Regulatory compliance", "Litigation", "Cybersecurity",
 }
 
 # Degree levels: a posting's wording and the abbreviations resumes use for the same level.
@@ -252,7 +274,11 @@ def requirement_terms(requirement: str, job_analysis: Optional[JobAnalysis] = No
     """The searchable terms a requirement names: curated vocabulary, the posting's own skills and
     tools, and the person's listed skills and tools found in this sentence."""
     found = list(terms_in(requirement))
-    extra = [*job_analysis.skills_required, *job_analysis.tools_required] if job_analysis is not None else []
+    # The posting's own skills and tools count only when they're real terms: a posting without
+    # known tools falls back to frequent words ("active", "required"), which aren't skills.
+    known = {k.lower() for k in VOCABULARY} | {v.lower() for v in VOCABULARY.values()}
+    extra = [t for t in [*job_analysis.skills_required, *job_analysis.tools_required]
+             if t.strip().lower() in known] if job_analysis is not None else []
     if profile is not None:
         extra += [*profile.skills, *profile.tools]
     if extra:

@@ -67,17 +67,31 @@ def _is_heading(line: str) -> bool:
     return bool(content) and all(w[0].isupper() for w in content)
 
 
+def _is_sentence_case_heading(line: str, following: List[str]) -> bool:
+    """A short sentence-case heading such as "Nice to have" (spec 011): it names a known section,
+    has no sentence punctuation, and a bulleted list follows. Without the list, a short line like
+    "Python preferred" stays an item."""
+    words = line.split()
+    if not words or len(words) > 6 or line[-1] in ".!?,;" or _BULLET.match(line):
+        return False
+    if classify_heading(line) == OTHER:
+        return False
+    nxt = next((l.strip() for l in following if l.strip()), "")
+    return bool(_BULLET.match(nxt))
+
+
 def split_sections(text: str) -> Optional[Dict[str, List[str]]]:
     """Items per section class, or None when the text has no classified headings."""
     sections: Dict[str, List[str]] = {REQUIRED: [], PREFERRED: [], RESPONSIBILITIES: []}
     current: Optional[str] = None
     found = False
     bullets_in_section = False
-    for raw in (text or "").splitlines():
+    lines = (text or "").splitlines()
+    for position, raw in enumerate(lines):
         line = raw.strip()
         if not line:
             continue
-        if _is_heading(line):
+        if _is_heading(line) or _is_sentence_case_heading(line, lines[position + 1:]):
             current = classify_heading(line)
             found = found or current != OTHER
             bullets_in_section = False
