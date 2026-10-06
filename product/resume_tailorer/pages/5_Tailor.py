@@ -45,7 +45,8 @@ from resume_tailorer.review_store import discard_review, load_review, save_revie
 from resume_tailorer.artifacts.models import FidelityMode, ValidationStatus
 from resume_tailorer.ui.artifact_review import visible_changes
 from resume_tailorer.ui import ats_explainer, chip, render_app_shell, render_page_header, render_progress
-from resume_tailorer.ui.ats_panel import render_ats_explainer
+from resume_tailorer.ui.ats_panel import render_ats_explainer, render_readability, render_requirement_review
+from resume_tailorer.ui.requirement_review_view import readability_view, review_for_state, review_view
 from resume_tailorer.ui.shell import primary_action
 from resume_tailorer.ui.design_system import ProgressStep
 from resume_tailorer.ui.pdf_preview import pdf_page_images
@@ -264,6 +265,10 @@ def _render_review_room(pending: dict) -> None:
             help="Hidden by default because they don't change what your resume says.",
         )
 
+        review = review_for_state(state, (st.session_state.get(RECORD_KEY) or {}).get("provenance"))
+        if review is not None:
+            render_requirement_review(review_view(review))
+
         if groups.true_gaps or groups.blocked:
             st.markdown("### Missing, never added")
             st.markdown(
@@ -306,6 +311,8 @@ def _render_preview(state: dict) -> None:
     if status is not ValidationStatus.PASS:
         for finding in report.validation.findings:
             st.markdown(f"- {finding.message}")
+    render_readability(readability_view(report.validation.findings, state.get("source_kind", ""),
+                                        report.validation.checks_run))
 
     images = pdf_page_images(state.get("pdf_bytes") or b"")
     if images and status is not ValidationStatus.FAIL:

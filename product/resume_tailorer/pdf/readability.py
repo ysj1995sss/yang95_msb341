@@ -162,29 +162,3 @@ def expected_for_freeform(profile) -> ExpectedContent:
     (content_validator), so only order, symbols and headings are checked here."""
     return ExpectedContent(employers=tuple(j.employer for j in getattr(profile, "work_experience", []) if j.employer),
                            check_contact=False)
-
-
-def readability_items(findings: Iterable[ValidationFinding]) -> list[dict]:
-    """The readability results for a screen: one line per check, passed or not."""
-    by_code: dict[str, list[ValidationFinding]] = {}
-    for f in findings:
-        by_code.setdefault(f.code, []).append(f)
-    checks = [
-        ("TEXT_NOT_EXTRACTABLE", "Text can be read from the file"),
-        ("READABILITY_CONTACT_MISSING", "Your name and email read back"),
-        ("READABILITY_BULLET_MISSING", "Every bullet reads back"),
-        ("READABILITY_ORDER", "Text reads back whole and in order"),
-        ("READABILITY_ROLE_ORDER", "Roles read back in page order"),
-        ("READABILITY_UNMAPPED_SYMBOLS", "No unknown symbols"),
-        ("READABILITY_HEADING_UNUSUAL", "Standard section headings"),
-    ]
-    items = []
-    for code, label in checks:
-        hits = by_code.get(code, [])
-        items.append({
-            "label": label,
-            "ok": not hits,
-            "severity": hits[0].severity.value if hits else "PASS",
-            "message": " ".join(h.message for h in hits),
-        })
-    return items

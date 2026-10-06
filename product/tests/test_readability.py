@@ -11,7 +11,7 @@ from reportlab.pdfgen import canvas
 
 from resume_tailorer.artifacts.models import FindingSeverity
 from resume_tailorer.pdf.readability import (
-    ExpectedContent, check_readability, expected_for_docx, readability_items,
+    ExpectedContent, check_readability, expected_for_docx,
 )
 from resume_tailorer.pdf.validator import PDFValidator, findings_from_pdf_issues
 from tests.fixtures.ats import profile
@@ -118,11 +118,18 @@ def test_extraction_noise_is_tolerated():
     assert not _codes(findings, FindingSeverity.FAIL)
 
 
-def test_readability_items_list_every_check_for_the_screen():
-    items = readability_items(check_readability("Riley Park\nMy Journey", EXPECTED))
-    labels = [i["label"] for i in items]
-    assert labels[0] == "Text can be read from the file" and "Every bullet reads back" in labels
-    assert any(not i["ok"] and i["severity"] == "FAIL" for i in items)
+def test_the_screen_lists_only_checks_that_ran_with_their_state():
+    from resume_tailorer.ui.requirement_review_view import readability_view
+
+    findings = check_readability("Riley Park\nMy Journey", EXPECTED)
+    docx = readability_view(findings, "DOCX", ("pdf_technical", "readability"))
+    labels = {i["label"]: i["state"] for i in docx["items"]}
+    assert labels["Every bullet reads back"] == "fail" and labels["Standard section headings"] == "warn"
+    assert "not a check by any employer's ATS" in docx["note"]
+    freeform = {i["label"] for i in readability_view(findings, "PDF", ("readability",))["items"]}
+    assert "Every bullet reads back" not in freeform  # the free-form path doesn't run that check
+    old = readability_view([], "DOCX", ("pdf_technical",))  # a run from before spec 010
+    assert {i["state"] for i in old["items"]} >= {"not_checked"}
 
 
 def test_word_path_runs_the_readability_check_on_its_pdf(tmp_path, monkeypatch):

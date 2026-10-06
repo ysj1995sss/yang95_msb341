@@ -5,6 +5,7 @@ import { useState } from "react";
 import { Alert, Button, Card, Chip, DownloadLink, LinkButton, TextArea, cx, toneOf, useToast } from "@/components/ui";
 import { api } from "@/lib/api";
 import type { Change, Decision, Review } from "@/lib/types";
+import { ReadabilityCheck, RequirementReview } from "./requirement-review";
 
 const pct = (v: number | null) => (v === null || v === undefined ? "–" : `${Math.round(v * 100)}%`);
 
@@ -149,6 +150,8 @@ export function ReviewRoom({ review, onChange, onDiscard }: {
             </details>
           )}
 
+          {review.requirement_review && <RequirementReview review={review.requirement_review} />}
+
           {(review.true_gaps.length > 0 || review.blocked.length > 0) && (
             <section aria-labelledby="missing">
               <h3 id="missing" className="text-[18px] font-semibold">Missing, never added</h3>
@@ -172,6 +175,7 @@ export function ReviewRoom({ review, onChange, onDiscard }: {
           {review.status === "FAIL" && <Alert tone="blocked" role="alert">This resume failed validation and can&apos;t be downloaded or used to apply.</Alert>}
           {review.status === "WARNING" && <Alert tone="review" title="Passed with warnings. Read them before you use this resume." />}
           {review.status !== "PASS" && review.findings.length > 0 && <ul className="list-disc pl-5 text-[15px]">{review.findings.map((f) => <li key={f}>{f}</li>)}</ul>}
+          <ReadabilityCheck readability={review.readability} />
           {review.preview_pages > 0 ? (
             <div className="flex max-h-[70vh] flex-col gap-3 overflow-y-auto rounded-[var(--radius-card)] border border-line bg-canvas p-3">
               {Array.from({ length: review.preview_pages }, (_, i) => (

@@ -64,6 +64,7 @@ def test_detail_has_evidence_once_a_profile_exists(jobs_client):
     # Spec 010: honest wording, and the shared ATS explanation.
     assert "Career Profile" in detail["keywords"]["summary"] and "on your resume" not in detail["keywords"]["summary"]
     assert detail["ats_explainer"]["title"] == "About ATS checks"
+    assert detail["requirements"]["summary"].startswith(("Required:", "No requirement list"))
     assert "not an employer's ATS score" in detail["ats_explainer"]["terms_note"]
     assert "Requirements" in detail["description"]
     assert jobs_client.get("/v2/jobs/nope_1").status_code == 404

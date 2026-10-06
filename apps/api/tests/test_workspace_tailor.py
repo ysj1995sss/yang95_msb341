@@ -74,6 +74,13 @@ def test_run_review_decide_rebuild_download(tailor_client):
     # Spec 010: the overlap number is kept (compatibility) but explained, never called an ATS score.
     assert set(review["alignment"]) == {"before", "after"} and "not an employer score" in review["overlap_note"]
     assert tailor_client.get("/v2/tailor").json()["ats_explainer"]["title"] == "About ATS checks"
+    rr = review["requirement_review"]
+    assert rr["computed_from"] == "run" and rr["summary"].startswith("Required:")
+    rows = [row for group in rr["groups"] for row in group["rows"]]
+    assert rows and all({"text", "label", "tone", "reason", "evidence", "shown_in_resume"} <= set(r) for r in rows)
+    assert any(r["evidence"] and r["evidence"][0]["source"] for r in rows)
+    assert "not a check by any employer's ATS" in review["readability"]["note"]
+    assert review["readability"]["items"][0]["label"] == "Text can be read from the file"
     change = next(c for c in review["changes"] if "reporting dashboards" in c["proposed"])
     assert change["decision"] is None and change["original"].startswith("Built SQL dashboards")
 

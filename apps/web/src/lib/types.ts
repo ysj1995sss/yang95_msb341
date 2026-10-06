@@ -117,6 +117,7 @@ export type JobDetail = {
   gaps: string[]; hard_gates: string[]; unknowns: string[]; fit_parts: Array<[string, string]>; summary: string;
   fit_measured: boolean; keywords: { summary: string; present: string[]; missing: string[] } | null;
   description: string; active: boolean; ats_explainer: AtsExplainerText;
+  requirements: { summary: string; rows: number } | null;
 };
 
 // --- Tailor (phase 3) ---
@@ -128,10 +129,24 @@ export type Change = {
   check: string; decision: Decision | null; decision_label: string; manual_text: string;
 };
 
+export type RequirementRowView = {
+  id: string; text: string; status: "direct" | "transferable" | "mention" | "unconfirmed" | "check" | "none";
+  label: string; tone: "verified" | "primary" | "review" | "blocked"; reason: string; hard_gate: boolean;
+  shown_in_resume: boolean | null; evidence: Array<{ text: string; source: string; confirmed: boolean }>;
+};
+export type RequirementReviewView = {
+  summary: string; computed_from: "run" | "now"; note: string;
+  groups: Array<{ section: string; label: string; rows: RequirementRowView[] }>;
+};
+export type Readability = {
+  note: string; items: Array<{ label: string; state: "ok" | "warn" | "fail" | "not_checked"; message: string }>;
+};
+
 export type Review = {
   version: number; status: "PASS" | "WARNING" | "FAIL"; status_text: string; status_tone: string; findings: string[];
   fidelity: string; page_count: number | null; preview_pages: number; has_pdf: boolean; has_docx: boolean;
   tailored_text: string; alignment: { before: number | null; after: number | null }; overlap_note: string;
+  requirement_review: RequirementReviewView | null; readability: Readability;
   pages_before_after: [number | null, number | null]; unsupported_claims: string[];
   progress: { reviewed: number; total: number; needs_rebuild: boolean; can_continue: boolean; blocker: string; label: string };
   next_undecided: string | null; changes: Change[]; empty_message: string;

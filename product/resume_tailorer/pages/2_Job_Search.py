@@ -18,6 +18,8 @@ import streamlit as st
 
 from resume_tailorer.active_job import remember
 from resume_tailorer.analyzers.ats_keywords import check_keywords, profile_text
+from resume_tailorer.analyzers.job_analyzer import JobAnalyzer
+from resume_tailorer.analyzers.requirement_review import build_review
 from resume_tailorer.ui import ats_explainer
 from resume_tailorer.ui.ats_panel import render_ats_explainer
 from resume_tailorer.job_search.job_attributes import (
@@ -372,11 +374,16 @@ def _posting_markdown(description: str) -> str:
 
 
 def _render_keywords(job) -> None:
-    st.markdown('<h3 class="jc-sec">Key requirements and keywords</h3>', unsafe_allow_html=True)
+    st.markdown('<h3 class="jc-sec">Terms in this posting</h3>', unsafe_allow_html=True)
     profile = get_career_profile(st.session_state)
     if profile is None:
         st.caption("Import your resume in Career Profile to see which terms it already covers.")
         return
+    if (job.description or "").strip():
+        review = build_review(JobAnalyzer().analyze(job.description), profile,
+                              provenance=(_record() or {}).get("provenance"), posting=job.description)
+        st.markdown(f"**Requirement review:** {escape(review.summary)}. Prepare this application to see each "
+                    "requirement with the exact evidence in Tailor.")
     check = check_keywords(job.title + " " + (job.description or ""), profile_text(profile))
     html = f'<p class="jc-meta">{escape(check.summary)} {escape(ats_explainer.TERMS_NOTE)}</p>'
     if check.missing:

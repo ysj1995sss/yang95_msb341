@@ -117,6 +117,12 @@ export function JobDetailPanel({ jobId, onChanged }: { jobId: string; onChanged:
       </section>
 
       <section aria-labelledby="keywords">
+        {data.requirements && (
+          <p className="mb-3 rounded-[var(--radius-control)] border border-line bg-paper p-3 text-[15px]">
+            <span className="font-semibold">Requirement review: </span>{data.requirements.summary}.{" "}
+            <span className="text-muted">Prepare this application to see each requirement with the exact evidence in Tailor.</span>
+          </p>
+        )}
         <h3 id="keywords" className="text-[17px] font-semibold">Terms in this posting</h3>
         {data.keywords ? (
           <>

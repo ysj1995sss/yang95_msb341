@@ -41,6 +41,12 @@ test("resume → profile → goals → jobs → tailor → apply → tracker", a
   await expect(page.getByRole("button", { name: /Data Analyst, Growth/ })).toBeVisible();
   await expect(page.getByRole("button", { name: /Account Executive/ })).toHaveCount(0);
   await expect(page.getByRole("heading", { name: "Why this role may fit you" })).toBeVisible();
+  // Spec 010: honest wording, a requirement summary and the ATS explanation.
+  await expect(page.getByText("In your Career Profile", { exact: true })).toBeVisible();
+  await expect(page.getByText(/Requirement review:/)).toBeVisible();
+  await page.getByText("About ATS checks").click();
+  await expect(page.getByText(/There is no universal ATS score/)).toBeVisible();
+  await expect(page.getByText(/on your resume/i)).toHaveCount(0);
   await expectAccessible(page, "jobs, results");
   await page.getByRole("button", { name: "Prepare this application" }).click();
 
@@ -48,6 +54,13 @@ test("resume → profile → goals → jobs → tailor → apply → tracker", a
   await expect(page).toHaveURL(/\/tailor$/);
   await page.getByRole("button", { name: "Tailor my resume" }).click();
   await expect(page.getByRole("heading", { name: "Proposed changes" })).toBeVisible({ timeout: 60_000 });
+  // Spec 010: the requirement review with linked evidence, and the local readability check.
+  await expect(page.getByRole("heading", { name: "Requirement review" })).toBeVisible();
+  const firstRow = page.getByRole("region", { name: "Requirement review" }).locator("details").first();
+  await firstRow.locator("summary").click();
+  await expect(firstRow.locator("blockquote").first()).toBeVisible();
+  await expect(page.getByText("Readability check", { exact: true })).toBeVisible();
+  await expect(page.getByText(/Resume alignment/)).toHaveCount(0);
   await expectAccessible(page, "tailor, review");
   const status = page.getByRole("status").filter({ hasText: /meaningful changes reviewed|No changes need/ });
   for (let i = 0; i < 12; i++) {
