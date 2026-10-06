@@ -22,7 +22,8 @@ def test_missing_and_present_are_split_against_the_resume():
     check = check_keywords(POSTING, resume)
     assert {"Go-to-market", "SQL", "Stakeholder management", "MBA"} <= set(check.present)
     assert {"Tableau", "Figma", "A/B testing", "Product marketing"} <= set(check.missing)
-    assert "key terms already on your resume" in check.summary
+    assert check.summary.endswith("posting terms appear in your Career Profile.")
+    assert "resume" not in check.summary  # the check reads the profile, not the resume (spec 010)
 
 
 def test_single_letter_r_needs_standalone_context():
@@ -30,9 +31,31 @@ def test_single_letter_r_needs_standalone_context():
     assert "R" not in terms_in("research and reporting")
 
 
-def test_profile_text_collects_every_string():
+def test_profile_text_collects_every_fact():
     text = profile_text({"skills": ["SQL"], "work_experience": [{"responsibilities": ["Built Tableau dashboards"]}]})
     assert "SQL" in text and "Tableau" in text
+
+
+def test_contact_details_goals_and_preferences_are_not_evidence():
+    """Spec 010: only facts a resume is built from count; a goal of "product marketing" or a
+    location isn't evidence of a skill."""
+    text = profile_text({
+        "contact_info": {"name": "Riley Park", "location": "Remote"},
+        "preferences": {"target_roles": ["Product marketing"]},
+        "goals": ["Salesforce admin"],
+        "skills": ["SQL"],
+    })
+    assert "SQL" in text
+    assert "Riley" not in text and "Product marketing" not in text and "Salesforce" not in text
+
+
+def test_ats_explainer_promises_nothing_it_cannot_do():
+    from resume_tailorer.ui import ats_explainer
+
+    text = " ".join([ats_explainer.TITLE, *ats_explainer.PARAGRAPHS, ats_explainer.TERMS_NOTE, ats_explainer.OVERLAP_NOTE]).lower()
+    assert "no universal ats score" in text and "not an employer score" in text
+    for promise in ("pass the ats", "beat the ats", "guarantee", "ats-proof", "ats score of"):
+        assert promise not in text
 
 
 def test_empty_posting_says_so():

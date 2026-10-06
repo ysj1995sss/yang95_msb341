@@ -192,7 +192,8 @@ export function ReviewRoom({ review, onChange, onDiscard }: {
           <details className="rounded-[var(--radius-card)] border border-line bg-paper p-4 text-[15px]">
             <summary className="cursor-pointer font-semibold">Details</summary>
             <p className="mt-2">Pages: {review.pages_before_after[0] ?? "–"} before, {review.pages_before_after[1] ?? "–"} after.</p>
-            <p>Resume alignment: {pct(review.alignment.before)} before, {pct(review.alignment.after)} after.</p>
+            <p>Keyword overlap: {pct(review.alignment.before)} before, {pct(review.alignment.after)} after.</p>
+            <p className="text-[14px] text-muted">{review.overlap_note}</p>
             {review.unsupported_claims.length > 0 && (<><p className="mt-2 font-semibold">Unsupported claims found and blocked:</p><ul className="list-disc pl-5">{review.unsupported_claims.map((c) => <li key={c}>{c}</li>)}</ul></>)}
           </details>
           <details className="text-[15px]">

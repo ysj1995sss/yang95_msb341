@@ -18,6 +18,8 @@ import streamlit as st
 
 from resume_tailorer.active_job import remember
 from resume_tailorer.analyzers.ats_keywords import check_keywords, profile_text
+from resume_tailorer.ui import ats_explainer
+from resume_tailorer.ui.ats_panel import render_ats_explainer
 from resume_tailorer.job_search.job_attributes import (
     ASHBY_BOARDS,
     COMPANY_DIRECTORY,
@@ -376,12 +378,13 @@ def _render_keywords(job) -> None:
         st.caption("Import your resume in Career Profile to see which terms it already covers.")
         return
     check = check_keywords(job.title + " " + (job.description or ""), profile_text(profile))
-    html = f'<p class="jc-meta">{escape(check.summary)}</p>'
+    html = f'<p class="jc-meta">{escape(check.summary)} {escape(ats_explainer.TERMS_NOTE)}</p>'
     if check.missing:
-        html += '<div class="jc-ev-group">Not on your resume</div>' + "".join(chip(t, "blocked") for t in check.missing)
+        html += '<div class="jc-ev-group">Not in your Career Profile</div>' + "".join(chip(t, "blocked") for t in check.missing)
     if check.present:
-        html += '<div class="jc-ev-group">Already on your resume</div>' + "".join(chip(t, "verified") for t in check.present)
+        html += '<div class="jc-ev-group">In your Career Profile</div>' + "".join(chip(t, "verified") for t in check.present)
     st.markdown(html, unsafe_allow_html=True)
+    render_ats_explainer()
 
 
 # --- page states -------------------------------------------------------------

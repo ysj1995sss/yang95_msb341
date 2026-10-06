@@ -4,6 +4,7 @@ import { ArrowRight, Loader2, Wand2 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Alert, Button, Card, Checkbox, Chip, ErrorBox, LinkButton, PageHeader, RadioGroup, Spinner, TextArea, TextField, toneOf, useToast } from "@/components/ui";
 import { api, useResource } from "@/lib/api";
+import { AtsExplainer } from "@/components/ats-explainer";
 import type { Review, RunStatus, TailorPage } from "@/lib/types";
 import { ReviewRoom } from "./review";
 
@@ -22,10 +23,10 @@ function Context({ page }: { page: TailorPage }) {
       <h2 className="mt-1 text-[24px] font-semibold">{job.title}</h2>
       <div className="mt-3 flex flex-wrap gap-2">
         <Chip tone="primary">{`Candidate fit ${job.fit === null ? "not assessed" : `${job.fit}%`}`}</Chip>
-        <Chip>{`Resume alignment ${review?.alignment.after != null ? `${Math.round(review.alignment.after * 100)}%` : "after tailoring"}`}</Chip>
         {review && <Chip tone={toneOf(review.status_tone)}>{review.status_text}</Chip>}
       </div>
-      <p className="mt-2 text-[14px] text-muted">Candidate fit measures your background. Resume alignment measures how clearly this resume shows it. They are never combined.</p>
+      <p className="mt-2 text-[14px] text-muted">Candidate fit measures your background. The review below shows how clearly this resume shows it, requirement by requirement.</p>
+      <AtsExplainer explainer={page.ats_explainer} />
     </Card>
   );
 }

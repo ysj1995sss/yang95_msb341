@@ -44,7 +44,8 @@ from resume_tailorer.ui.shell import md_literal
 from resume_tailorer.review_store import discard_review, load_review, save_review, signature
 from resume_tailorer.artifacts.models import FidelityMode, ValidationStatus
 from resume_tailorer.ui.artifact_review import visible_changes
-from resume_tailorer.ui import chip, render_app_shell, render_page_header, render_progress
+from resume_tailorer.ui import ats_explainer, chip, render_app_shell, render_page_header, render_progress
+from resume_tailorer.ui.ats_panel import render_ats_explainer
 from resume_tailorer.ui.shell import primary_action
 from resume_tailorer.ui.design_system import ProgressStep
 from resume_tailorer.ui.pdf_preview import pdf_page_images
@@ -135,17 +136,16 @@ def _render_context(pending: dict, state: dict | None) -> None:
     report = (state or {}).get("report")
     status = report.validation.status if report else None
     tone = artifact_tone(status)
-    alignment = _percent(report.tailored_alignment) if report else "after tailoring"
     st.markdown(
         f'<div class="jc-panel"><div class="jc-eyebrow">{escape(company) or "Pasted job description"}</div>'
         f'<h2 style="margin:.1rem 0 .5rem">{escape(title)}</h2>'
         f'{chip("Candidate fit " + _fit_label(pending), "action")}'
-        f'{chip("Resume alignment " + alignment)}'
         f'{chip(artifact_status_text(status), tone) if report else ""}'
         f'<p class="jc-meta" style="margin-top:.35rem">Candidate fit measures your background. '
-        f"Resume alignment measures how clearly this resume shows it. They are never combined.</p></div>",
+        f"The review below shows how clearly this resume shows it, requirement by requirement.</p></div>",
         unsafe_allow_html=True,
     )
+    render_ats_explainer()
 
 
 def _render_change_focus(state: dict, change, profile) -> None:
@@ -331,7 +331,8 @@ def _render_preview(state: dict) -> None:
             )
     with st.expander("Details"):
         st.write(f"Pages: {report.original_page_count} before, {report.tailored_page_count} after.")
-        st.write(f"Resume alignment: {_percent(report.original_alignment)} before, {_percent(report.tailored_alignment)} after.")
+        st.write(f"Keyword overlap: {_percent(report.original_alignment)} before, {_percent(report.tailored_alignment)} after.")
+        st.caption(ats_explainer.OVERLAP_NOTE)
         if report.unsupported_claims:
             st.write("Unsupported claims found and blocked:")
             for claim in report.unsupported_claims:

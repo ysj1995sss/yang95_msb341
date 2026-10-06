@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { Alert, Button, Chip, ErrorBox, LinkButton, Spinner, toneOf, useToast } from "@/components/ui";
 import { api, useResource } from "@/lib/api";
+import { AtsExplainer } from "@/components/ats-explainer";
 import type { Evidence, JobDetail as Detail } from "@/lib/types";
 
 const MARKS = {
@@ -116,20 +117,21 @@ export function JobDetailPanel({ jobId, onChanged }: { jobId: string; onChanged:
       </section>
 
       <section aria-labelledby="keywords">
-        <h3 id="keywords" className="text-[17px] font-semibold">Key requirements and keywords</h3>
+        <h3 id="keywords" className="text-[17px] font-semibold">Terms in this posting</h3>
         {data.keywords ? (
           <>
-            <p className="text-muted">{data.keywords.summary}</p>
+            <p className="text-muted">{data.keywords.summary} {data.ats_explainer.terms_note}</p>
             {data.keywords.missing.length > 0 && (
-              <div className="mt-3"><p className="mb-1 text-[14px] font-semibold">Not on your resume</p>
+              <div className="mt-3"><p className="mb-1 text-[14px] font-semibold">Not in your Career Profile</p>
                 <div className="flex flex-wrap gap-1.5">{data.keywords.missing.map((k) => <Chip key={k} tone="blocked">{k}</Chip>)}</div></div>
             )}
             {data.keywords.present.length > 0 && (
-              <div className="mt-3"><p className="mb-1 text-[14px] font-semibold">Already on your resume</p>
+              <div className="mt-3"><p className="mb-1 text-[14px] font-semibold">In your Career Profile</p>
                 <div className="flex flex-wrap gap-1.5">{data.keywords.present.map((k) => <Chip key={k} tone="verified">{k}</Chip>)}</div></div>
             )}
           </>
         ) : <p className="text-muted">Import your resume in Career Profile to see which terms it already covers.</p>}
+        <AtsExplainer explainer={data.ats_explainer} />
       </section>
 
       <div className="flex flex-col gap-3">

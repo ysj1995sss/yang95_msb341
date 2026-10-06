@@ -48,7 +48,7 @@ def build_tailoring_summary(state: Mapping[str, Any]) -> TailoringSummary:
     validation = semantic_status(report.validation.status)
     return TailoringSummary(
         candidate_fit=NamedMetric("Candidate fit", _percentage(report.candidate_fit)),
-        resume_alignment=NamedMetric("Resume alignment", _percentage(report.tailored_alignment)),
+        resume_alignment=NamedMetric("Keyword overlap", _percentage(report.tailored_alignment)),
         validation=validation,
         application_ready=validation.application_ready,
         review_count=len(state.get("changes") or ()),

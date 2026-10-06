@@ -19,6 +19,7 @@ from pydantic import BaseModel
 
 from app.workspace import limits
 from app.workspace.context import Workspace, jsonable, workspace
+from resume_tailorer.ui import ats_explainer
 
 router = APIRouter(prefix="/v2", tags=["workspace"])
 
@@ -170,6 +171,7 @@ def _review_view(ws: Workspace, state: dict, show_all: bool = False) -> dict:
         "has_docx": bool(state.get("docx_bytes")) and status.value != "FAIL",
         "tailored_text": state.get("tailored_text") or "",
         "alignment": {"before": report.original_alignment, "after": report.tailored_alignment},
+        "overlap_note": ats_explainer.OVERLAP_NOTE,
         "pages_before_after": [report.original_page_count, report.tailored_page_count],
         "unsupported_claims": list(report.unsupported_claims or ()),
         "progress": {**jsonable(progress), "label": progress.label},
@@ -218,6 +220,7 @@ def tailor_page(show_all: bool = False, ws: Workspace = Depends(workspace)):
         "resume": {"label": source[2], "one_off": _one_off(ws.owner_id) is not None} if source else None,
         "model_ready": model_ready,
         "custom_api_base_allowed": not ws.owner.signed_in,
+        "ats_explainer": ats_explainer.as_dict(),
         "run": run,
         "review": _review_view(ws, state, show_all) if state else None,
         "existing": {"version": handoff.get("version"), "status": handoff.get("validation_status"),

@@ -61,6 +61,10 @@ def test_detail_has_evidence_once_a_profile_exists(jobs_client):
     detail = jobs_client.get("/v2/jobs/greenhouse_101").json()
     assert detail["fit_measured"] is True and detail["row"]["fit"].startswith("Fit ")
     assert "SQL" in detail["keywords"]["present"]
+    # Spec 010: honest wording, and the shared ATS explanation.
+    assert "Career Profile" in detail["keywords"]["summary"] and "on your resume" not in detail["keywords"]["summary"]
+    assert detail["ats_explainer"]["title"] == "About ATS checks"
+    assert "not an employer's ATS score" in detail["ats_explainer"]["terms_note"]
     assert "Requirements" in detail["description"]
     assert jobs_client.get("/v2/jobs/nope_1").status_code == 404
 

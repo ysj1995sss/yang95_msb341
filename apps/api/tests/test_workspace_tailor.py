@@ -71,6 +71,9 @@ def test_run_review_decide_rebuild_download(tailor_client):
 
     review = tailor_client.get("/v2/tailor").json()["review"]
     assert review["version"] >= 1 and review["progress"]["can_continue"] is False
+    # Spec 010: the overlap number is kept (compatibility) but explained, never called an ATS score.
+    assert set(review["alignment"]) == {"before", "after"} and "not an employer score" in review["overlap_note"]
+    assert tailor_client.get("/v2/tailor").json()["ats_explainer"]["title"] == "About ATS checks"
     change = next(c for c in review["changes"] if "Tableau" in c["proposed"])
     assert change["decision"] is None and change["original"].startswith("Built SQL dashboards")
 

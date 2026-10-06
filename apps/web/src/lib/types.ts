@@ -110,11 +110,13 @@ export type JobsList = {
 
 export type Evidence = { requirement: string; evidence: string };
 
+export type AtsExplainerText = { title: string; paragraphs: string[]; terms_note: string; overlap_note: string };
+
 export type JobDetail = {
   row: JobRow; url: string; facts: Array<[string, string]>; strong: Evidence[]; partial: Evidence[];
   gaps: string[]; hard_gates: string[]; unknowns: string[]; fit_parts: Array<[string, string]>; summary: string;
   fit_measured: boolean; keywords: { summary: string; present: string[]; missing: string[] } | null;
-  description: string; active: boolean;
+  description: string; active: boolean; ats_explainer: AtsExplainerText;
 };
 
 // --- Tailor (phase 3) ---
@@ -129,7 +131,7 @@ export type Change = {
 export type Review = {
   version: number; status: "PASS" | "WARNING" | "FAIL"; status_text: string; status_tone: string; findings: string[];
   fidelity: string; page_count: number | null; preview_pages: number; has_pdf: boolean; has_docx: boolean;
-  tailored_text: string; alignment: { before: number | null; after: number | null };
+  tailored_text: string; alignment: { before: number | null; after: number | null }; overlap_note: string;
   pages_before_after: [number | null, number | null]; unsupported_claims: string[];
   progress: { reviewed: number; total: number; needs_rebuild: boolean; can_continue: boolean; blocker: string; label: string };
   next_undecided: string | null; changes: Change[]; empty_message: string;
@@ -144,6 +146,7 @@ export type TailorPage = {
   resume: { label: string; one_off: boolean } | null;
   model_ready: boolean;
   custom_api_base_allowed: boolean;
+  ats_explainer: AtsExplainerText;
   run: RunStatus;
   review: Review | null;
   existing: { version: number; status: string; review_complete: boolean } | null;

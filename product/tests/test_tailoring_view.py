@@ -54,7 +54,7 @@ def test_candidate_fit_and_alignment_stay_separate():
     summary = build_tailoring_summary({"report": _report(), "changes": [_change()]})
     assert summary.candidate_fit.label == "Candidate fit"
     assert summary.candidate_fit.value == "82%"
-    assert summary.resume_alignment.label == "Resume alignment"
+    assert summary.resume_alignment.label == "Keyword overlap"  # spec 010: not an ATS score
     assert summary.resume_alignment.value == "71%"
 
 

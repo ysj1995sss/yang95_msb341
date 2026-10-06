@@ -75,7 +75,7 @@ class KeywordCheck:
         total = len(self.present) + len(self.missing)
         if total == 0:
             return "No common screening keywords were found in this posting."
-        return f"{len(self.present)} of {total} key terms already on your resume."
+        return f"{len(self.present)} of {total} posting terms appear in your Career Profile."
 
 
 def _normalize(text: str) -> str:
@@ -105,9 +105,15 @@ def terms_in(text: str) -> list[str]:
     return sorted(counts, key=lambda label: (-counts[label], label))
 
 
+# The facts a resume is built from. Contact details, goals and preferences aren't evidence of a
+# skill, so they never count (spec 010).
+FACT_FIELDS = ("summary", "work_experience", "education", "skills", "tools", "certifications", "accomplishments")
+
+
 def profile_text(profile: Any) -> str:
-    """Every string in a career profile, for a presence check."""
+    """The Career Profile's facts as text, for a presence check (not the resume itself)."""
     data = profile.to_dict() if hasattr(profile, "to_dict") else (profile or {})
+    data = {key: data.get(key) for key in FACT_FIELDS if isinstance(data, dict)}
     parts: list[str] = []
 
     def walk(value: Any) -> None:
@@ -125,7 +131,7 @@ def profile_text(profile: Any) -> str:
 
 
 def check_keywords(posting: str, resume_text: str, limit: int = 20) -> KeywordCheck:
-    """Key terms in the posting, split into already-on-resume and missing."""
+    """Key terms in the posting, split into found and not found in the given text."""
     wanted = terms_in(posting)[:limit]
     have = set(terms_in(resume_text))
     return KeywordCheck(

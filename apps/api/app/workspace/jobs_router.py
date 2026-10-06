@@ -200,6 +200,7 @@ def list_jobs(view: Literal["best", "newest", "saved"] = "best", offset: int = 0
 @router.get("/jobs/{job_id}")
 def job_detail(job_id: str, ws: Workspace = Depends(workspace)):
     from resume_tailorer.analyzers.ats_keywords import check_keywords, profile_text
+    from resume_tailorer.ui import ats_explainer
     from resume_tailorer.job_search.job_quality import evaluate_job_quality
     from resume_tailorer.ui.job_view import build_detail
 
@@ -218,6 +219,7 @@ def job_detail(job_id: str, ws: Workspace = Depends(workspace)):
         **jsonable(detail),
         "fit_measured": fit is not None and fit.overall_fit is not None,
         "keywords": keywords,
+        "ats_explainer": ats_explainer.as_dict(),
         "description": (job.description or "").strip() or "This posting has no description.",
         "active": (ws.record.get("active_job_id") == job_id),
     }
