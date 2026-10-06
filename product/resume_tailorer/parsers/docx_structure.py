@@ -45,11 +45,33 @@ def is_bullet_paragraph(paragraph: Paragraph) -> bool:
     in the run text), so a text-prefix heuristic like the PDF path uses
     would silently see zero bullets on a resume that uses real Word lists.
     """
-    if paragraph.style is not None and paragraph.style.name == "List Paragraph":
-        if paragraph._p.find(f".//{qn('w:numPr')}") is not None:
-            return True
+    style = paragraph.style
+    if style is not None and (style.name or "").lower().startswith(("heading", "title")):
+        return False  # numbered headings are headings, not bullets
+    # Numbering on the paragraph itself, or inherited from its style: Word's built-in "List
+    # Bullet"/"List Number" styles carry the numbering in the style (found 2026-10-05 in the
+    # spec 010 supervised run: such bullets were all read as plain text).
+    own = _num_id(paragraph._p.pPr)
+    if own is not None:
+        return own != "0"  # numId 0 means numbering was switched off for this paragraph
+    while style is not None:
+        inherited = _num_id(style.element.pPr)
+        if inherited is not None:
+            return inherited != "0"
+        style = style.base_style
     # Or a bullet typed into the text itself ("• Led ..."), common in resumes built by hand.
     return bool(typed_bullet_prefix(paragraph.text))
+
+
+def _num_id(p_pr) -> str | None:
+    """The numbering id in a <w:pPr>, or None when it has no numbering."""
+    if p_pr is None:
+        return None
+    num_pr = p_pr.find(qn("w:numPr"))
+    if num_pr is None:
+        return None
+    num_id = num_pr.find(qn("w:numId"))
+    return num_id.get(qn("w:val")) if num_id is not None else ""
 
 
 def _is_heading(paragraph: Paragraph) -> bool:

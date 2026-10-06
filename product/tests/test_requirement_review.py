@@ -129,3 +129,35 @@ def test_posting_without_requirement_sections_falls_back_to_listed_skills():
     analysis = replace(analysis, structured_requirements=[], required_qualifications=[], preferred_qualifications=[])
     review = build_review(analysis, profile(), posting="")
     assert review.rows or review.summary == "No requirement list was found in this posting."
+
+
+def test_a_bachelors_requirement_matches_a_bs_even_when_the_degree_wasnt_split_out(analysis):
+    """Found in the spec 010 supervised run: "BS Economics, State University" parsed as one
+    institution string, so "Bachelor's degree in Business, Economics" showed no evidence."""
+    from resume_tailorer.models import EducationEntry
+
+    p = profile()
+    p.education = [EducationEntry(degree="", field="", institution="BS Economics, State University, 2019", year=2019)]
+    degree = row(build_review(analysis, p, provenance=PROVENANCE, posting=POSTING), "Bachelor's degree")
+    assert degree.status == DIRECT and "Check that the field matches" in degree.reason
+
+
+def test_transferable_evidence_is_not_shown_until_the_requirement_is_named(review):
+    rows = {r.text[:20]: r for r in with_resume(review, LAUNCH_ONLY).rows}
+    assert rows["Proven project manag"].shown_in_resume is False  # evidence there, term not named
+    named = with_resume(review, LAUNCH_ONLY + " Project management of the launch.").rows
+    assert next(r for r in named if r.text.startswith("Proven project")).shown_in_resume is True
+
+
+LAUNCH_ONLY = "Led on-time delivery of a 6-month store launch across 4 teams, with weekly risk reviews."
+
+
+def test_a_state_abbreviation_is_never_read_as_a_masters_degree():
+    from resume_tailorer.analyzers.requirement_review import _Passage, _degree_evidence
+
+    boston = _Passage("BS Economics, Boston University, Boston, MA, 2019", "Education", "education[0]", "education")
+    assert _degree_evidence("Master's degree in Marketing", [boston]) is None
+    assert _degree_evidence("Bachelor's degree required", [boston])[1] == "bachelor's"
+    ms = _Passage("MS in Business Analytics, State University, 2021", "Education", "education[0]", "education")
+    assert _degree_evidence("Master's degree preferred", [ms])[1] == "master's"
+    assert _degree_evidence("Bachelor's degree", [ms])[1] == "master's"  # a higher degree meets it

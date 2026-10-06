@@ -71,6 +71,11 @@ def test_missing_cli_and_used_up_plan_are_explained(monkeypatch):
     with pytest.raises(RuntimeError, match="ChatGPT plan's Codex usage limit"):
         llm.complete("s", "u")
 
+    monkeypatch.setattr(client_module.subprocess, "run", FakeCodex(
+        returncode=1, stderr="'\"node\"' is not recognized as an internal or external command"))
+    with pytest.raises(RuntimeError, match="Node.js"):
+        llm.complete("s", "u")
+
     monkeypatch.setattr(client_module.subprocess, "run", FakeCodex(returncode=1, stderr="Not logged in. Run codex login"))
     with pytest.raises(RuntimeError, match="codex login"):
         llm.complete("s", "u")

@@ -145,3 +145,56 @@ class TestExtractDocxStructure:
         doc.add_paragraph("Some University | 2020")
         structure = extract_docx_structure(doc)
         assert structure.jobs == []
+
+
+def test_list_bullet_style_paragraphs_are_bullets():
+    """Found 2026-10-05 in the spec 010 supervised run: Word's built-in "List Bullet" style gets
+    its bullet from the style, not the paragraph, so every bullet was read as plain text (and a
+    bullet mentioning "2024" was even read as a new job)."""
+    from docx import Document
+
+    from resume_tailorer.parsers.docx_structure import is_bullet_paragraph
+
+    doc = Document()
+    styled = doc.add_paragraph("Built SQL dashboards used by 40 managers", style="List Bullet")
+    numbered = doc.add_paragraph("Second item", style="List Number")
+    plain = doc.add_paragraph("Marketing Analyst")
+    heading = doc.add_paragraph("EXPERIENCE", style="Heading 1")
+    assert is_bullet_paragraph(styled) and is_bullet_paragraph(numbered)
+    assert not is_bullet_paragraph(plain) and not is_bullet_paragraph(heading)
+
+
+def test_numbering_switched_off_on_a_list_style_paragraph_is_not_a_bullet():
+    from docx import Document
+    from docx.oxml import OxmlElement
+    from docx.oxml.ns import qn
+
+    from resume_tailorer.parsers.docx_structure import is_bullet_paragraph
+
+    doc = Document()
+    p = doc.add_paragraph("Not a bullet any more", style="List Bullet")
+    num_pr = OxmlElement("w:numPr")
+    num_id = OxmlElement("w:numId")
+    num_id.set(qn("w:val"), "0")
+    num_pr.append(num_id)
+    p._p.get_or_add_pPr().append(num_pr)
+    assert not is_bullet_paragraph(p)
+
+
+def test_a_resume_written_with_list_bullet_style_parses_its_bullets(tmp_path):
+    from docx import Document
+
+    from resume_tailorer.parsers import ResumeParser
+
+    doc = Document()
+    for line in ("Riley Park", "riley@example.com", "EXPERIENCE", "Marketing Analyst", "Acme Retail | Jan 2022 - Present"):
+        doc.add_paragraph(line)
+    doc.add_paragraph("Built SQL dashboards used by 40 regional managers", style="List Bullet")
+    doc.add_paragraph("Acted as PM for the 2024 loyalty program redesign", style="List Bullet")
+    for line in ("EDUCATION", "BS Economics, State University, 2019"):
+        doc.add_paragraph(line)
+    path = tmp_path / "r.docx"
+    doc.save(path)
+    jobs = ResumeParser().parse(str(path)).work_experience
+    assert len(jobs) == 1 and jobs[0].employer == "Acme Retail"
+    assert len(jobs[0].responsibilities + jobs[0].accomplishments) == 2

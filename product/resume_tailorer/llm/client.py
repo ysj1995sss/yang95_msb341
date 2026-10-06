@@ -173,6 +173,9 @@ class LLMClient:
             if "usage limit" in details or "rate limit" in details or "429" in details:
                 raise RuntimeError("Your ChatGPT plan's Codex usage limit is used up for now. Try again "
                                    "when it resets, or choose a different model for this run.")
+            if "is not recognized" in details or "command not found" in details or "no such file" in details:
+                raise RuntimeError("The Codex CLI couldn't start on this computer (Node.js, which it runs on, "
+                                   "wasn't found). Reinstall Node.js or add it to PATH, then try again.")
             if "login" in details or "not logged in" in details or "unauthorized" in details or "401" in details:
                 raise RuntimeError("Codex isn't signed in. Run `codex login` in a terminal, then try again.")
             raise _FallbackWorthy("Codex returned no answer. Try again, or choose a different model.")

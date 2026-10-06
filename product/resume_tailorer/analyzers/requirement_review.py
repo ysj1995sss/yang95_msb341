@@ -73,6 +73,33 @@ GENERIC_TERMS = {
     "Stakeholder management", "Team leadership", "People management", "Executive communication",
 }
 
+# Degree levels: a posting's wording and the abbreviations resumes use for the same level.
+_DEGREE_LEVELS = (
+    ("bachelor's", r"\bbachelor'?s?\b|\bundergraduate degree\b",
+     r"\b(?:b\.?s\.?|b\.?a\.?|b\.?sc\.?|b\.?b\.?a\.?|bachelor'?s?)(?![a-z])"),
+    # Bare "MA"/"MS" are also state abbreviations ("Boston, MA"): only "MA in ...", "M.A." etc.
+    ("master's", r"\bmaster'?s?\b|\bgraduate degree\b",
+     r"\b(?:m\.s\.|m\.a\.|m\.?sc\b|mba\b|master'?s?\b|(?:ms|ma)\s+(?:in|of)\b)"),
+    ("MBA", r"\bmba\b", r"\bmba\b"),
+    ("doctorate", r"\bph\.?d\b|\bdoctora", r"\bph\.?d\b|\bdoctora"),
+)
+_HIGHER = {"bachelor's": ("master's", "MBA", "doctorate"), "master's": ("doctorate",), "MBA": (), "doctorate": ()}
+
+
+def _degree_evidence(requirement: str, education: list) -> Optional[tuple]:
+    """(passage, level) when the education shows the degree level a requirement asks for, or a
+    higher one. The field of study is left for the person to check."""
+    for level, wanted, _ in _DEGREE_LEVELS:
+        if not re.search(wanted, requirement, re.IGNORECASE):
+            continue
+        acceptable = (level, *_HIGHER[level])
+        for passage in education:
+            for other, _w, has in _DEGREE_LEVELS:
+                if other in acceptable and re.search(has, passage.text, re.IGNORECASE):
+                    return passage, other
+    return None
+
+
 _YEARS = re.compile(r"\b(\d{1,2})\s*\+?\s*(?:-\s*\d{1,2}\s*)?years?\b", re.IGNORECASE)
 _CREDENTIAL = re.compile(r"\b(licen[cs]e|licensed|certified|certification|clearance|registered)\b", re.IGNORECASE)
 
@@ -169,7 +196,10 @@ def passages(profile: CareerTruthProfile, provenance: Optional[Mapping[str, str]
                 out.append(_Passage(text.strip(), f"{role}, bullet {n}", f"work_experience[{i}]", "experience",
                                     _confirmed(provenance, f"work_experience[{i}]")))
     for i, edu in enumerate(profile.education):
-        line = ", ".join(str(p) for p in (" ".join(x for x in (edu.degree, edu.field) if x), edu.institution, edu.year) if p)
+        parts = [" ".join(x for x in (edu.degree, edu.field) if x), edu.institution]
+        if edu.year and str(edu.year) not in (edu.institution or ""):
+            parts.append(str(edu.year))
+        line = ", ".join(p for p in parts if p)
         ok = _confirmed(provenance, f"education[{i}]")
         if line:
             out.append(_Passage(line, f"Education: {edu.institution or 'entry ' + str(i + 1)}", f"education[{i}]", "education", ok))
@@ -254,6 +284,10 @@ def _row(rid: str, text: str, section: str, hard_gate: bool, job_analysis: Optio
         if edu:
             matching = [p for p in context if p.kind == "education"] or context
             return make(DIRECT, matching[:1], f"Matches your education: {edu}")
+        degree = _degree_evidence(text, [p for p in context if p.kind == "education"])
+        if degree:
+            return make(DIRECT, [degree[0]], f"Your education shows a {degree[1]} degree. Check that the field "
+                                             "matches what the posting asks for.")
 
         # Ambiguous acronyms: never evidence unless both sides clearly mean the same thing.
         for acronym in [a for a in AMBIGUOUS_ACRONYMS if re.search(rf"\b{a}\b", text, re.IGNORECASE)]:
@@ -357,10 +391,13 @@ def _order(row: RequirementRow) -> tuple:
 
 
 def shown_in(row: RequirementRow, resume_text: str) -> bool:
+    """Whether the resume names this requirement. A row with terms is shown only when one of its
+    terms appears: evidence written in other words ("led on-time delivery") is there, but the
+    requirement ("project management") isn't named yet, and naming it is the improvement."""
     if not resume_text:
         return False
-    if row.terms and any(_mentions_any(t, resume_text) for t in row.terms):
-        return True
+    if row.terms:
+        return any(_mentions_any(t, resume_text) for t in row.terms)
     flat = _flat(resume_text)
     return any(_flat(e.text)[:60] in flat for e in row.evidence if e.kind in _CONTEXT_KINDS and len(e.text) > 20)
 
