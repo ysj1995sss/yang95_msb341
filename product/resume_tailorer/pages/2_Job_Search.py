@@ -304,8 +304,18 @@ def _evidence_rows(lines, mark: str, tone: str) -> str:
     return "".join(out)
 
 
+def _job_review(job):
+    """The requirement review for this posting (specs 010/011), or None without a profile."""
+    profile = get_career_profile(st.session_state)
+    if profile is None or not (job.description or "").strip():
+        return None
+    return build_review(JobAnalyzer().analyze(job.description), profile,
+                        provenance=_record().get("provenance"), posting=job.description)
+
+
 def _render_detail(job, fit, action, quality) -> None:
-    detail = build_detail(job, fit, action, _record().get("authorization"), quality)
+    review = _job_review(job)
+    detail = build_detail(job, fit, action, _record().get("authorization"), quality, review=review)
     row = detail.row
     with st.container(key="jobdetail"):
         fresh = row.freshness[0].lower() + row.freshness[1:] if row.freshness.startswith("Posted") else row.freshness
@@ -355,7 +365,7 @@ def _render_detail(job, fit, action, quality) -> None:
         st.caption("Missing items are never added to your resume. Candidate fit measures your background, "
                    "not how well a resume shows it.")
 
-        _render_keywords(job)
+        _render_keywords(job, review)
 
         with st.expander("Read full posting"):
             st.markdown(_posting_markdown(job.description))
@@ -373,15 +383,13 @@ def _posting_markdown(description: str) -> str:
     return "  \n".join(_md_literal(line.strip()) for line in text.splitlines())
 
 
-def _render_keywords(job) -> None:
+def _render_keywords(job, review=None) -> None:
     st.markdown('<h3 class="jc-sec">Terms in this posting</h3>', unsafe_allow_html=True)
     profile = get_career_profile(st.session_state)
     if profile is None:
         st.caption("Import your resume in Career Profile to see which terms it already covers.")
         return
-    if (job.description or "").strip():
-        review = build_review(JobAnalyzer().analyze(job.description), profile,
-                              provenance=(_record() or {}).get("provenance"), posting=job.description)
+    if review is not None:
         st.markdown(f"**Requirement review:** {escape(review.summary)}. Prepare this application to see each "
                     "requirement with the exact evidence in Tailor.")
     check = check_keywords(job.title + " " + (job.description or ""), profile_text(profile))

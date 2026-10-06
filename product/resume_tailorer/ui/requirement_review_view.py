@@ -105,3 +105,19 @@ def _names(term: str, text: str) -> bool:
     from resume_tailorer.analyzers.requirement_review import _mentions_any
 
     return _mentions_any(term, text)
+
+
+def missing_list(review: Optional[RequirementReview]) -> list[dict]:
+    """Tailor's "Missing, never added" list, from the requirement review (spec 011): requirements
+    with no evidence, then each missing named term of a partly supported requirement."""
+    from resume_tailorer.analyzers.term_match import short_requirement
+
+    if review is None:
+        return []
+    items = [{"label": short_requirement(r.text), "full": r.text} for r in review.rows if r.status == NONE]
+    for r in review.rows:
+        if r.status == PARTIAL:
+            for term, state in r.term_status:
+                if state == NONE:
+                    items.append({"label": f"{term} (part of “{short_requirement(r.text)}”)", "full": r.text})
+    return items

@@ -210,20 +210,21 @@ def job_detail(job_id: str, ws: Workspace = Depends(workspace)):
     action = ws.service.db.get_latest_actions([job_id]).get(job_id)
     profile = _profile(ws)
     fit = ws.service.fit_results_cached(profile, [job], _fit_cache(ws.owner_id)).get(job_id) if profile else None
-    detail = build_detail(job, fit, action, ws.record.get("authorization"), evaluate_job_quality(job))
     keywords = None
     requirements = None
+    review = None
     if profile is not None:
         check = check_keywords(job.title + " " + (job.description or ""), profile_text(profile))
         keywords = {"summary": check.summary, "present": list(check.present), "missing": list(check.missing)}
         if (job.description or "").strip():
-            # Spec 010: the same requirement review Tailor shows, summarized.
+            # Spec 010/011: the requirement review drives the evidence lists, so Jobs and Tailor agree.
             from resume_tailorer.analyzers.job_analyzer import JobAnalyzer
             from resume_tailorer.analyzers.requirement_review import build_review
 
             review = build_review(JobAnalyzer().analyze(job.description), profile,
                                   provenance=ws.record.get("provenance"), posting=job.description)
             requirements = {"summary": review.summary, "rows": len(review.rows)}
+    detail = build_detail(job, fit, action, ws.record.get("authorization"), evaluate_job_quality(job), review=review)
     return {
         **jsonable(detail),
         "fit_measured": fit is not None and fit.overall_fit is not None,

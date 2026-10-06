@@ -165,7 +165,11 @@ def _readable_gap(gap: str) -> str:
 
 def build_detail(job: JobPosting, fit: Optional[FitResult], action: Optional[str],
                  authorization: Optional[Mapping[str, Any]] = None,
-                 quality: Optional[JobQualityStatus] = None, now: Optional[datetime] = None) -> JobDetail:
+                 quality: Optional[JobQualityStatus] = None, now: Optional[datetime] = None,
+                 review=None) -> JobDetail:
+    """`review` (spec 011): the requirement review for this posting. When given, the strong,
+    partial and missing lists come from it, so Jobs and Tailor never disagree; the Candidate Fit
+    percentages still come from `fit`."""
     row = build_row(job, fit, action, quality, now)
     authorization = authorization or {}
     facts = (
@@ -181,6 +185,7 @@ def build_detail(job: JobPosting, fit: Optional[FitResult], action: Optional[str
     hard: list[str] = []
     if job.sponsorship_available is False and authorization.get("sponsorship_required") is True:
         hard.append("This employer says it doesn't sponsor visas, and you said you'll need sponsorship")
+    sponsorship_conflict = list(hard)
     strong: tuple[EvidenceLine, ...] = ()
     partial: tuple[EvidenceLine, ...] = ()
     gaps: tuple[str, ...] = ()
@@ -203,6 +208,11 @@ def build_detail(job: JobPosting, fit: Optional[FitResult], action: Optional[str
             ("Preferred skills", pct(fit.preferred_qualifications)),
             ("Evidence found", pct(fit.evidence_confidence)),
         )
+    if review is not None:
+        strong, partial, review_gaps, review_hard, review_unknowns = review_lists(review)
+        hard = sponsorship_conflict + review_hard
+        gaps = review_gaps
+        unknowns = review_unknowns
     stated = []
     if job.salary_min is None and job.salary_max is None:
         stated.append("Salary was not stated")
@@ -211,7 +221,7 @@ def build_detail(job: JobPosting, fit: Optional[FitResult], action: Optional[str
     if fit is None or fit.overall_fit is None:
         stated.append("Fit couldn't be assessed from what the posting says")
     unknowns = tuple(stated) + tuple(u for u in unknowns if u not in stated)
-    if fit is None or fit.overall_fit is None:
+    if (fit is None or fit.overall_fit is None) and review is None:
         summary = "Fit not assessed. Import and confirm your resume in Career Profile to see how you match."
     elif hard:
         summary = f"{len(hard)} hard {'requirement' if len(hard) == 1 else 'requirements'} may rule this out. Check before preparing an application."
@@ -223,3 +233,24 @@ def build_detail(job: JobPosting, fit: Optional[FitResult], action: Optional[str
         row=row, url=job.url or "", facts=facts, strong=strong, partial=partial, gaps=gaps,
         hard_gates=tuple(hard), unknowns=unknowns, fit_parts=parts, summary=summary,
     )
+
+
+def review_lists(review) -> tuple:
+    """(strong, partial, gaps, hard, unknowns) for the Jobs panel, from the requirement review."""
+    from resume_tailorer.analyzers.requirement_review import (
+        CHECK, DIRECT, MENTION, NONE, PARTIAL, TRANSFERABLE, UNCONFIRMED,
+    )
+    from resume_tailorer.analyzers.term_match import short_requirement
+
+    def quote(row) -> str:
+        return row.evidence[0].text if row.evidence else ""
+
+    strong = tuple(EvidenceLine(short_requirement(r.text), quote(r)) for r in review.rows if r.status == DIRECT)
+    partial = tuple(EvidenceLine(short_requirement(r.text), (r.reason if r.status == PARTIAL else quote(r)))
+                    for r in review.rows if r.status in (TRANSFERABLE, PARTIAL))
+    gaps = tuple(short_requirement(r.text) for r in review.rows if r.status == NONE and not r.hard_gate)
+    hard = [f"Missing a hard requirement: {short_requirement(r.text)}" for r in review.rows
+            if r.status == NONE and r.hard_gate]
+    words = {MENTION: "Only listed in your skills", UNCONFIRMED: "Not confirmed yet", CHECK: "Check yourself"}
+    unknowns = tuple(f"{words[r.status]}: {short_requirement(r.text)}" for r in review.rows if r.status in words)
+    return strong, partial, gaps, hard, unknowns

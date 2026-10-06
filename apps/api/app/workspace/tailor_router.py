@@ -21,7 +21,7 @@ from app.workspace import limits
 from app.workspace.context import Workspace, jsonable, workspace
 from resume_tailorer.ui import ats_explainer
 from resume_tailorer.ui.requirement_review_view import (
-    keyword_report_view, readability_view, review_for_state, review_view,
+    keyword_report_view, missing_list, readability_view, review_for_state, review_view,
 )
 
 router = APIRouter(prefix="/v2", tags=["workspace"])
@@ -140,6 +140,7 @@ def _review_view(ws: Workspace, state: dict, show_all: bool = False) -> dict:
 
     report = state["report"]
     groups = _groups(state, show_all)
+    review = review_for_state(state, ws.record.get("provenance"))
     decided = state.get("decided") or set()
     progress = review_progress(groups.reviewable, decided, state.get("dirty", False), report.validation.status)
     status = report.validation.status
@@ -174,7 +175,8 @@ def _review_view(ws: Workspace, state: dict, show_all: bool = False) -> dict:
         "has_docx": bool(state.get("docx_bytes")) and status.value != "FAIL",
         "tailored_text": state.get("tailored_text") or "",
         "alignment": {"before": report.original_alignment, "after": report.tailored_alignment},
-        **_review_and_keywords(ws, state),
+        "requirement_review": review_view(review) if review is not None else None,
+        "keyword_report": keyword_report_view(review, state) if review is not None else None,
         "readability": readability_view(report.validation.findings, state.get("source_kind", ""),
                                         getattr(report.validation, "checks_run", ())),
         "overlap_note": ats_explainer.OVERLAP_NOTE,
@@ -186,18 +188,13 @@ def _review_view(ws: Workspace, state: dict, show_all: bool = False) -> dict:
         "empty_message": empty_queue_message(state["changes"]),
         "turned_down": [{"original": c.original_text, "reason": c.reason or "did not pass the checks"}
                         for c in rejected_by_checks(state["changes"])],
-        "true_gaps": [{"label": short_requirement(g), "full": g} for g in displayable_gaps(groups.true_gaps)],
+        # Spec 011: one gap system on every screen; the requirement review decides what's missing.
+        "true_gaps": (missing_list(review) if review is not None else
+                      [{"label": short_requirement(g), "full": g} for g in displayable_gaps(groups.true_gaps)]),
         "blocked": [c.job_requirement or "an unsupported requirement" for c in groups.blocked],
         "show_all": show_all,
         "verbs": VERBS,
     }
-
-
-def _review_and_keywords(ws: Workspace, state: dict) -> dict:
-    review = review_for_state(state, ws.record.get("provenance"))
-    if review is None:
-        return {"requirement_review": None, "keyword_report": None}
-    return {"requirement_review": review_view(review), "keyword_report": keyword_report_view(review, state)}
 
 
 def _run_status(owner_id: str) -> dict:

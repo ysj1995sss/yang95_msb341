@@ -49,7 +49,7 @@ from resume_tailorer.ui.ats_panel import (
     render_ats_explainer, render_keyword_report, render_readability, render_requirement_review,
 )
 from resume_tailorer.ui.requirement_review_view import (
-    keyword_report_view, readability_view, review_for_state, review_view,
+    keyword_report_view, missing_list, readability_view, review_for_state, review_view,
 )
 from resume_tailorer.ui.shell import primary_action
 from resume_tailorer.ui.design_system import ProgressStep
@@ -274,16 +274,17 @@ def _render_review_room(pending: dict) -> None:
             render_keyword_report(keyword_report_view(review, state))
             render_requirement_review(review_view(review))
 
-        if groups.true_gaps or groups.blocked:
+        missing = missing_list(review) if review is not None else [
+            {"label": short_requirement(g), "full": g} for g in displayable_gaps(groups.true_gaps)]
+        if missing or groups.blocked:
             st.markdown("### Missing, never added")
             st.markdown(
                 '<div class="jc-status blocked">These requirements aren\'t in your verified experience. '
                 "Job Copilot will not add them.</div>",
                 unsafe_allow_html=True,
             )
-            for gap in displayable_gaps(groups.true_gaps):  # already unique; two gaps may share a short label
-                label = short_requirement(gap)
-                st.markdown(f"- {md_literal(label)}", help=gap if label != gap else None)
+            for gap in missing:  # spec 011: from the requirement review, so every screen agrees
+                st.markdown(f"- {md_literal(gap['label'])}", help=gap["full"] if gap["label"] != gap["full"] else None)
             for change in groups.blocked:
                 st.markdown(
                     f"- Blocked a proposed line that claimed *{change.job_requirement or 'an unsupported requirement'}*; "
