@@ -127,7 +127,7 @@ def build_freeform_artifact(
             )
             validation = PDFValidator().validate_artifact(
                 path, profile=profile, expected_page_count=None,
-                accepted_changes=list(attempt_changes), target_length=page_target,
+                accepted_changes=list(attempt_changes), target_length=page_target, tailored_text=text,
             )
             with open(path, "rb") as f:
                 return f.read(), validation

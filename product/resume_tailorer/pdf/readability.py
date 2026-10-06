@@ -75,12 +75,27 @@ def bullet_presence(bullet: str, flat: str) -> tuple[float, float, int]:
     return present, in_order, first
 
 
-def check_readability(extracted_text: str, expected: ExpectedContent) -> list[ValidationFinding]:
+def second_reader_text(pdf_path: str) -> Optional[str]:
+    """The same PDF read by a second, independent text extractor (PyMuPDF), or None if it can't
+    be read. Employers' parsers differ; two readers agreeing is a better sign than one."""
+    try:
+        import fitz
+
+        with fitz.open(pdf_path) as doc:
+            return "\n".join(page.get_text() for page in doc)
+    except Exception:
+        return None
+
+
+def check_readability(extracted_text: str, expected: ExpectedContent,
+                      second_text: Optional[str] = None) -> list[ValidationFinding]:
     """Findings for the content the PDF should contain. Empty text is left to the existing
-    TEXT_NOT_EXTRACTABLE check."""
+    TEXT_NOT_EXTRACTABLE check. With `second_text` (a second reader, spec 011), a bullet is
+    missing only when both readers miss it, and a large disagreement between them warns."""
     if not (extracted_text or "").strip():
         return []
     flat = normalize(extracted_text)
+    second = normalize(second_text) if (second_text or "").strip() else None
     findings: list[ValidationFinding] = []
 
     if expected.check_contact:
@@ -92,15 +107,26 @@ def check_readability(extracted_text: str, expected: ExpectedContent) -> list[Va
                 f"Your {' and '.join(missing)} didn't read back from the PDF, so a system reading it may not "
                 "know whose resume it is.", {"missing": missing}))
 
-    missing_bullets, broken, positions = [], [], []
+    missing_bullets, broken, positions, disagree = [], [], [], []
     for bullet in expected.bullets:
         present, in_order, first = bullet_presence(bullet, flat)
+        if second is not None:
+            present2, in_order2, _ = bullet_presence(bullet, second)
+            if (in_order >= INTACT_AT) != (in_order2 >= INTACT_AT):
+                disagree.append(bullet)
+            present, in_order = max(present, present2), max(in_order, in_order2)
         if present < MISSING_BELOW:
             missing_bullets.append(bullet)
         elif in_order < INTACT_AT:
             broken.append(bullet)
         if first >= 0:
             positions.append(first)
+    if disagree:
+        findings.append(ValidationFinding(
+            "READABILITY_READERS_DISAGREE", FindingSeverity.WARNING, FindingCategory.ATS,
+            f"{len(disagree)} bullet(s) read back whole with one text reader but not with another, "
+            f"so parsers may read it differently (often columns or text boxes): “{_short(disagree[0])}”.",
+            {"bullets": disagree}))
     if missing_bullets:
         findings.append(ValidationFinding(
             "READABILITY_BULLET_MISSING", FindingSeverity.FAIL, FindingCategory.ATS,
@@ -157,8 +183,54 @@ def expected_for_docx(profile, final_bullets: Iterable[str]) -> ExpectedContent:
     )
 
 
-def expected_for_freeform(profile) -> ExpectedContent:
-    """The free-form path rewrites bullets and already checks contact details and changed text
-    (content_validator), so only order, symbols and headings are checked here."""
+def expected_for_freeform(profile, tailored_text: str = "") -> ExpectedContent:
+    """The free-form path already checks contact details and changed text (content_validator).
+    With the final text (spec 011), every bullet of it must also read back, in order."""
     return ExpectedContent(employers=tuple(j.employer for j in getattr(profile, "work_experience", []) if j.employer),
-                           check_contact=False)
+                           bullets=bullet_lines(tailored_text), check_contact=False)
+
+
+
+def check_docx_file(docx_bytes: bytes, email: str = "", name: str = "") -> list[ValidationFinding]:
+    """Layout choices in the Word file itself that some parsers handle badly (spec 011): contact
+    details only in a header or footer, text inside tables, and text boxes. Warnings only."""
+    import io
+
+    from docx import Document
+
+    try:
+        doc = Document(io.BytesIO(docx_bytes))
+    except Exception:
+        return []
+    findings: list[ValidationFinding] = []
+    body = "\n".join(p.text for p in doc.paragraphs)
+    margins = "\n".join(p.text for section in doc.sections
+                         for part in (section.header, section.footer) for p in part.paragraphs)
+    hidden = [label for label, value in (("email", email), ("name", name))
+              if value and value.lower() in margins.lower() and value.lower() not in body.lower()]
+    if hidden:
+        findings.append(ValidationFinding(
+            "DOCX_CONTACT_IN_HEADER", FindingSeverity.WARNING, FindingCategory.ATS,
+            f"Your {' and '.join(hidden)} is only in the page header or footer. Some parsers skip headers and "
+            "footers; putting it in the body is safer.", {"fields": hidden}))
+    table_words = sum(len(cell.text.split()) for table in doc.tables for row in table.rows for cell in row.cells)
+    if table_words >= 25:
+        findings.append(ValidationFinding(
+            "DOCX_TEXT_IN_TABLES", FindingSeverity.WARNING, FindingCategory.ATS,
+            "Part of your resume is inside a table. Some parsers read tables out of order; plain paragraphs are "
+            "safer for work history.", {"words": table_words}))
+    if doc.element.body.xpath(".//*[local-name()='txbxContent']"):
+        findings.append(ValidationFinding(
+            "DOCX_TEXT_BOXES", FindingSeverity.WARNING, FindingCategory.ATS,
+            "Your resume uses text boxes. Some parsers skip or misplace text in text boxes.", {}))
+    return findings
+
+
+def bullet_lines(text: str) -> tuple[str, ...]:
+    """Bullet lines of a free-form resume text ("- ..." or "• ..."), for per-bullet checks."""
+    out = []
+    for line in (text or "").splitlines():
+        stripped = line.strip()
+        if stripped[:1] in ("-", "•", "*", "▪") and len(stripped) > 2:
+            out.append(stripped.lstrip("-•*▪ ").strip())
+    return tuple(b for b in out if len(_words(b)) >= 4)

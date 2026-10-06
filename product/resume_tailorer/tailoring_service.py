@@ -256,6 +256,7 @@ def regenerate(session: MutableMapping[str, Any], state: dict) -> None:
             validation = PDFValidator().validate_artifact(
                 tmp_path, profile=profile, expected_page_count=None, accepted_changes=updated_changes,
                 target_length=max_pages_label(state["target_length"], state["style_hints"]),
+                tailored_text=tailored_text,
             )
         finally:
             os.remove(tmp_path)

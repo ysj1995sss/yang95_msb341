@@ -127,7 +127,8 @@ def test_the_screen_lists_only_checks_that_ran_with_their_state():
     assert labels["Every bullet reads back"] == "fail" and labels["Standard section headings"] == "warn"
     assert "not a check by any employer's ATS" in docx["note"]
     freeform = {i["label"] for i in readability_view(findings, "PDF", ("readability",))["items"]}
-    assert "Every bullet reads back" not in freeform  # the free-form path doesn't run that check
+    assert "Every bullet reads back" in freeform  # spec 011: the free-form path checks bullets too
+    assert not any(label.startswith("Word file") for label in freeform)  # no Word file there
     old = readability_view([], "DOCX", ("pdf_technical",))  # a run from before spec 010
     assert {i["state"] for i in old["items"]} >= {"not_checked"}
 
@@ -173,3 +174,64 @@ def test_word_path_runs_the_readability_check_on_its_pdf(tmp_path, monkeypatch):
 def test_expected_for_docx_skips_short_lines():
     expected = expected_for_docx(profile(), ["Skills", B1, ""])
     assert expected.bullets == (B1,) and expected.name == "Riley Park"
+
+
+def test_a_second_reader_that_disagrees_is_warned_about_and_a_bullet_needs_both_to_miss_it():
+    one_reader = f"{NAME} {EMAIL}\nEXPERIENCE\n- {B1}\n- {B2}\n- {B3}\nEDUCATION"
+    scrambled = (f"{NAME} {EMAIL}\nEXPERIENCE\n- Built SQL dashboards SKILLS used by 40 TOOLS regional managers to\n"
+                 f"- {B2}\n- {B3}")
+    findings = check_readability(one_reader, EXPECTED, second_text=scrambled)
+    disagree = [f for f in findings if f.code == "READABILITY_READERS_DISAGREE"]
+    assert disagree and disagree[0].severity == FindingSeverity.WARNING and disagree[0].details["bullets"] == [B1]
+    # Missing for one reader, present for the other: not a missing bullet.
+    without_b3 = one_reader.replace(f"- {B3}", "")
+    assert "READABILITY_BULLET_MISSING" not in _codes(check_readability(without_b3, EXPECTED, second_text=one_reader))
+
+
+def test_the_second_reader_reads_a_real_pdf(tmp_path):
+    from resume_tailorer.pdf.readability import second_reader_text
+
+    text = second_reader_text(str(_pdf(tmp_path / "clean.pdf", CLEAN)))
+    assert text and B1 in " ".join(text.split())
+    assert second_reader_text(str(tmp_path / "missing.pdf")) is None
+
+
+def test_word_file_checks_flag_header_contact_tables_and_text_boxes():
+    from docx import Document
+    from docx.oxml import parse_xml
+
+    from resume_tailorer.pdf.readability import check_docx_file
+
+    doc = Document()
+    doc.sections[0].header.paragraphs[0].text = f"{NAME} | {EMAIL}"
+    doc.add_paragraph("EXPERIENCE")
+    table = doc.add_table(rows=2, cols=2)
+    for cell in [c for row in table.rows for c in row.cells]:
+        cell.text = B1 + " " + B2
+    doc.add_paragraph("Notes")._p.append(parse_xml(
+        '<w:r xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" '
+        'xmlns:wps="http://schemas.microsoft.com/office/word/2010/wordprocessingShape"><w:t>x</w:t>'
+        '<wps:txbx><w:txbxContent><w:p><w:r><w:t>Skills in a box</w:t></w:r></w:p></w:txbxContent></wps:txbx></w:r>'))
+    buf = io.BytesIO()
+    doc.save(buf)
+    codes = {f.code for f in check_docx_file(buf.getvalue(), EMAIL, NAME)}
+    assert {"DOCX_CONTACT_IN_HEADER", "DOCX_TEXT_IN_TABLES", "DOCX_TEXT_BOXES"} <= codes
+
+    clean = Document()
+    for line in (NAME, EMAIL, "EXPERIENCE", f"- {B1}"):
+        clean.add_paragraph(line)
+    buf = io.BytesIO()
+    clean.save(buf)
+    assert check_docx_file(buf.getvalue(), EMAIL, NAME) == []
+
+
+def test_free_form_pdfs_get_per_bullet_checks(tmp_path):
+    from resume_tailorer.pdf.readability import expected_for_freeform
+
+    tailored = "\n".join(CLEAN)
+    expected = expected_for_freeform(profile(), tailored)
+    assert expected.bullets == (B1, B2, B3) and not expected.check_contact
+    pdf = _pdf(tmp_path / "freeform.pdf", [line for line in CLEAN if B2 not in line])
+    result = PDFValidator().validate_artifact(str(pdf), profile=profile(), expected_page_count=None,
+                                              accepted_changes=[], tailored_text=tailored)
+    assert any(f.code == "READABILITY_BULLET_MISSING" for f in result.findings)

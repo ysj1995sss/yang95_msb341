@@ -51,11 +51,14 @@ def review_for_state(state: dict, provenance: Optional[dict] = None) -> Optional
 _CHECKS = (
     (("TEXT_NOT_EXTRACTABLE",), "Text can be read from the file", "all"),
     (("READABILITY_CONTACT_MISSING", "CONTACT_MISSING"), "Your name and contact details read back", "all"),
-    (("READABILITY_BULLET_MISSING",), "Every bullet reads back", "docx"),
-    (("READABILITY_ORDER",), "Text reads back whole and in order", "docx"),
+    (("READABILITY_BULLET_MISSING",), "Every bullet reads back", "all"),
+    (("READABILITY_ORDER",), "Text reads back whole and in order", "all"),
+    (("READABILITY_READERS_DISAGREE",), "Two different text readers agree", "all"),
     (("READABILITY_ROLE_ORDER",), "Roles read back in page order", "all"),
     (("READABILITY_UNMAPPED_SYMBOLS",), "No unknown symbols", "all"),
     (("READABILITY_HEADING_UNUSUAL",), "Standard section headings", "all"),
+    (("DOCX_CONTACT_IN_HEADER",), "Word file: contact details in the body, not only the header", "docx"),
+    (("DOCX_TEXT_IN_TABLES", "DOCX_TEXT_BOXES"), "Word file: no tables or text boxes for your content", "docx"),
 )
 
 

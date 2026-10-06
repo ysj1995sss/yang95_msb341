@@ -32,7 +32,7 @@ from resume_tailorer.artifacts.models import (
 )
 from resume_tailorer.models import CareerTruthProfile
 from resume_tailorer.pdf.content_validator import validate_pdf_content
-from resume_tailorer.pdf.readability import check_readability, expected_for_freeform
+from resume_tailorer.pdf.readability import check_readability, expected_for_freeform, second_reader_text
 from resume_tailorer.pdf.visual_validator import compare_pdf_renders
 
 
@@ -186,8 +186,10 @@ class PDFValidator:
         original_pdf_path: str | None = None,
         edited_regions: list[tuple[float, float, float, float]] | None = None,
         target_length: str = "preserve",
+        tailored_text: str = "",
     ) -> ArtifactValidation:
-        """Run the structured Step 18 gate while preserving legacy validate()."""
+        """Run the structured Step 18 gate while preserving legacy validate(). `tailored_text`
+        (spec 011): the free-form text the PDF was made from, so every bullet can be checked."""
         legacy = self.validate(pdf_path, target_length=target_length)
         findings: list[ValidationFinding] = findings_from_pdf_issues(legacy.issues)
 
@@ -209,7 +211,8 @@ class PDFValidator:
         if legacy.extracted_text:
             findings.extend(validate_pdf_content(legacy.extracted_text, profile, accepted_changes))
             # Spec 010: reading order, unknown symbols and standard headings (local check).
-            findings.extend(check_readability(legacy.extracted_text, expected_for_freeform(profile)))
+            findings.extend(check_readability(legacy.extracted_text, expected_for_freeform(profile, tailored_text),
+                                              second_text=second_reader_text(pdf_path)))
 
         if original_pdf_path:
             try:
