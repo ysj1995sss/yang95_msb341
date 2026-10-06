@@ -1,7 +1,7 @@
 # Handoff to Codex — Job Copilot
 
 **Date:** 2026-10-06 (top section); older sections below are history
-**From:** Claude Code (specs 009–011, decisions 028–033)
+**From:** Claude Code (specs 009–011) and Codex (spec 012, decision 034)
 **Repo:** `ysj1995sss/yang95_msb341`
 **Audience:** A fresh Codex session continuing this product.
 
@@ -14,6 +14,17 @@ decisions 001, 006, 009, 012, 014, 015, 016, or 017 unless new evidence forces i
 
 This section supersedes everything below it. The older sections are history; trust the code, the
 `specs/` and the `decisions/` over them.
+
+**Spec 012 update (later 2026-10-06):** Word profile sync now covers identifiable contact,
+summary, role title/date/location, skills/tools, education and certifications. Ambiguous
+contradictions stop the Word artifact. PDF/free-form summary and skills edits have independent
+review rows and saved spans; format-2 reviews remain compatible. Read `specs/012`, decision 034
+and `discovery/experiments/2026-10-spec-012-supervised-runs.md` before changing this path.
+Final local verification: product 1,154 passed, 1 skipped; API 118 passed; web lint/types passed;
+all 20 Playwright cases reported `ok` on fresh data, though the runner lingered during Windows
+shutdown and was stopped. The real-model Word run passed; a real-model PDF run blocked unsupported
+claims, then rebuilt with only the expected visual-comparison warning after rejection. CI after
+push must still be checked separately.
 
 ### 1. Where things stand
 
@@ -58,31 +69,20 @@ This section supersedes everything below it. The older sections are history; tru
 Follow `AGENTS.md`: draft a spec in `specs/` before building, show the plan, and wait for the
 builder's approval. Then build in small verified commits, and record decisions in `decisions/`.
 
-1. **Spec 012, part A: sync the whole Career Profile into a Word resume, not just bullets.**
-   - **Today:** `docx_export/profile_sync.py` only updates work-history bullets.
-   - **Missing:** profile edits to a role's title or dates, the summary paragraph, the skills line,
-     and education never reach the Word file.
-   - **Approach:** extend the sync with the same rules: match by stable identity, edit paragraphs
-     in place (reuse the run-0 technique in `docx_export/splicer.py`), and report anything that
-     can't be placed.
-   - **Tests:** extend `product/tests/test_profile_sync.py`.
-2. **Spec 012, part B: make free-form summary edits reviewable.**
-   - **Today:** on the PDF-upload (free-form) path, `artifacts/changes.py::build_freeform_changes`
-     pairs bullets only, so a summary change can't be accepted or rejected on its own. The skills
-     line is sometimes paired oddly ("SQL → (empty)").
-   - **Fix:** add summary and skills-line changes as their own reviewable `ResumeChange`s, and
-     keep the unsupported-term guard on them.
-3. **Batch polish:**
+1. **Spec 012 follow-up:** Test one additional anonymized Word template with unusual contact or
+   education layout, and investigate the Playwright shutdown hang. Do not loosen fail-closed
+   matching without a reproduction.
+2. **Batch polish:**
    - resume a batch that a restart stopped (`batch_router._read_batch` marks it "stopped");
    - show a "the profile changed since this review" warning;
    - run the Streamlit batch without blocking the page.
-4. **Recognition:**
+3. **Recognition:**
    - add vocabulary for fields the builder targets (`analyzers/ats_keywords.py`, `GENERIC_TERMS`,
      `AMBIGUOUS_ACRONYMS` in `requirement_review.py`);
    - make confirmation per fact instead of per section (`profile_store.fact_paths`).
-5. **Deployment, Google sign-in and Gmail, and the Chrome Web Store.** These need the builder's
+4. **Deployment, Google sign-in and Gmail, and the Chrome Web Store.** These need the builder's
    accounts; ask first. The guides are spec 009 "Deploying", `extension/STORE.md` and decision 030.
-6. **Supervised user tests** with 2–3 people (Sprint 2). This is the biggest unknown.
+5. **Supervised user tests** with 2–3 people (Sprint 2). This is the biggest unknown.
 
 The builder also flagged a strategic question: two frontends double every feature. Raise "retire
 Streamlit after the web app is deployed" with them; don't decide it alone.

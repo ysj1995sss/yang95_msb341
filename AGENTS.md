@@ -14,7 +14,7 @@ a brand new session act like a colleague who already knows what you are working 
 ## Current state
 
 > **Newest state (2026-10-06):** read the "START HERE" section at the top of `HANDOFF-TO-CODEX.md`
-> first. It covers the new Next.js web app (`apps/web`), specs 009–011, decisions 028–033, how to
+> first. It covers the new Next.js web app (`apps/web`), specs 009–012, decisions 028–034, how to
 > run and test on the builder's PC, and the recommended next work. The notes below are older.
 
 - **Where we are:** Sprint 2 (Steps 3–9 job discovery) is in progress, and all 24 spec steps
@@ -26,6 +26,10 @@ a brand new session act like a colleague who already knows what you are working 
     handed out.
   - **ATS help (2026-10-05, spec 010 / decision 032):** an evidence-based requirement review and a
     local readability check replace any ATS-style score. Never promise an ATS pass, score or ranking.
+  - **Complete profile sync and review (2026-10-06, spec 012 / decision 034):** identifiable
+    Career Profile fields reach a copy of the Word file; ambiguous contradictions block the
+    artifact. PDF/free-form summary and skills edits are independent, safely anchored review
+    choices. Both apps share labels and guards; legacy format-2 reviews still load.
   - **Regeneration** uses the run's exact resume version.
   - **Jobs workspace (2026-10-04, spec 008 / decision 026):** Jobs is a stateful list/detail
     browser driven by `ui/jobs_state.py`; the chosen job and its tailored resume persist across
@@ -68,7 +72,7 @@ a brand new session act like a colleague who already knows what you are working 
 - **Stack:** Python (resume_tailorer package), Streamlit for UI, an LLM API for tailoring (see `product/resume_tailorer/llm/`), pytest for testing, reportlab for PDF generation, python-docx + docx2pdf for the DOCX splice pipeline, multiple job board scrapers (Greenhouse live; LinkedIn/Indeed/Handshake limited/demo).
 - **Two separate venvs:** `product/.venv` (core engine + Streamlit) and `apps/api/.venv` (FastAPI backend). Set `PYTHONPATH` to include `product/` when running Streamlit or product tests directly.
 - **How work ships:** push to `main` → Streamlit Community Cloud redeploys `product/resume_tailorer/app.py`. Multi-user deployment needs the `decisions/023` checklist first (Google OAuth secrets, durable `JOB_COPILOT_DATA_DIR`).
-- **Testing and style:** pytest; CI (`.github/workflows/tests.yml`) runs both suites on every push, on Python 3.14 with the pinned versions in `product/requirements.txt`. Run both before claiming anything is done: `product/` currently 1126 tests, `apps/api/` currently 117; web tests in `apps/web` (`npm run test:e2e`).
+- **Testing and style:** pytest; CI (`.github/workflows/tests.yml`) runs both suites on every push, on Python 3.14 with the pinned versions in `product/requirements.txt`. Run both before claiming anything is done: `product/` currently 1154 passed (1 skipped), `apps/api/` currently 118 passed; web has 20 Playwright cases (`npm run test:e2e`). On Windows the runner may linger after all cases report `ok`; distinguish that from a clean exit.
 
 ## Working with me
 
