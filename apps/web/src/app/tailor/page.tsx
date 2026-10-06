@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 import { Alert, Button, Card, Checkbox, Chip, ErrorBox, LinkButton, PageHeader, RadioGroup, Spinner, TextArea, TextField, toneOf, useToast } from "@/components/ui";
 import { api, useResource } from "@/lib/api";
 import { AtsExplainer } from "@/components/ats-explainer";
+import { BatchStrip } from "@/components/batch";
 import type { Review, RunStatus, TailorPage } from "@/lib/types";
 import { ReviewRoom } from "./review";
 
@@ -120,7 +121,12 @@ export default function TailorPageView() {
     reload();
   }
 
-  const header = <PageHeader title="Tailor" description="Review each proposed change against your verified facts. Nothing is used until you decide." />;
+  const header = (
+    <>
+      <PageHeader title="Tailor" description="Review each proposed change against your verified facts. Nothing is used until you decide." />
+      <BatchStrip onOpened={reload} currentJobId={data?.job?.job_id} />
+    </>
+  );
   if (error) return <>{header}<ErrorBox error={error} retry={reload} /></>;
   if (loading && !data) return <>{header}<Spinner label="Loading your review" /></>;
   if (!data) return null;

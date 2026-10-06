@@ -25,6 +25,7 @@ from resume_tailorer.job_search.job_service import PENDING_TAILOR_JOB_KEY, JobSe
 from resume_tailorer.profile_import import RECORD_KEY
 from resume_tailorer.session_profile import get_career_profile
 from resume_tailorer.tailoring_session import handoff_for_job
+from resume_tailorer.ui.batch_panel import render_batch_prepare
 from resume_tailorer.ui import chip, render_app_shell, render_page_header, render_progress
 from resume_tailorer.ui.apply_readiness import build_apply_view, empty_apply_view
 from resume_tailorer.ui.shell import primary_action
@@ -204,6 +205,7 @@ def main():
         "Check that everything is ready, then finish on the employer's own site. Job Copilot never submits for you.",
     )
     service = _service()
+    render_batch_prepare(service)  # spec 011
     job = st.session_state.get(PENDING_TAILOR_JOB_KEY) or {}
     if not job:
         _pick_staged(service)

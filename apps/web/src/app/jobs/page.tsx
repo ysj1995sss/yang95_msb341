@@ -1,12 +1,15 @@
 "use client";
 
-import { ArrowLeft, Search } from "lucide-react";
+import { ArrowLeft, Layers, Search } from "lucide-react";
+import { useRouter } from "next/navigation";
 import { useState } from "react";
-import { Alert, Button, Card, Chip, ErrorBox, PageHeader, Spinner, cx, toneOf } from "@/components/ui";
+import { Alert, Button, Card, Chip, ErrorBox, PageHeader, Spinner, cx, toneOf, useToast } from "@/components/ui";
 import { api, useResource } from "@/lib/api";
 import type { JobForm, JobsList, JobsSetup } from "@/lib/types";
 import { JobDetailPanel } from "./job-detail";
 import { SearchForm } from "./search-form";
+
+const MAX_BATCH = 10;
 
 const VIEWS = [
   { key: "best", label: "Best matches" },
@@ -33,6 +36,22 @@ export default function JobsPage() {
   const [showDetail, setShowDetail] = useState(false); // phones: list or detail, one at a time
   const [more, setMore] = useState<{ key: string; rows: JobsList["rows"] }>({ key: "", rows: [] });
   const [loadingMore, setLoadingMore] = useState(false);
+  // Spec 011: pick several jobs and tailor them as a batch.
+  const [picking, setPicking] = useState(false);
+  const [picked, setPicked] = useState<string[]>([]);
+  const [starting, setStarting] = useState(false);
+  const router = useRouter();
+  const toast = useToast();
+
+  async function tailorPicked() {
+    setStarting(true);
+    try {
+      await api("/batch/tailor", { method: "POST", json: { job_ids: picked } });
+      router.push("/tailor");
+    } catch (e) { toast((e as Error).message); setStarting(false); }
+  }
+  const togglePick = (id: string) =>
+    setPicked((p) => (p.includes(id) ? p.filter((x) => x !== id) : p.length >= MAX_BATCH ? p : [...p, id]));
 
   async function search(form: JobForm) {
     setSearching(true);
@@ -146,6 +165,21 @@ export default function JobsPage() {
           </button>
         ))}
       </div>
+      <div className="mb-4 flex flex-wrap items-center gap-2">
+        {!picking ? (
+          <Button onClick={() => setPicking(true)}><Layers aria-hidden className="size-4" /> Select jobs to tailor together</Button>
+        ) : (
+          <>
+            <Button variant="primary" busy={starting} disabled={picked.length === 0} onClick={tailorPicked}>
+              {`Tailor selected (${picked.length})`}
+            </Button>
+            <Button variant="ghost" onClick={() => { setPicking(false); setPicked([]); }}>Cancel</Button>
+            <p className="text-[14px] text-muted" role="status">
+              {`Up to ${MAX_BATCH} jobs. They're tailored one at a time; you review each one in Tailor before applying.`}
+            </p>
+          </>
+        )}
+      </div>
 
       {list.error ? <ErrorBox error={list.error} retry={list.reload} /> : !data ? <Spinner label="Loading jobs" /> : rows.length === 0 ? (
         <Card>
@@ -166,7 +200,14 @@ export default function JobsPage() {
               {rows.map((r) => {
                 const active = r.job_id === current;
                 return (
-                  <li key={r.job_id}>
+                  <li key={r.job_id} className="flex items-stretch">
+                    {picking && (
+                      <label className="flex min-w-11 cursor-pointer items-center justify-center border-l-4 border-transparent pl-3">
+                        <input type="checkbox" className="size-5 accent-[var(--color-primary)]" checked={picked.includes(r.job_id)}
+                          disabled={!picked.includes(r.job_id) && picked.length >= MAX_BATCH}
+                          onChange={() => togglePick(r.job_id)} aria-label={`Select ${r.title} at ${r.company}`} />
+                      </label>
+                    )}
                     <button type="button" aria-current={active ? "true" : undefined}
                       onClick={() => { setSelected(r.job_id); setShowDetail(true); window.scrollTo({ top: 0 }); }}
                       className={cx("flex w-full flex-col gap-1 border-l-4 px-4 py-3 text-left transition-colors duration-150 cursor-pointer",

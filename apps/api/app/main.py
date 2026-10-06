@@ -26,6 +26,7 @@ from app.workspace.apply_router import router as workspace_apply_router
 from app.workspace.tracker_router import router as workspace_tracker_router
 from app.workspace.account_router import router as workspace_account_router
 from app.workspace.gmail_router import router as workspace_gmail_router
+from app.workspace.batch_router import router as workspace_batch_router
 
 app = FastAPI(title="Resume Copilot API")
 app.add_middleware(
@@ -65,6 +66,7 @@ app.include_router(workspace_apply_router)
 app.include_router(workspace_tracker_router)
 app.include_router(workspace_account_router)
 app.include_router(workspace_gmail_router)
+app.include_router(workspace_batch_router)
 
 
 logger = logging.getLogger("job_copilot.api")

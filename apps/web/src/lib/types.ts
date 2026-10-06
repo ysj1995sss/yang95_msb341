@@ -160,6 +160,10 @@ export type Review = {
   blocked: string[]; show_all: boolean; verbs: Record<Decision, string>;
 };
 
+export type BatchItem = { job_id: string; title: string; company: string; status: string; error: string };
+export type Batch = { id: string; status: "running" | "done" | "cancelled" | "stopped"; items: BatchItem[]; note: string; summary: string };
+export type PrepareResult = { job_id: string; title: string; company: string; url: string; status: string; message: string };
+
 export type RunStatus = { status: "idle" | "running" | "done" | "failed"; step?: string; error?: string; job_id?: string };
 
 export type TailorPage = {

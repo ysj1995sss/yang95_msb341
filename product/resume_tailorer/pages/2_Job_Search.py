@@ -22,6 +22,7 @@ from resume_tailorer.analyzers.job_analyzer import JobAnalyzer
 from resume_tailorer.analyzers.requirement_review import build_review
 from resume_tailorer.ui import ats_explainer
 from resume_tailorer.ui.ats_panel import render_ats_explainer
+from resume_tailorer.ui.batch_panel import render_batch_runner
 from resume_tailorer.job_search.job_attributes import (
     ASHBY_BOARDS,
     COMPANY_DIRECTORY,
@@ -497,6 +498,7 @@ def _render_results(status_slot, has_goals: bool, searched: bool) -> None:
     with list_col:
         chosen_view = st.segmented_control("Show", VIEWS, key="w_jobs_view", label_visibility="collapsed")
         st.session_state[VIEW_KEY] = chosen_view or VIEWS[0]
+        render_batch_runner(jobs, job_id_for, service, st.session_state[OWNER_KEY])  # spec 011
         _render_list(jobs, fits, actions, ids)
     selected = st.session_state.get(SELECTED_KEY)
     job = next((j for j in jobs if job_id_for(j) == selected), jobs[0])

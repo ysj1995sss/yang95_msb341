@@ -4,6 +4,7 @@ import { ArrowRight, Check, CircleAlert, Copy, Download, ExternalLink, Minus, X 
 import { useState } from "react";
 import { Alert, Button, Card, Chip, ErrorBox, LinkButton, PageHeader, Spinner, TextArea, cx, useToast } from "@/components/ui";
 import { api, useResource } from "@/lib/api";
+import { BatchPrepare } from "@/components/batch";
 import type { ApplyPage, CheckItem, KitField } from "@/lib/types";
 
 const CHECK = {
@@ -126,7 +127,12 @@ export default function ApplyPageView() {
     }
   }
 
-  const header = <PageHeader title="Apply" description="Check that everything is ready, then finish on the employer's own site. Job Copilot never submits for you." />;
+  const header = (
+    <>
+      <PageHeader title="Apply" description="Check that everything is ready, then finish on the employer's own site. Job Copilot never submits for you." />
+      <BatchPrepare onPrepared={reload} />
+    </>
+  );
   if (error) return <>{header}<ErrorBox error={error} retry={reload} /></>;
   if (loading && !data) return <>{header}<Spinner label="Checking readiness" /></>;
   if (!data) return null;

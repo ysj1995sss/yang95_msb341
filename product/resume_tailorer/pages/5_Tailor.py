@@ -33,7 +33,8 @@ except Exception:
 from resume_tailorer.identity import artifacts_dir
 from resume_tailorer.profile_import import RECORD_KEY, store_for
 from resume_tailorer.session_profile import get_career_profile
-from resume_tailorer.ui.auth_gate import require_identity
+from resume_tailorer.ui.auth_gate import OWNER_KEY, job_service_for, require_identity
+from resume_tailorer.ui.batch_panel import render_batch_switcher
 from resume_tailorer.tailoring_session import HANDOFF_KEY, sync_pending_job
 from resume_tailorer.llm.settings import resolve_settings
 from resume_tailorer.llm.client import LLMClient
@@ -561,6 +562,7 @@ def main():
         "Review each proposed change against your verified facts. Nothing is used until you decide.",
     )
 
+    render_batch_switcher(job_service_for(st.session_state[OWNER_KEY]))  # spec 011
     pending = st.session_state.get(PENDING_TAILOR_JOB_KEY) or {}
     if pending:
         if sync_pending_job(st.session_state, pending, _JD_SESSION_KEY, _STATE_KEY):

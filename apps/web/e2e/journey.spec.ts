@@ -193,3 +193,26 @@ test("the privacy page is public, readable and accessible", async ({ page }) => 
   await page.goto("/");
   await expect(page.getByRole("contentinfo").getByRole("link", { name: "Privacy" })).toHaveAttribute("href", "/privacy");
 });
+
+test("a batch: select two jobs, tailor them, open one, prepare from Apply (nothing is submitted)", async ({ page }) => {
+  await page.goto("/jobs");
+  await page.getByRole("button", { name: "Select jobs to tailor together" }).click();
+  await page.getByRole("checkbox", { name: /Select Senior Data Analyst/ }).check();
+  await page.getByRole("checkbox", { name: /Select Data Analyst, Growth/ }).check();
+  await expectAccessible(page, "jobs, selecting a batch");
+  await page.getByRole("button", { name: "Tailor selected (2)" }).click();
+
+  await expect(page).toHaveURL(/\/tailor$/);
+  const strip = page.getByRole("region", { name: "Batch" });
+  await expect(strip.getByText(/2 of 2 tailored/)).toBeVisible({ timeout: 90_000 });
+  await expectAccessible(page, "tailor, batch done");
+  await strip.getByRole("button", { name: "Open review" }).first().click();
+  await expect(page.getByRole("heading", { name: "Keywords" })).toBeVisible({ timeout: 30_000 });
+
+  await page.goto("/apply");
+  await page.getByRole("button", { name: "Prepare reviewed jobs for applying" }).click();
+  const results = page.getByRole("list", { name: "Preparation results" });
+  await expect(results.getByRole("listitem")).toHaveCount(2);
+  await expect(results).toContainText(/Ready to apply|Review first|Already tracked/);
+  await expectAccessible(page, "apply, batch prepared");
+});
