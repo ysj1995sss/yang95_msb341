@@ -9,7 +9,24 @@ Read this file first, then `CLAUDE.md`, then the decisions listed below. Do not 
 
 ---
 
-## Latest update (2026-10-05, latest) — honest ATS help (spec 010, decisions 031–032)
+## Latest update (2026-10-05, latest) — spec 011 (decision 033)
+
+- **Tailoring from the Career Profile:** tailoring now uses the Career Profile. A Word resume is
+  updated from it first (roles matched by employer and title, the file's bullet order kept), so
+  profile edits reach the tailored file.
+- **Tailor:** per-term statuses and a Keywords panel (added in this version / still left out and
+  why / not changed and why).
+- **Batches:** select up to 10 jobs in Jobs, tailor them as a batch, open each review in Tailor,
+  and prepare the reviewed ones from Apply. Nothing is submitted.
+- **Matching and readability:**
+  - one gap system on every screen;
+  - broader recognition across fields;
+  - two PDF readers and Word-file checks.
+- **Supervised runs:** `discovery/experiments/2026-10-spec-011-supervised-runs.md` (Word and PDF,
+  with the real model).
+- **Test baseline:** `product/` 1126, `apps/api/` 117, 20 browser tests.
+
+## Update (2026-10-05) — honest ATS help (spec 010, decisions 031–032)
 
 - **What changed:** "ATS" features no longer imply an employer score.
   - **Jobs:** says "In your Career Profile" and shows a requirement summary.

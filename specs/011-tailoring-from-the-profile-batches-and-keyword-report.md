@@ -1,6 +1,6 @@
 # Spec 011: Tailor from the Career Profile, batches from Jobs, and a keyword report
 
-**Status:** Approved 2026-10-05 by the builder ("approve and work on it"). In progress.
+**Status:** Shipped 2026-10-05 (decision 033). Supervised runs: `discovery/experiments/2026-10-spec-011-supervised-runs.md`.
 **Date:** 2026-10-05
 **Builds on:** spec 010 (requirement review, decision 032)
 
@@ -250,15 +250,15 @@ plus "the profile edit reached the tailored resume".
 
 ## Definition of done
 
-- [ ] Tailor shows added and still-left-out keywords, with reasons, in both apps.
-- [ ] Jobs can select and tailor up to 10 jobs as a batch, and Apply can prepare reviewed ones;
+- [x] Tailor shows added and still-left-out keywords, with reasons, in both apps.
+- [x] Jobs can select and tailor up to 10 jobs as a batch, and Apply can prepare reviewed ones;
       nothing is ever submitted.
-- [ ] Career Profile edits reach tailoring (Word layout kept); roles are matched by
+- [x] Career Profile edits reach tailoring (Word layout kept); roles are matched by
       employer and title.
-- [ ] One gap system on every screen; per-term statuses visible.
-- [ ] Recognition works on the anonymized nursing, finance and software postings, and on postings
+- [x] One gap system on every screen; per-term statuses visible.
+- [x] Recognition works on the anonymized nursing, finance and software postings, and on postings
       without headings.
-- [ ] The model answers every target (rewrite or reason), and the reasons are visible.
-- [ ] The free-form path has per-bullet readability and a real supervised run.
-- [ ] The readability check uses two extractors and checks the Word file.
-- [ ] Product, API and web suites green in CI; decision 033 written.
+- [x] The model answers every target (rewrite or reason), and the reasons are visible.
+- [x] The free-form path has per-bullet readability and a real supervised run.
+- [x] The readability check uses two extractors and checks the Word file.
+- [x] Product, API and web suites green in CI; decision 033 written.

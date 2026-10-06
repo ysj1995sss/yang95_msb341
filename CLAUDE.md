@@ -32,6 +32,12 @@ a brand new session act like a colleague who already knows what you are working 
   and a code guard on both paths rejects unsupported terms. `pdf/readability.py` is a local
   check that the finished PDF reads back (name, email, every bullet, order). It is shown in Jobs
   and Tailor in both apps. Supervised run: `discovery/experiments/2026-10-ats-requirement-review.md`.
+- **Spec 011 / decision 033 (2026-10-05):** tailoring uses the Career Profile (a Word file is
+  synced first, `docx_export/profile_sync.py`, layout kept); per-term statuses and "partly
+  supported"; one gap system on every screen; a Keywords panel (added / left out and why);
+  broader recognition and requirement sentences in postings without headings; the model answers
+  every target with a rewrite or a reason; two PDF readers plus Word-file checks; batches of up to
+  10 jobs (`resume_tailorer/batch.py`, `/v2/batch/*`) that never submit.
 - **Codex as the model (decision 031):** `codex-cli` uses the builder's ChatGPT plan through the
   Codex CLI, local only (`python apps/api/scripts/run_local.py --codex`). Codex needs Node.js on
   PATH.
@@ -89,7 +95,7 @@ a brand new session act like a colleague who already knows what you are working 
 
 - **Stack:** Python (resume_tailorer package), Streamlit UI with built-in Google sign-in, any LiteLLM-supported model (`product/resume_tailorer/llm/`), pytest, reportlab/PyMuPDF for PDFs, python-docx for the DOCX splice pipeline, Greenhouse live job search (LinkedIn/Indeed/Handshake demo only), FastAPI backend in `apps/api/`.
 - **How work ships:** push to `main` → Streamlit Community Cloud redeploys `product/resume_tailorer/app.py`. Multi-user deployment needs the `decisions/023` checklist first (Google OAuth secrets, durable `JOB_COPILOT_DATA_DIR`).
-- **Testing and style:** pytest; CI (`.github/workflows/tests.yml`) runs both suites on every push, on Python 3.14 with the pinned versions in `product/requirements.txt`. Run both before claiming anything is done: `product/` currently 1098 tests, `apps/api/` currently 115. Web: `cd apps/web && npx eslint src && npx tsc --noEmit && npm run build`, and browser tests `npm run test:e2e` (19; starts its own stubbed API and web server).
+- **Testing and style:** pytest; CI (`.github/workflows/tests.yml`) runs both suites on every push, on Python 3.14 with the pinned versions in `product/requirements.txt`. Run both before claiming anything is done: `product/` currently 1126 tests, `apps/api/` currently 117. Web: `cd apps/web && npx eslint src && npx tsc --noEmit && npm run build`, and browser tests `npm run test:e2e` (20; starts its own stubbed API and web server).
 
 ## Working with me
 
