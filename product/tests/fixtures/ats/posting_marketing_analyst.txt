@@ -1,0 +1,25 @@
+Senior Marketing Analyst - Northwind Outdoor (anonymized test posting)
+
+About the role
+You'll join the Growth team and work alongside our product management team to understand what
+drives customer acquisition and retention across our retail and online channels.
+
+Responsibilities
+- Analyze campaign and customer data to find growth opportunities.
+- Build recurring reporting for marketing leadership.
+- Partner with merchandising and product teams on launch plans.
+
+Requirements
+- Bachelor's degree in Business, Economics, or a related field.
+- Advanced SQL for analysis of large customer datasets.
+- Experience with Snowflake.
+- Proven project management experience leading cross-team launches.
+- PM experience partnering with engineering on product roadmaps.
+- Active CPA license.
+- 4+ years of marketing analytics experience.
+
+Preferred Qualifications
+- Tableau dashboards for executive audiences.
+- Experience with Salesforce campaign data.
+
+Northwind Outdoor is an equal opportunity employer.

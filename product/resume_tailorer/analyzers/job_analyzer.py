@@ -97,7 +97,8 @@ class JobAnalyzer:
         # verbatim -- found live testing this against a realistic JD.
         re.compile(r"\d+\+?\s*years?\s+(?:of\s+)?.{0,40}?\b(?:experience|exp)\b", re.IGNORECASE),
         re.compile(r"\bmust\s+(?:have|hold|possess|be\s+able)\b", re.IGNORECASE),
-        re.compile(r"\b(?:active|valid|current)\s+(?:license|licensure|certification)\b", re.IGNORECASE),
+        # "Active CPA license", "valid state nursing license": up to three words in between.
+        re.compile(r"\b(?:active|valid|current)\s+(?:[\w-]+\s+){0,3}(?:license|licensure|certification)\b", re.IGNORECASE),
         re.compile(r"\bauthoriz(?:ed|ation)\s+to\s+work\b", re.IGNORECASE),
         re.compile(r"\brequires?\s+a\s+(?:bachelor|master|phd|doctorate|degree)", re.IGNORECASE),
         re.compile(r"\b(?:bachelor|master|phd|doctorate)'?s?\s+degree\s+(?:is\s+)?required\b", re.IGNORECASE),
