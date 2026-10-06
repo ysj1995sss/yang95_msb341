@@ -45,8 +45,12 @@ from resume_tailorer.review_store import discard_review, load_review, save_revie
 from resume_tailorer.artifacts.models import FidelityMode, ValidationStatus
 from resume_tailorer.ui.artifact_review import visible_changes
 from resume_tailorer.ui import ats_explainer, chip, render_app_shell, render_page_header, render_progress
-from resume_tailorer.ui.ats_panel import render_ats_explainer, render_readability, render_requirement_review
-from resume_tailorer.ui.requirement_review_view import readability_view, review_for_state, review_view
+from resume_tailorer.ui.ats_panel import (
+    render_ats_explainer, render_keyword_report, render_readability, render_requirement_review,
+)
+from resume_tailorer.ui.requirement_review_view import (
+    keyword_report_view, readability_view, review_for_state, review_view,
+)
 from resume_tailorer.ui.shell import primary_action
 from resume_tailorer.ui.design_system import ProgressStep
 from resume_tailorer.ui.pdf_preview import pdf_page_images
@@ -267,6 +271,7 @@ def _render_review_room(pending: dict) -> None:
 
         review = review_for_state(state, (st.session_state.get(RECORD_KEY) or {}).get("provenance"))
         if review is not None:
+            render_keyword_report(keyword_report_view(review, state))
             render_requirement_review(review_view(review))
 
         if groups.true_gaps or groups.blocked:

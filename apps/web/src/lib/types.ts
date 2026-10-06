@@ -130,9 +130,14 @@ export type Change = {
 };
 
 export type RequirementRowView = {
-  id: string; text: string; status: "direct" | "transferable" | "mention" | "unconfirmed" | "check" | "none";
+  id: string; text: string; status: "direct" | "transferable" | "partial" | "mention" | "unconfirmed" | "check" | "none";
   label: string; tone: "verified" | "primary" | "review" | "blocked"; reason: string; hard_gate: boolean;
   shown_in_resume: boolean | null; evidence: Array<{ text: string; source: string; confirmed: boolean }>;
+  terms: Array<{ term: string; status: string; label: string; tone: "verified" | "primary" | "review" | "blocked" }>;
+};
+export type KeywordReportView = {
+  added: Array<{ term: string; change_id: string | null }>; already: string[];
+  left_out: Array<{ key: string; label: string; terms: string[] }>; note: string;
 };
 export type RequirementReviewView = {
   summary: string; computed_from: "run" | "now"; note: string;
@@ -146,7 +151,7 @@ export type Review = {
   version: number; status: "PASS" | "WARNING" | "FAIL"; status_text: string; status_tone: string; findings: string[];
   fidelity: string; page_count: number | null; preview_pages: number; has_pdf: boolean; has_docx: boolean;
   tailored_text: string; alignment: { before: number | null; after: number | null }; overlap_note: string;
-  requirement_review: RequirementReviewView | null; readability: Readability;
+  requirement_review: RequirementReviewView | null; readability: Readability; keyword_report: KeywordReportView | null;
   pages_before_after: [number | null, number | null]; unsupported_claims: string[];
   progress: { reviewed: number; total: number; needs_rebuild: boolean; can_continue: boolean; blocker: string; label: string };
   next_undecided: string | null; changes: Change[]; empty_message: string;

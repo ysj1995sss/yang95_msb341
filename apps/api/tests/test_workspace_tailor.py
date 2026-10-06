@@ -80,6 +80,8 @@ def test_run_review_decide_rebuild_download(tailor_client):
     assert rows and all({"text", "label", "tone", "reason", "evidence", "shown_in_resume"} <= set(r) for r in rows)
     assert any(r["evidence"] and r["evidence"][0]["source"] for r in rows)
     assert "not a check by any employer's ATS" in review["readability"]["note"]
+    kw = review["keyword_report"]  # spec 011
+    assert set(kw) >= {"added", "already", "left_out", "note"} and all("label" in g for g in kw["left_out"])
     assert review["readability"]["items"][0]["label"] == "Text can be read from the file"
     change = next(c for c in review["changes"] if "reporting dashboards" in c["proposed"])
     assert change["decision"] is None and change["original"].startswith("Built SQL dashboards")

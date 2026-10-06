@@ -33,6 +33,7 @@ MENTION = "mention"
 UNCONFIRMED = "unconfirmed"
 CHECK = "check"
 NONE = "none"
+PARTIAL = "partial"  # some of the requirement's named terms have direct evidence, others don't
 
 STATUS_LABELS = {
     DIRECT: "Direct evidence",
@@ -41,9 +42,13 @@ STATUS_LABELS = {
     UNCONFIRMED: "Unconfirmed",
     CHECK: "Check yourself",
     NONE: "No evidence",
+    PARTIAL: "Partly supported",
 }
 # Statuses whose evidence a tailored resume may make clearer. Everything else is never a target.
-SUPPORTED = (DIRECT, TRANSFERABLE)
+# A partly supported row is a target only for its terms that have evidence.
+SUPPORTED = (DIRECT, TRANSFERABLE, PARTIAL)
+# Strongest first, for picking a term's best status across requirements.
+_RANK = {DIRECT: 0, TRANSFERABLE: 1, PARTIAL: 1, UNCONFIRMED: 2, MENTION: 3, CHECK: 4, NONE: 5}
 
 # Short acronyms with several common meanings in job postings. A match that rests only on one of
 # these is never counted as evidence on its own: "PM" can be product or project management.
@@ -124,10 +129,20 @@ class RequirementRow:
     evidence: tuple[EvidenceRef, ...]
     reason: str
     shown_in_resume: Optional[bool] = None  # None until a resume is checked
+    # Spec 011: each named (specific) term's own status, e.g. (("SQL", "direct"), ("Tableau", "none")).
+    # Empty for rows from before spec 011 and for rows named only in general words.
+    term_status: tuple[tuple[str, str], ...] = ()
 
     @property
     def label(self) -> str:
         return STATUS_LABELS[self.status]
+
+    @property
+    def shown_terms(self) -> tuple[str, ...]:
+        """The named terms this row's evidence supports (all its terms when none are tracked)."""
+        if self.term_status:
+            return tuple(t for t, st in self.term_status if st == DIRECT)
+        return self.terms if self.supported else ()
 
     @property
     def supported(self) -> bool:
@@ -144,15 +159,20 @@ class RequirementReview:
         rows = [r for r in self.rows if r.section == section]
         return sum(1 for r in rows if r.supported), len(rows)
 
+    def partly(self, section: str) -> int:
+        return sum(1 for r in self.rows if r.section == section and r.status == PARTIAL)
+
     @property
     def summary(self) -> str:
         req, req_total = self.counts("required")
         pref, pref_total = self.counts("preferred")
         parts = []
         if req_total:
-            parts.append(f"Required: {req} of {req_total} with evidence")
+            partly = self.partly("required")
+            parts.append(f"Required: {req} of {req_total} with evidence" + (f" ({partly} only partly)" if partly else ""))
         if pref_total:
-            parts.append(f"Preferred: {pref} of {pref_total}")
+            partly = self.partly("preferred")
+            parts.append(f"Preferred: {pref} of {pref_total}" + (f" ({partly} only partly)" if partly else ""))
         missing_gates = sum(1 for r in self.rows if r.hard_gate and r.section == "required" and r.status == NONE)
         if missing_gates:
             parts.append(f"{missing_gates} required credential or threshold not found")
@@ -264,8 +284,44 @@ def _meaning(acronym: str, text: str) -> Optional[str]:
     return None
 
 
+def _term_state(term: str, all_passages: list[_Passage]) -> str:
+    """One named term's own status: direct when a confirmed work, education or certification
+    passage names it; unconfirmed when only unconfirmed ones do; mention when only listed."""
+    context = [p for p in all_passages if p.kind in _CONTEXT_KINDS and _mentions_any(term, p.text)]
+    if any(p.confirmed for p in context):
+        return DIRECT
+    if context:
+        return UNCONFIRMED
+    if any(_mentions_any(term, p.text) for p in all_passages if p.kind not in _CONTEXT_KINDS):
+        return MENTION
+    return NONE
+
+
 def _row(rid: str, text: str, section: str, hard_gate: bool, job_analysis: Optional[JobAnalysis],
          profile: CareerTruthProfile, all_passages: list[_Passage], posting: str) -> RequirementRow:
+    """The row with each named term's own status (spec 011): a requirement whose named terms are
+    only partly backed is "partly supported", never shown as fully evidenced."""
+    from dataclasses import replace
+
+    row = _row_status(rid, text, section, hard_gate, job_analysis, profile, all_passages, posting)
+    specific = [t for t in row.terms if t not in GENERIC_TERMS]
+    if not specific:
+        return row
+    states = tuple((t, CHECK if row.status == CHECK and t.lower() in AMBIGUOUS_ACRONYMS else _term_state(t, all_passages))
+                   for t in specific)
+    row = replace(row, term_status=states)
+    if row.status == DIRECT and any(st != DIRECT for _t, st in states) and any(st == DIRECT for _t, st in states):
+        shown = ", ".join(t for t, st in states if st == DIRECT)
+        missing = "; ".join(f"{t} ({STATUS_LABELS[st].lower()})" for t, st in states if st != DIRECT)
+        years = _YEARS.search(text)
+        reason = f"Shown: {shown}. Not shown: {missing}." + (
+            f" It asks for {years.group(0)}: check your dates against it." if years else "")
+        row = replace(row, status=PARTIAL, reason=reason)
+    return row
+
+
+def _row_status(rid: str, text: str, section: str, hard_gate: bool, job_analysis: Optional[JobAnalysis],
+                profile: CareerTruthProfile, all_passages: list[_Passage], posting: str) -> RequirementRow:
     terms = requirement_terms(text, job_analysis, profile)
     specific = tuple(t for t in terms if t not in GENERIC_TERMS)
     # The terms that decide direct evidence: the specific ones when there are any.
@@ -425,6 +481,9 @@ def _evidenced(row: RequirementRow) -> list[str]:
     "SQL and Python" shown only through SQL doesn't support Python)."""
     if not row.supported:
         return []
+    if row.term_status:
+        shown = [t for t, st in row.term_status if st == DIRECT]
+        return shown + [t for t in row.terms if t in GENERIC_TERMS]
     shown = [t for t in row.terms if any(_mentions_any(t, e.text) for e in row.evidence)]
     return shown + [t for t in row.terms if t in GENERIC_TERMS and t not in shown]
 
@@ -499,6 +558,9 @@ def format_for_prompt(review: RequirementReview, resume_text: Optional[str] = No
     for r in targets:
         state = " [already shown; keep it]" if r.shown_in_resume else ""
         lines.append(f"  - {r.section.upper()}: {r.text}{state}")
+        if r.status == PARTIAL:
+            lines.append(f"    Only these named terms are supported: {', '.join(r.shown_terms)}. "
+                         "Never add the others.")
         for e in r.evidence:
             lines.append(f"    Evidence ({e.source}): \"{e.text}\"")
     lines += ["", "DO NOT ADD (no supported evidence; never claim these, never insert their terms):"]
@@ -517,3 +579,57 @@ def unshown_targets(review: RequirementReview, resume_text: str) -> list[Require
     """Supported requirements this resume doesn't show yet: the only things a refinement round
     may work on."""
     return [r for r in with_resume(review, resume_text).targets if not r.shown_in_resume]
+
+
+# --- Keyword report (spec 011) ---------------------------------------------------------------
+
+LEFT_OUT_REASONS = {
+    "not_named": "You have evidence, not named yet",
+    MENTION: "Only listed in your skills",
+    UNCONFIRMED: "Not confirmed yet",
+    CHECK: "Check yourself",
+    NONE: "No evidence (never added)",
+}
+
+
+@dataclass(frozen=True)
+class KeywordReport:
+    added: tuple[str, ...]  # named by this version, not by the original
+    already: tuple[str, ...]  # named by both
+    left_out: tuple[tuple[str, str], ...]  # (term, reason key from LEFT_OUT_REASONS)
+
+
+def term_states(review: RequirementReview) -> dict[str, str]:
+    """Every requirement term with its best status across the review, in review order."""
+    best: dict[str, str] = {}
+    for r in review.rows:
+        pairs = list(r.term_status) or [(t, r.status) for t in r.terms]
+        if r.term_status:  # general words of a tracked row follow the row
+            pairs += [(t, r.status) for t in r.terms if t in GENERIC_TERMS]
+        for term, state in pairs:
+            if term not in best or _RANK[state] < _RANK[best[term]]:
+                best[term] = state
+    return best
+
+
+def keyword_report(review: RequirementReview, original_text: str, tailored_text: str) -> KeywordReport:
+    """Which of the posting's terms this version added, which it already had, and which are left
+    out and why. Only terms that the posting's requirements name are counted."""
+    added, already, left = [], [], []
+    for term, state in term_states(review).items():
+        now = _mentions_any(term, tailored_text or "")
+        before = _mentions_any(term, original_text or "")
+        if now and not before:
+            added.append(term)
+        elif now:
+            already.append(term)
+        else:
+            left.append((term, "not_named" if state in SUPPORTED else state))
+    order = list(LEFT_OUT_REASONS)
+    left.sort(key=lambda pair: order.index(pair[1]))
+    return KeywordReport(tuple(added), tuple(already), tuple(left))
+
+
+def profile_text_for_report(profile: CareerTruthProfile) -> str:
+    """The original resume's facts as one text, for "what did this version add"."""
+    return "\n".join(p.text for p in passages(profile))

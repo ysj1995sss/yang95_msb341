@@ -5,7 +5,7 @@ import { useState } from "react";
 import { Alert, Button, Card, Chip, DownloadLink, LinkButton, TextArea, cx, toneOf, useToast } from "@/components/ui";
 import { api } from "@/lib/api";
 import type { Change, Decision, Review } from "@/lib/types";
-import { ReadabilityCheck, RequirementReview } from "./requirement-review";
+import { KeywordReport, ReadabilityCheck, RequirementReview } from "./requirement-review";
 
 const pct = (v: number | null) => (v === null || v === undefined ? "–" : `${Math.round(v * 100)}%`);
 
@@ -150,6 +150,7 @@ export function ReviewRoom({ review, onChange, onDiscard }: {
             </details>
           )}
 
+          {review.keyword_report && <KeywordReport report={review.keyword_report} onJump={(id) => { setFocus(id); window.scrollTo({ top: 0, behavior: "smooth" }); }} />}
           {review.requirement_review && <RequirementReview review={review.requirement_review} />}
 
           {(review.true_gaps.length > 0 || review.blocked.length > 0) && (

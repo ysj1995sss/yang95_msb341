@@ -56,6 +56,8 @@ test("resume → profile → goals → jobs → tailor → apply → tracker", a
   await expect(page.getByRole("heading", { name: "Proposed changes" })).toBeVisible({ timeout: 60_000 });
   // Spec 010: the requirement review with linked evidence, and the local readability check.
   await expect(page.getByRole("heading", { name: "Requirement review" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Keywords" })).toBeVisible();  // spec 011
+  await expect(page.getByRole("heading", { name: "Added in this version" })).toBeVisible();
   const firstRow = page.getByRole("region", { name: "Requirement review" }).locator("details").first();
   await firstRow.locator("summary").click();
   await expect(firstRow.locator("blockquote").first()).toBeVisible();

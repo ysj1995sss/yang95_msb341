@@ -2,7 +2,7 @@
 
 import { CircleAlert, CircleCheck, CircleMinus, CircleX } from "lucide-react";
 import { Chip, cx } from "@/components/ui";
-import type { Readability, RequirementReviewView, RequirementRowView } from "@/lib/types";
+import type { KeywordReportView, Readability, RequirementReviewView, RequirementRowView } from "@/lib/types";
 
 /** Spec 010: each requirement with the exact posting text and the exact evidence behind it. */
 export function RequirementReview({ review }: { review: RequirementReviewView }) {
@@ -36,6 +36,11 @@ function Row({ row }: { row: RequirementRowView }) {
           {row.shown_in_resume === false && <span className="text-[14px] text-muted">Not shown yet</span>}
         </summary>
         <div className="mt-2 flex flex-col gap-2 text-[15px]">
+          {row.terms.length > 0 && (
+            <ul aria-label="Each named term" className="flex flex-wrap gap-1.5">
+              {row.terms.map((t) => <li key={t.term}><Chip tone={t.tone}>{`${t.term}: ${t.label}`}</Chip></li>)}
+            </ul>
+          )}
           <p className="text-muted">{row.reason}</p>
           {row.evidence.map((e) => (
             <blockquote key={e.source + e.text} className="border-l-4 border-line-strong pl-3">
@@ -75,5 +80,41 @@ export function ReadabilityCheck({ readability }: { readability: Readability }) 
         })}
       </ul>
     </details>
+  );
+}
+
+/** Spec 011: which of the posting's terms this version added, and which are left out and why. */
+export function KeywordReport({ report, onJump }: { report: KeywordReportView; onJump: (changeId: string) => void }) {
+  return (
+    <section aria-labelledby="keyword-report" className="flex flex-col gap-3">
+      <h3 id="keyword-report" className="text-[18px] font-semibold">Keywords</h3>
+      <p className="text-[15px] text-muted">{report.note}</p>
+      <div>
+        <h4 className="mb-1.5 text-[14px] font-semibold tracking-wide text-muted uppercase">Added in this version</h4>
+        {report.added.length === 0 ? <p className="text-[15px]">None yet.</p> : (
+          <ul className="flex flex-wrap gap-1.5">
+            {report.added.map((a) => (
+              <li key={a.term}>
+                {a.change_id
+                  ? <button type="button" onClick={() => onJump(a.change_id!)} className="cursor-pointer rounded-full"
+                      title="Show the change that added it"><Chip tone="verified">{`+ ${a.term}`}</Chip></button>
+                  : <Chip tone="verified">{`+ ${a.term}`}</Chip>}
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+      {report.already.length > 0 && (
+        <p className="text-[15px]"><span className="font-semibold">Already in your resume: </span>{report.already.join(", ")}</p>
+      )}
+      {report.left_out.length > 0 && (
+        <div>
+          <h4 className="mb-1.5 text-[14px] font-semibold tracking-wide text-muted uppercase">Still left out</h4>
+          <ul className="flex flex-col gap-1.5 text-[15px]">
+            {report.left_out.map((g) => <li key={g.key}><span className="font-semibold">{g.label}: </span>{g.terms.join(", ")}</li>)}
+          </ul>
+        </div>
+      )}
+    </section>
   );
 }

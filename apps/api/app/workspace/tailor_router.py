@@ -20,7 +20,9 @@ from pydantic import BaseModel
 from app.workspace import limits
 from app.workspace.context import Workspace, jsonable, workspace
 from resume_tailorer.ui import ats_explainer
-from resume_tailorer.ui.requirement_review_view import readability_view, review_for_state, review_view
+from resume_tailorer.ui.requirement_review_view import (
+    keyword_report_view, readability_view, review_for_state, review_view,
+)
 
 router = APIRouter(prefix="/v2", tags=["workspace"])
 
@@ -172,7 +174,7 @@ def _review_view(ws: Workspace, state: dict, show_all: bool = False) -> dict:
         "has_docx": bool(state.get("docx_bytes")) and status.value != "FAIL",
         "tailored_text": state.get("tailored_text") or "",
         "alignment": {"before": report.original_alignment, "after": report.tailored_alignment},
-        "requirement_review": _requirement_review(ws, state),
+        **_review_and_keywords(ws, state),
         "readability": readability_view(report.validation.findings, state.get("source_kind", ""),
                                         getattr(report.validation, "checks_run", ())),
         "overlap_note": ats_explainer.OVERLAP_NOTE,
@@ -191,9 +193,11 @@ def _review_view(ws: Workspace, state: dict, show_all: bool = False) -> dict:
     }
 
 
-def _requirement_review(ws: Workspace, state: dict) -> Optional[dict]:
+def _review_and_keywords(ws: Workspace, state: dict) -> dict:
     review = review_for_state(state, ws.record.get("provenance"))
-    return review_view(review) if review is not None else None
+    if review is None:
+        return {"requirement_review": None, "keyword_report": None}
+    return {"requirement_review": review_view(review), "keyword_report": keyword_report_view(review, state)}
 
 
 def _run_status(owner_id: str) -> dict:

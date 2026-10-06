@@ -30,6 +30,8 @@ def render_requirement_review(view: dict) -> None:
             gate = " · hard requirement" if row["hard_gate"] and row["status"] == "none" else ""
             with st.expander(f"{row['label']}{gate}: {row['text']}{shown}"):
                 st.write(row["reason"])
+                if row.get("terms"):
+                    st.write(" · ".join(f"{t['term']}: {t['label']}" for t in row["terms"]))
                 for evidence in row["evidence"]:
                     confirmed = "confirmed by you" if evidence["confirmed"] else "not confirmed yet"
                     st.markdown(f"> {evidence['text']}\n\n{evidence['source']} · {confirmed}")
@@ -42,3 +44,17 @@ def render_readability(view: dict) -> None:
         for item in view["items"]:
             line = f"{_STATE_WORDS[item['state']]}: {item['label']}"
             st.write(line + (f" — {item['message']}" if item["message"] else ""))
+
+
+def render_keyword_report(view: dict) -> None:
+    """Spec 011: the terms this version added and the ones still left out, and why."""
+    st.markdown("### Keywords")
+    st.caption(view["note"])
+    added = ", ".join(item["term"] for item in view["added"]) or "None"
+    st.markdown(f"**Added in this version:** {added}")
+    if view["already"]:
+        st.markdown(f"**Already in your resume:** {', '.join(view['already'])}")
+    if view["left_out"]:
+        st.markdown("**Still left out:**")
+        for group in view["left_out"]:
+            st.markdown(f"- {group['label']}: {', '.join(group['terms'])}")
