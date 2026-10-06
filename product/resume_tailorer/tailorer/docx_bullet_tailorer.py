@@ -346,6 +346,9 @@ exactly one object per bullet shown below, covering every "paragraph_index" exac
 this shape:
 [{"paragraph_index": <int, copied exactly from the input>, "change": "keep" or "rewrite", "new_text": "<full replacement text if rewriting, else empty>"}]
 When "change" is "keep", "new_text" is ignored -- the original text is always used.
+If the user message lists target ids under "ANSWER EVERY TARGET", every one of those ids must be
+answered in the same array: either by a rewrite that makes that requirement clearer, or by one extra
+object {"target": "<id>", "no_safe_rewrite": "<one short sentence saying why>"}. Never skip an id.
 "new_text" must be plain text: no markdown, no leading bullet marker/dash, one line only."""
 
     def _build_user_prompt(

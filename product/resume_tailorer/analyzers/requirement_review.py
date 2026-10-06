@@ -487,6 +487,8 @@ def shown_in(row: RequirementRow, resume_text: str) -> bool:
         return False
     if row.terms:
         return any(_mentions_any(t, resume_text) for t in row.terms)
+    if row.evidence and all(e.kind in ("education", "certification") for e in row.evidence):
+        return True  # a degree or credential sits in its own section; bullet edits can't add it
     flat = _flat(resume_text)
     return any(_flat(e.text)[:60] in flat for e in row.evidence if e.kind in _CONTEXT_KINDS and len(e.text) > 20)
 
@@ -604,7 +606,8 @@ def format_for_prompt(review: RequirementReview, resume_text: Optional[str] = No
         lines.append(f"  Only listed as skills, so they may stay in a skills list but must not be added to "
                      f"any bullet: {', '.join(listed)}")
     if never:
-        lines.append(f"  Terms that must not appear anywhere they don't already: {', '.join(never)}")
+        lines.append(f"  Never add these terms anywhere new. Where one already appears in the resume, keep it exactly "
+                     f"as it is; never delete a true fact: {', '.join(never)}")
     unshown = [r.id for r in targets if not r.shown_in_resume]
     if unshown:
         lines += ["", "ANSWER EVERY TARGET THAT ISN'T SHOWN YET (" + ", ".join(unshown) + "): either make it clearer "

@@ -216,7 +216,8 @@ INSTRUCTIONS FOR REFINEMENT:
 1. Use only the quoted evidence and the Career Truth Profile. Make terminology, context,
    responsibility or outcome clearer where the evidence supports it.
 2. CRITICAL: Do not invent or fabricate any experience, skill, credential, duration, number or result.
-3. Never add these terms anywhere they don't already appear: {do_not}
+3. Never add these terms anywhere new; where one already appears, keep it as it is (never delete a
+   true fact): {do_not}
 4. Never change dates, employers, titles, or employment types.
 5. No hidden text, no keyword lists added to bullets, no repeating a term just to repeat it.
 6. If a requirement can't be shown honestly with the evidence, leave it as it is.

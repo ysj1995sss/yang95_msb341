@@ -212,7 +212,7 @@ def test_refinement_targets_only_supported_unshown_requirements():
     for unsupported in ("CPA", "Tableau", "Snowflake", "PM experience", "Salesforce"):
         assert unsupported not in targeted
     prompt = original("Marketing analyst. Excel.", review, captured[0])
-    assert "Never add these terms" in prompt and "CPA" in prompt  # named only as things to leave out
+    assert "Never add these terms anywhere new" in prompt and "CPA" in prompt  # named only as things to leave out
 
 
 def test_optimizer_build_improvement_prompt_quotes_evidence_and_forbids_fabrication():
