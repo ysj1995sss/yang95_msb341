@@ -276,9 +276,16 @@ def requirement_terms(requirement: str, job_analysis: Optional[JobAnalysis] = No
     found = list(terms_in(requirement))
     # The posting's own skills and tools count only when they're real terms: a posting without
     # known tools falls back to frequent words ("active", "required"), which aren't skills.
-    known = {k.lower() for k in VOCABULARY} | {v.lower() for v in VOCABULARY.values()}
-    extra = [t for t in [*job_analysis.skills_required, *job_analysis.tools_required]
-             if t.strip().lower() in known] if job_analysis is not None else []
+    # Each is mapped to its vocabulary label ("launches" -> "Product launch"), so a spelling
+    # never passes for a separate, specific term.
+    labels = {v.lower(): v for v in VOCABULARY.values()}
+    extra = []
+    for t in ([*job_analysis.skills_required, *job_analysis.tools_required] if job_analysis is not None else []):
+        key = t.strip().lower()
+        if key in VOCABULARY:
+            extra.append(VOCABULARY[key])
+        elif key in labels:
+            extra.append(labels[key])
     if profile is not None:
         extra += [*profile.skills, *profile.tools]
     if extra:
@@ -583,7 +590,7 @@ def format_for_prompt(review: RequirementReview, resume_text: Optional[str] = No
         lines.append("  (none)")
     for r in targets:
         state = " [already shown; keep it]" if r.shown_in_resume else ""
-        lines.append(f"  - {r.section.upper()}: {r.text}{state}")
+        lines.append(f"  - [{r.id}] {r.section.upper()}: {r.text}{state}")
         if r.status == PARTIAL:
             lines.append(f"    Only these named terms are supported: {', '.join(r.shown_terms)}. "
                          "Never add the others.")
@@ -598,6 +605,11 @@ def format_for_prompt(review: RequirementReview, resume_text: Optional[str] = No
                      f"any bullet: {', '.join(listed)}")
     if never:
         lines.append(f"  Terms that must not appear anywhere they don't already: {', '.join(never)}")
+    unshown = [r.id for r in targets if not r.shown_in_resume]
+    if unshown:
+        lines += ["", "ANSWER EVERY TARGET THAT ISN'T SHOWN YET (" + ", ".join(unshown) + "): either make it clearer "
+                  "in a rewrite, or add one object to the same JSON array saying why no safe rewrite exists: "
+                  '{"target": "<id>", "no_safe_rewrite": "<one short sentence>"}.']
     return "\n".join(lines)
 
 

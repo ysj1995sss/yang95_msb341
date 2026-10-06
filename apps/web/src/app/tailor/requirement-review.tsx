@@ -115,6 +115,14 @@ export function KeywordReport({ report, onJump }: { report: KeywordReportView; o
           </ul>
         </div>
       )}
+      {report.not_changed.length > 0 && (
+        <div>
+          <h4 className="mb-1.5 text-[14px] font-semibold tracking-wide text-muted uppercase">Not changed, and why</h4>
+          <ul className="flex flex-col gap-1.5 text-[15px]">
+            {report.not_changed.map((n) => <li key={n.requirement}><span className="font-semibold">{n.requirement}: </span>{n.reason}</li>)}
+          </ul>
+        </div>
+      )}
     </section>
   );
 }

@@ -79,7 +79,9 @@ def readability_view(findings: Iterable, source_kind: str, checks_run: Iterable[
 
 def keyword_report_view(review: RequirementReview, state: dict) -> dict:
     """What this version added and what is still left out, with the change that added each
-    term (spec 011)."""
+    term, and the model's reason for each target it didn't change (spec 011)."""
+    from resume_tailorer.analyzers.term_match import short_requirement
+
     profile = state.get("profile")
     original = profile_text_for_report(profile) if profile is not None else ""
     report = keyword_report(review, original, state.get("tailored_text") or "")
@@ -91,7 +93,20 @@ def keyword_report_view(review: RequirementReview, state: dict) -> dict:
                 return change.change_id
         return None
 
+    notes = state.get("target_notes") or {}
+    by_id = {r.id: r for r in review.rows}
+    not_changed = [{"requirement": short_requirement(by_id[rid].text), "reason": reason}
+                   for rid, reason in notes.items() if rid in by_id]
+
+    def why_not(term: str):
+        for r in review.rows:
+            if r.id in notes and term in r.terms:
+                return notes[r.id]
+        return None
+
     return {
+        "not_changed": not_changed,
+        "why_not": {t: why_not(t) for t, k in report.left_out if k == "not_named" and why_not(t)},
         "added": [{"term": t, "change_id": change_for(t)} for t in report.added],
         "already": list(report.already),
         "left_out": [{"key": key, "label": LEFT_OUT_REASONS[key], "terms": [t for t, k in report.left_out if k == key]}

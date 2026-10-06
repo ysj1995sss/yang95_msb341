@@ -112,11 +112,13 @@ def run_tailoring(
 
         progress("Writing and checking changes (about a minute)")
         baseline_text = ""
+        target_notes: dict = {}
         if is_docx:
             docx_result = run_docx_tailoring_pipeline(
                 original_bytes, profile, job_analysis, gap_report,
                 bullet_tailorer=DocxBulletTailorer(llm=llm), convert_to_pdf=True, review=review,
             )
+            target_notes = dict(docx_result.target_notes)  # kept across the length correction
             docx_result = correct_docx_length_once(
                 original_docx_bytes=original_bytes, docx_result=docx_result,
                 profile=profile, gap_report=gap_report, llm=llm,
@@ -182,6 +184,7 @@ def run_tailoring(
         "original_alignment": benchmark.original_match_score,
         "requirement_review": with_resume(review, tailored_text),
         "sync_summary": sync_summary,
+        "target_notes": target_notes,
         "candidate_fit": candidate_fit,
         "company": pending.get("company", ""),
         "role": pending.get("title", ""),

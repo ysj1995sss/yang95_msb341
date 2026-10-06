@@ -138,6 +138,7 @@ export type RequirementRowView = {
 export type KeywordReportView = {
   added: Array<{ term: string; change_id: string | null }>; already: string[];
   left_out: Array<{ key: string; label: string; terms: string[] }>; note: string;
+  not_changed: Array<{ requirement: string; reason: string }>; why_not: Record<string, string>;
 };
 export type RequirementReviewView = {
   summary: string; computed_from: "run" | "now"; note: string;

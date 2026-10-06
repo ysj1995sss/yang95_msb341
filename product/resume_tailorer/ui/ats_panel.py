@@ -58,3 +58,7 @@ def render_keyword_report(view: dict) -> None:
         st.markdown("**Still left out:**")
         for group in view["left_out"]:
             st.markdown(f"- {group['label']}: {', '.join(group['terms'])}")
+    if view.get("not_changed"):
+        st.markdown("**Not changed, and why:**")
+        for item in view["not_changed"]:
+            st.markdown(f"- {item['requirement']}: {item['reason']}")

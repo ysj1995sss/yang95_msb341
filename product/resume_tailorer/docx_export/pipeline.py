@@ -69,6 +69,7 @@ class DocxTailoringResult:
     validation: ArtifactValidation = field(
         default_factory=lambda: ArtifactValidation.from_findings([])
     )
+    target_notes: dict[str, str] = field(default_factory=dict)
 
 
 def changes_from_bullet_edits(
@@ -198,7 +199,9 @@ def run_docx_tailoring_pipeline(
             second_pass = tailorer.tailor_bullets(
                 updated_bullets, profile, job_analysis, gap_report, priority_focus=priority_focus, **review_kwargs
             )
+            notes = {**tailoring_result.target_notes, **second_pass.target_notes}
             tailoring_result = _merge_optimization_pass(tailoring_result, second_pass)
+            tailoring_result.target_notes = notes
             warnings = list(tailoring_result.warnings)
             bullets_changed = sum(1 for e in tailoring_result.edits if e.changed)
             warnings.append(
@@ -221,7 +224,7 @@ def run_docx_tailoring_pipeline(
             "Consider reviewing the gap report for evidence the tailoring pass didn't surface."
         )
 
-    return finalize_docx_edits(
+    result = finalize_docx_edits(
         doc=doc,
         structure=structure,
         bullets=bullets,
@@ -237,6 +240,8 @@ def run_docx_tailoring_pipeline(
         addressable_requirements=addressable_requirements,
         tailoring_seems_shallow=tailoring_seems_shallow,
     )
+    result.target_notes = dict(tailoring_result.target_notes)  # spec 011
+    return result
 
 
 def finalize_docx_edits(

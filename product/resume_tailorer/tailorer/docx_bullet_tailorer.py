@@ -112,6 +112,8 @@ class BulletEdit:
 class BulletTailoringResult:
     edits: list[BulletEdit] = field(default_factory=list)  # same order as input bullets
     warnings: list[str] = field(default_factory=list)
+    # Spec 011: requirement id -> the model's reason it found no safe rewrite for that target.
+    target_notes: dict[str, str] = field(default_factory=dict)
 
 
 class DocxBulletTailorer:
@@ -182,7 +184,9 @@ class DocxBulletTailorer:
             repair_prompt = self._build_repair_prompt(rejected, by_index)
             raw_repair = self.llm.complete(system_prompt, repair_prompt, max_tokens=1000)
             repair_result = self._parse_and_validate(raw_repair, rejected_bullets, profile)
+            notes = result.target_notes
             result = self._merge_repair(result, repair_result)
+            result.target_notes = {**notes, **repair_result.target_notes}
 
         return result
 
@@ -431,10 +435,17 @@ Return the JSON array now:"""
 
         by_index = {b.paragraph_index: b for b in bullets}
         resolved: dict[int, BulletEdit] = {}
+        target_notes: dict[str, str] = {}
 
         for element in parsed:
             if not isinstance(element, dict):
                 warnings.append(f"Skipped a non-object entry in the LLM response: {element!r}")
+                continue
+            if "target" in element and "paragraph_index" not in element:
+                # Spec 011: "no safe rewrite" for a requirement target, with the model's reason.
+                reason = str(element.get("no_safe_rewrite") or "").strip()
+                if reason:
+                    target_notes[str(element["target"]).strip()] = " ".join(reason.split())[:240]
                 continue
             paragraph_index = element.get("paragraph_index")
             if not isinstance(paragraph_index, int) or paragraph_index not in by_index:
@@ -594,4 +605,4 @@ Return the JSON array now:"""
                 )
 
         edits = [resolved[b.paragraph_index] for b in bullets]
-        return BulletTailoringResult(edits=edits, warnings=warnings)
+        return BulletTailoringResult(edits=edits, warnings=warnings, target_notes=target_notes)

@@ -28,6 +28,13 @@ _THINK_BLOCK = re.compile(r"<think>.*?</think>", re.DOTALL | re.IGNORECASE)
 # "codex-cli" or "codex-cli/<model>": answers come from the Codex CLI signed in with the person's
 # own ChatGPT plan, for running Job Copilot on their own computer (decision 031).
 CODEX_CLI_PREFIX = "codex-cli"
+def _reasoning_effort() -> str:
+    """Codex reasoning effort: "medium" by default (spec 011: "low" proposed almost nothing),
+    overridable with LLM_REASONING_EFFORT."""
+    value = (os.environ.get("LLM_REASONING_EFFORT") or "medium").strip().lower()
+    return value if value in ("minimal", "low", "medium", "high") else "medium"
+
+
 _CODEX_INSTRUCTIONS = (
     "You are being used as a plain text-completion service by an application. Do not run commands, "
     "read or write files, or use any tools. Follow the instructions below exactly and reply with only "
@@ -158,7 +165,7 @@ class LLMClient:
             answer_file = Path(work, "answer.txt")
             command = [codex, "exec", "--ephemeral", "--skip-git-repo-check", "--ignore-rules",
                        "--sandbox", "read-only", "--color", "never", "-C", work,
-                       "-c", 'model_reasoning_effort="low"', "-o", str(answer_file)]
+                       "-c", f'model_reasoning_effort="{_reasoning_effort()}"', "-o", str(answer_file)]
             if "/" in model:
                 command += ["-m", model.split("/", 1)[1]]
             command.append("-")  # the prompt comes on stdin
