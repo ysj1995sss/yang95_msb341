@@ -9,7 +9,28 @@ Read this file first, then `CLAUDE.md`, then the decisions listed below. Do not 
 
 ---
 
-## Latest update (2026-10-05, latest) — weak spots closed (decision 030)
+## Latest update (2026-10-05, latest) — honest ATS help (spec 010, decisions 031–032)
+
+- **What changed:** "ATS" features no longer imply an employer score.
+  - **Jobs:** says "In your Career Profile" and shows a requirement summary.
+  - **Tailor:** shows a requirement review, each requirement with its exact evidence and whether
+    this resume names it, plus a local readability check.
+  - **Keyword overlap:** the percentage only sits under Details.
+- **Tailoring:** may only make confirmed evidence clearer. A code guard rejects unsupported
+  terms, and the free-form loop has no 85% target (at most 3 rounds).
+- **The supervised run** (`discovery/experiments/2026-10-ats-requirement-review.md`) found and
+  fixed:
+  - Word "List Bullet" bullets being missed entirely;
+  - BS not counting as a bachelor's degree;
+  - an over-generous "shown" check;
+  - Codex failing silently without Node.js.
+- **Codex model (decision 031):** `codex-cli` runs on the builder's ChatGPT plan, local only.
+- **The builder's PC:** a Cursor update moved Node.js to `D:\Yang\Software\cursor\_bak\NodeJs`, so
+  `npm`, `npx` and `codex` aren't on PATH until it is reinstalled or added back.
+- **Test baseline:** `product/` 1098 passed, `apps/api/` 115 passed, web lint and types clean,
+  19 browser tests passed.
+
+## Update (2026-10-05) — weak spots closed (decision 030)
 
 - **Tests:** Playwright browser tests (`apps/web/e2e`, `npm run test:e2e`) cover the full journey,
   keyboard use, phone layout, accessibility in light and dark, the browser helper and the Gmail

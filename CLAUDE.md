@@ -25,6 +25,16 @@ a brand new session act like a colleague who already knows what you are working 
   Gmail status sync (testing mode only, not yet run against real Gmail). Second pass: times
   shown in the person's own time zone, a public `/privacy` page, the form helper packaged for the
   Chrome Web Store (`extension/build.py`, `STORE.md`), optional error alerts.
+- **ATS help is now an evidence review (2026-10-05, spec 010 / decision 032):** no ATS-style
+  score or 85% target. `analyzers/requirement_review.py` lists each required and preferred
+  qualification as direct, transferable, mentioned only, unconfirmed, check yourself, or no
+  evidence, with the exact profile passage. Tailoring may only make confirmed evidence clearer,
+  and a code guard on both paths rejects unsupported terms. `pdf/readability.py` is a local
+  check that the finished PDF reads back (name, email, every bullet, order). It is shown in Jobs
+  and Tailor in both apps. Supervised run: `discovery/experiments/2026-10-ats-requirement-review.md`.
+- **Codex as the model (decision 031):** `codex-cli` uses the builder's ChatGPT plan through the
+  Codex CLI, local only (`python apps/api/scripts/run_local.py --codex`). Codex needs Node.js on
+  PATH.
 - **Where we are:** Sprint 2 (Steps 3–9 job discovery) is in progress, and all 24 spec steps
   exist on `main`. A 2026-09-29 external audit was worked through in full: tasks 1–4 are in
   `decisions/021`, task 6 in `decisions/022`, and task 5 in `decisions/023`.
@@ -79,7 +89,7 @@ a brand new session act like a colleague who already knows what you are working 
 
 - **Stack:** Python (resume_tailorer package), Streamlit UI with built-in Google sign-in, any LiteLLM-supported model (`product/resume_tailorer/llm/`), pytest, reportlab/PyMuPDF for PDFs, python-docx for the DOCX splice pipeline, Greenhouse live job search (LinkedIn/Indeed/Handshake demo only), FastAPI backend in `apps/api/`.
 - **How work ships:** push to `main` → Streamlit Community Cloud redeploys `product/resume_tailorer/app.py`. Multi-user deployment needs the `decisions/023` checklist first (Google OAuth secrets, durable `JOB_COPILOT_DATA_DIR`).
-- **Testing and style:** pytest; CI (`.github/workflows/tests.yml`) runs both suites on every push, on Python 3.14 with the pinned versions in `product/requirements.txt`. Run both before claiming anything is done: `product/` currently 1051 tests, `apps/api/` currently 113. Web: `cd apps/web && npx eslint src && npx tsc --noEmit && npm run build`, and browser tests `npm run test:e2e` (19; starts its own stubbed API and web server).
+- **Testing and style:** pytest; CI (`.github/workflows/tests.yml`) runs both suites on every push, on Python 3.14 with the pinned versions in `product/requirements.txt`. Run both before claiming anything is done: `product/` currently 1098 tests, `apps/api/` currently 115. Web: `cd apps/web && npx eslint src && npx tsc --noEmit && npm run build`, and browser tests `npm run test:e2e` (19; starts its own stubbed API and web server).
 
 ## Working with me
 

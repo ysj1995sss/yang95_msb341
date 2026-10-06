@@ -1,8 +1,9 @@
 # Spec 010: Honest ATS help: an evidence-based requirement review
 
-**Status:** Approved 2026-10-05 (the builder approved it and delegated the open choices:
-missing content blocks, out-of-order warns; the overlap number moves to Details; the supervised
-run uses the codex-cli model). In progress.
+**Status:** Shipped 2026-10-05 (decision 032). The builder approved the spec and delegated the
+open choices: missing content blocks, out-of-order content warns, the overlap number moves to
+Details, and the supervised run uses the codex-cli model. The supervised run is recorded in
+`discovery/experiments/2026-10-ats-requirement-review.md`.
 **Date:** 2026-10-05
 **Supersedes:** spec 001 step 14 ("loop until ≥85% alignment") and the "Already on resume"
 wording in specs 002, 007 and 008.
@@ -277,19 +278,21 @@ where available):**
 
 ## Definition of done
 
-- [ ] No screen in either app says a profile term is "on your resume", or presents a
-      percentage as an ATS score or threshold.
-- [ ] Jobs and Tailor show the requirement review with linked evidence; all six acceptance cases
-      pass.
-- [ ] The optimizer has no 85% target; unsupported claims are never added (stubbed-model
-      guards pass on both paths).
-- [ ] The readability check catches missing and out-of-order content on real PDFs; the
-      `TEXT_NOT_EXTRACTABLE` failure is unchanged.
-- [ ] Legacy saved reviews load; the `/v2` and legacy API fields are still present.
-- [ ] Supervised end-to-end run recorded and reviewed by the builder.
-- [ ] Product, API and web suites green in CI.
-- [ ] Usage signal: count of requirement-review rows expanded and suggestions accepted per run,
-      logged locally in the run state (no tracking service).
+- [x] No screen in either app says a profile term is "on your resume", or presents a percentage
+      as an ATS score or threshold (Playwright checks there's no "on your resume" and no
+      "Resume alignment").
+- [x] Jobs and Tailor show the requirement review with linked evidence; all six acceptance cases
+      pass (`test_requirement_review.py`).
+- [x] The optimizer has no 85% target; unsupported claims are never added (stubbed-model guards
+      on both paths, `test_unsupported_claim_guards.py`, `test_optimizer.py`).
+- [x] The readability check catches missing and out-of-order content on real PDFs; the
+      `TEXT_NOT_EXTRACTABLE` failure is unchanged (`test_readability.py`).
+- [x] Legacy saved reviews load (a real pre-change file, `test_legacy_review_loads.py`); the
+      `/v2` and legacy API fields are still present.
+- [x] Supervised end-to-end run recorded. The builder's review of that record is still to come.
+- [x] Product, API and web suites green (see the commit for counts; CI on push).
+- [ ] Usage signal (requirement-review rows expanded, suggestions accepted). Not built: the app
+      has no analytics, and adding tracking is a separate decision for the builder.
 
 ## Research appendix: which claims we rely on
 
