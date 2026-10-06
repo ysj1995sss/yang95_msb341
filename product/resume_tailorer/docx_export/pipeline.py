@@ -23,6 +23,7 @@ from resume_tailorer.tailorer.docx_bullet_tailorer import DocxBulletTailorer, Bu
 from resume_tailorer.tailorer.resume_tailorer import _job_header_lines
 from resume_tailorer.docx_export.splicer import splice_bullets_into_docx, save_docx
 from resume_tailorer.docx_export.converter import convert_docx_to_pdf, DocxConversionUnavailable
+from resume_tailorer.pdf.readability import check_readability, expected_for_docx
 from resume_tailorer.pdf.validator import PDFValidator, findings_from_pdf_issues
 from resume_tailorer.utils.scoring import qualification_match_ratio
 from resume_tailorer.artifacts.models import (
@@ -302,6 +303,11 @@ def finalize_docx_edits(
                 original_validation = PDFValidator().validate(original_pdf_path, target_length="preserve")
                 pdf_validation_issues = tailored_validation.issues
                 structured_findings.extend(findings_from_pdf_issues(pdf_validation_issues))
+                # Spec 010: the finished PDF must read back with your name, email and every
+                # bullet, in order (a local check, not an employer's ATS).
+                structured_findings.extend(check_readability(
+                    tailored_validation.extracted_text, expected_for_docx(profile, [e.new_text for e in edits])
+                ))
                 original_page_count = original_validation.page_count
                 tailored_page_count = tailored_validation.page_count
                 with open(tailored_pdf_path, "rb") as f:
@@ -362,7 +368,7 @@ def finalize_docx_edits(
             structured_findings,
             original_page_count=original_page_count,
             tailored_page_count=tailored_page_count,
-            checks_run=("docx_layout", "inline_formatting", "page_count", "pdf_technical"),
+            checks_run=("docx_layout", "inline_formatting", "page_count", "pdf_technical", "readability"),
         ),
     )
 

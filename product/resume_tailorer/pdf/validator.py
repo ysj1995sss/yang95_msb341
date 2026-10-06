@@ -32,6 +32,7 @@ from resume_tailorer.artifacts.models import (
 )
 from resume_tailorer.models import CareerTruthProfile
 from resume_tailorer.pdf.content_validator import validate_pdf_content
+from resume_tailorer.pdf.readability import check_readability, expected_for_freeform
 from resume_tailorer.pdf.visual_validator import compare_pdf_renders
 
 
@@ -207,6 +208,8 @@ class PDFValidator:
 
         if legacy.extracted_text:
             findings.extend(validate_pdf_content(legacy.extracted_text, profile, accepted_changes))
+            # Spec 010: reading order, unknown symbols and standard headings (local check).
+            findings.extend(check_readability(legacy.extracted_text, expected_for_freeform(profile)))
 
         if original_pdf_path:
             try:
@@ -240,7 +243,7 @@ class PDFValidator:
             findings,
             tailored_page_count=legacy.page_count,
             extracted_text=legacy.extracted_text,
-            checks_run=("pdf_open", "text_extraction", "content", "visual"),
+            checks_run=("pdf_open", "text_extraction", "content", "visual", "readability"),
         )
 
 
