@@ -1,12 +1,163 @@
 # Handoff to Codex — Job Copilot
 
-**Date:** 2026-09-28
-**From:** Claude Code (Steps 21-24 revision, on top of the Steps 16-20 handoff)
+**Date:** 2026-10-06 (top section); older sections below are history
+**From:** Claude Code (specs 009–011, decisions 028–033)
 **Repo:** `ysj1995sss/yang95_msb341`
 **Audience:** A fresh Codex session continuing this product.
 
 Read this file first, then `AGENTS.md`, then the decisions listed below. Do not re-litigate
 decisions 001, 006, 009, 012, 014, 015, 016, or 017 unless new evidence forces it.
+
+---
+
+## START HERE (2026-10-06) — handoff from Claude Code
+
+This section supersedes everything below it. The older sections are history; trust the code, the
+`specs/` and the `decisions/` over them.
+
+### 1. Where things stand
+
+- **`main` is green in CI.** The last commit verified is `6281e4a`; all five jobs pass (product,
+  api, web, web-e2e, api-image).
+- **Two frontends share one Python engine** (`product/resume_tailorer`):
+  - **New web app:** `apps/web`, Next.js 16 and Tailwind (spec 009, decisions 028–029). It talks
+    to the FastAPI workspace API at `apps/api/app/workspace` (`/v2/*`) through the proxy
+    `apps/web/src/app/api/backend/[...path]`. **Not deployed yet.**
+  - **Old Streamlit app:** `product/resume_tailorer/app.py` plus `pages/`. Still live on Streamlit
+    Cloud and still maintained; tag `ui-streamlit-v1`. **Do not delete it.**
+- **Test baseline:** `product/` 1126 passed (1 skipped), `apps/api/` 117 passed, web lint and
+  types clean, 20 Playwright tests.
+- **Work done in the last sessions** (read these decisions; do not re-litigate them without new
+  evidence):
+
+| Area | Spec / decision | What it covers |
+|---|---|---|
+| Weak spots | decision 030 | durable runs, pasted job descriptions, per-run model, Your data (export, delete, sign out everywhere), limits, request ids, paging, dark theme, the browser helper attaching the resume, Gmail sync (testing mode), `/privacy`, error-alert webhook, time zones, a SQLite thread-safety fix |
+| Codex as the model | decision 031 | the `codex-cli` model runs on the builder's ChatGPT plan through the Codex CLI. Local only; the API refuses it for signed-in users. |
+| ATS help | spec 010 / decision 032 | no ATS score or 85% target. A requirement review (`analyzers/requirement_review.py`) lists each requirement as direct, transferable, partly supported, mentioned only, unconfirmed, check yourself, or no evidence, citing the exact profile passage. Tailoring may only make confirmed evidence clearer, with code guards on both paths. A local readability check (`pdf/readability.py`). |
+| Profile, batches, keywords | spec 011 / decision 033 | see below |
+
+- **Spec 011 / decision 033 in detail:**
+  - **Tailoring from the Career Profile:** a Word file is first synced to the profile
+    (`docx_export/profile_sync.py`), with roles matched by employer and title and the file's
+    bullet order kept.
+  - **Per-term statuses** and **one gap system** on every screen.
+  - **A Keywords panel:** added in this version, still left out and why, not changed and why.
+  - **Broader recognition:** a wider vocabulary, spelling variants, and requirement sentences in
+    postings without headings.
+  - **The model answers every target** with a rewrite or a reason.
+  - **Two PDF readers** plus Word-file checks.
+  - **Batches** of up to 10 jobs (`resume_tailorer/batch.py`, `apps/api/app/workspace/batch_router.py`).
+    They never submit anything.
+- **Supervised-run records** (real model, real Word):
+  - `discovery/experiments/2026-10-ats-requirement-review.md`
+  - `discovery/experiments/2026-10-spec-011-supervised-runs.md`
+
+### 2. Recommended next work (in order)
+
+Follow `AGENTS.md`: draft a spec in `specs/` before building, show the plan, and wait for the
+builder's approval. Then build in small verified commits, and record decisions in `decisions/`.
+
+1. **Spec 012, part A: sync the whole Career Profile into a Word resume, not just bullets.**
+   - **Today:** `docx_export/profile_sync.py` only updates work-history bullets.
+   - **Missing:** profile edits to a role's title or dates, the summary paragraph, the skills line,
+     and education never reach the Word file.
+   - **Approach:** extend the sync with the same rules: match by stable identity, edit paragraphs
+     in place (reuse the run-0 technique in `docx_export/splicer.py`), and report anything that
+     can't be placed.
+   - **Tests:** extend `product/tests/test_profile_sync.py`.
+2. **Spec 012, part B: make free-form summary edits reviewable.**
+   - **Today:** on the PDF-upload (free-form) path, `artifacts/changes.py::build_freeform_changes`
+     pairs bullets only, so a summary change can't be accepted or rejected on its own. The skills
+     line is sometimes paired oddly ("SQL → (empty)").
+   - **Fix:** add summary and skills-line changes as their own reviewable `ResumeChange`s, and
+     keep the unsupported-term guard on them.
+3. **Batch polish:**
+   - resume a batch that a restart stopped (`batch_router._read_batch` marks it "stopped");
+   - show a "the profile changed since this review" warning;
+   - run the Streamlit batch without blocking the page.
+4. **Recognition:**
+   - add vocabulary for fields the builder targets (`analyzers/ats_keywords.py`, `GENERIC_TERMS`,
+     `AMBIGUOUS_ACRONYMS` in `requirement_review.py`);
+   - make confirmation per fact instead of per section (`profile_store.fact_paths`).
+5. **Deployment, Google sign-in and Gmail, and the Chrome Web Store.** These need the builder's
+   accounts; ask first. The guides are spec 009 "Deploying", `extension/STORE.md` and decision 030.
+6. **Supervised user tests** with 2–3 people (Sprint 2). This is the biggest unknown.
+
+The builder also flagged a strategic question: two frontends double every feature. Raise "retire
+Streamlit after the web app is deployed" with them; don't decide it alone.
+
+### 3. How to run and verify
+
+**Machine gotchas (builder's Windows PC):**
+
+- **Node.js is off PATH.** A Cursor update moved it to `D:\Yang\Software\cursor\_bak\NodeJs`. In a
+  shell, prepend it: `export PATH="/d/Yang/Software/cursor/_bak/NodeJs:$PATH"` (Git Bash). The
+  `codex` CLI also needs Node on PATH. The builder may reinstall Node; then this isn't needed.
+- **Two Python setups.** The system Python (3.14) runs the API, the e2e server and the product
+  tests. `product/.venv` exists for Streamlit.
+- **The console encoding is GBK.** Use `PYTHONIOENCODING=utf-8` when printing non-ASCII.
+- **A stray `.env`.** `C:\Users\ysj19\.env` belongs to another project. `llm/client.py` sets
+  `LITELLM_MODE=PRODUCTION` so litellm ignores it. Don't remove that line.
+
+**Commands:**
+
+```bash
+# Product engine tests
+cd product && python -m pytest -q
+
+# API tests
+cd apps/api && PYTHONPATH="../../product:$(pwd)" python -m pytest tests -q -m "not live"
+
+# Web: lint, types, browser tests (Playwright starts its own stubbed API and web server)
+cd apps/web && npx eslint src e2e && npx tsc --noEmit && npx playwright test
+
+# Run the new site locally (single-user, no sign-in). Data goes to ../job-copilot-local-data
+python apps/api/scripts/run_local.py --codex --node-dir "D:/Yang/Software/cursor/_bak/NodeJs"
+cd apps/web && npm run dev    # then open http://localhost:3000
+```
+
+- **Model choice:** `--codex` uses the builder's ChatGPT plan through the Codex CLI. Without it,
+  the model comes from `product/.env` (`LLM_MODEL`, `LLM_API_KEY`). **Never print or commit
+  keys.**
+- **The builder's real data** is in `D:\Yang\Vibe Coding\job-copilot-local-data` and
+  `~/.job_copilot`. Read it only to debug what the builder reports; never commit it. Tests and
+  fixtures use synthetic people only (Riley Park, Acme Retail and so on).
+
+### 4. Rules that matter most here
+
+- **Truthfulness:**
+  - Never add a skill, credential, number, duration or result the person hasn't confirmed.
+  - Never hide keywords.
+  - Never promise an ATS score, pass rate or ranking.
+  - Missing requirements stay visible as gaps.
+
+  The guards are `requirement_review.introduced_unsupported` and the checks in
+  `tailorer/docx_bullet_tailorer.py::_parse_and_validate`; they must stay.
+- **Never submit an application.** Apply only tracks; Auto stays not offered (decision 016).
+- **Both apps:** keep the Streamlit app and the web app saying the same thing. Shared text and view
+  models live in `product/resume_tailorer/ui/` (`ats_explainer.py`, `requirement_review_view.py`,
+  `job_view.py`); the API serves them to the web app.
+- **Compatibility:** saved reviews (`review_store`, format 2) must keep loading. New dataclass
+  fields need defaults; never rename stored enum values. There's a real pre-change fixture:
+  `product/tests/fixtures/ats/legacy_review_format2.json`.
+- **Before claiming "done":** run all three suites. For tailoring-quality changes, also do one
+  supervised run with the real model (see the experiment records for the script approach) and
+  write it up in `discovery/experiments/`.
+- **Commits:** small and verified. End each message with the co-author line the builder uses.
+  Push to `main` (CI runs on push).
+
+### 5. Open items only the builder can do
+
+- Rotate the Gemini API key that was pasted in a chat earlier.
+- Move or rename `C:\Users\ysj19\.env`.
+- Reboot the live Streamlit app.
+- Reinstall Node.js.
+- Choose and set up hosting (Render and Vercel are prepared: `render.yaml`, `apps/api/Dockerfile`).
+- Set up the Google OAuth client and its test users.
+- Get a Chrome Web Store developer account.
+- Decide whether to pay for a stronger model.
+- Review the two supervised-run records.
 
 ---
 

@@ -13,6 +13,10 @@ a brand new session act like a colleague who already knows what you are working 
 
 ## Current state
 
+> **Newest state (2026-10-06):** read the "START HERE" section at the top of `HANDOFF-TO-CODEX.md`
+> first. It covers the new Next.js web app (`apps/web`), specs 009–011, decisions 028–033, how to
+> run and test on the builder's PC, and the recommended next work. The notes below are older.
+
 - **Where we are:** Sprint 2 (Steps 3–9 job discovery) is in progress, and all 24 spec steps
   exist on `main`. A 2026-09-29 external audit was worked through in full: tasks 1–4 are in
   `decisions/021`, task 6 in `decisions/022`, and task 5 in `decisions/023`.
