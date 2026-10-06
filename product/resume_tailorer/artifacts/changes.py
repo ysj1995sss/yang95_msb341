@@ -47,8 +47,11 @@ def build_freeform_changes(
     profile: CareerTruthProfile,
     tailored_text: str,
     gap_report: GapReport,
+    review=None,
 ) -> list[ResumeChange]:
     """Build deterministic, reviewable changes for the freeform/PDF path."""
+    from resume_tailorer.analyzers.requirement_review import introduced_unsupported
+
     diff_generator = DiffGenerator()
     diff = diff_generator.generate_diff(profile, tailored_text)
     changes: list[ResumeChange] = []
@@ -69,6 +72,8 @@ def build_freeform_changes(
             if change.tailored
             else []
         )
+        # Spec 010: a term the requirement review doesn't support blocks the change too.
+        unverified = [*unverified, *introduced_unsupported(change.original or "", change.tailored or "", review)]
         if unverified:
             # Left PENDING so the user decides; the content gate blocks the
             # artifact while this text is still in it.

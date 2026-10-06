@@ -3,8 +3,8 @@ Tests for the Resume Tailoring Optimizer.
 
 Tests verify that the optimization loop correctly:
 1. Scores resumes using keyword alignment
-2. Detects when target (85%) is reached
-3. Detects plateau (< 2% improvement) and stops
+2. Works only on requirements with confirmed evidence that aren't shown yet (spec 010)
+3. Stops when none are left, a round changes or shows nothing, or after 3 rounds
 4. Respects the Career Truth Profile constraint (no fabrication)
 """
 
@@ -138,17 +138,19 @@ def sample_gap_report():
 
 
 def test_optimizer_instantiation():
-    """Test that optimizer can be instantiated."""
+    """Spec 010: at most 3 rounds, and no score target at all."""
     optimizer = ResumeTailoringOptimizer(llm=_mock_llm())
-    assert optimizer is not None
-    assert optimizer.max_iterations == 5
-    assert optimizer.target_score == 0.85
+    assert optimizer.max_iterations == 3
+    assert not hasattr(optimizer, "target_score")
 
 
-def test_optimizer_target_score_is_85_percent():
-    """Test that optimizer uses 85% as the target score."""
-    optimizer = ResumeTailoringOptimizer(llm=_mock_llm())
-    assert optimizer.target_score == 0.85
+def test_no_code_path_reads_an_85_percent_target():
+    import inspect
+
+    from resume_tailorer.tailorer import optimizer as module
+
+    source = inspect.getsource(module)
+    assert "0.85" not in source and "target_score" not in source
 
 
 def test_optimization_result_dataclass():
@@ -189,74 +191,41 @@ def test_optimizer_score_resume_uses_keyword_alignment(sample_job_analysis):
     assert len(matched) + len(missing) == total_keywords
 
 
-def test_optimizer_excludes_category_e_from_improvement_targets(
-    sample_profile, sample_job_analysis, sample_gap_report
-):
-    """C2 verification: a Category E ("never add") gap item must never
-    appear in the "missing keywords to address" list passed to
-    _build_improvement_prompt(). sample_gap_report marks "NoSQL" as
-    Category E; the optimizer must filter it out of the refinement target
-    list even though it may legitimately be a "missing" keyword by pure
-    keyword-alignment scoring.
-    """
-    optimizer = ResumeTailoringOptimizer(max_iterations=1, llm=_mock_llm("Refined resume text"))
+def test_refinement_targets_only_supported_unshown_requirements():
+    """Spec 010: a requirement without evidence (CPA, Tableau, Snowflake-only-listed, the
+    ambiguous PM, unconfirmed Salesforce) is never a refinement target."""
+    from resume_tailorer.analyzers.job_analyzer import JobAnalyzer as JA
+    from resume_tailorer.analyzers.requirement_review import build_review
+    from tests.fixtures.ats import POSTING, PROVENANCE, profile
 
-    captured_prompts = []
-    original_build = optimizer._build_improvement_prompt
+    analysis = JA().analyze(POSTING)
+    review = build_review(analysis, profile(), provenance=PROVENANCE, posting=POSTING)
+    optimizer = ResumeTailoringOptimizer(max_iterations=1, llm=_mock_llm("Refined"))
+    captured = []
+    original = optimizer._build_improvement_prompt
+    optimizer._build_improvement_prompt = lambda cur, rev, targets: captured.append(targets) or original(cur, rev, targets)
 
-    def spy_build(current_resume, job_analysis, missing_keywords):
-        captured_prompts.append(missing_keywords)
-        return original_build(current_resume, job_analysis, missing_keywords)
+    optimizer.optimize(profile(), analysis, "Marketing analyst. Excel.", GapReport(items=[], summary=""), review=review)
 
-    optimizer._build_improvement_prompt = spy_build
-
-    # A resume missing everything so the first-iteration score is low and
-    # refinement (and therefore _build_improvement_prompt) definitely runs.
-    initial_tailored = "Generic resume with no relevant keywords"
-
-    optimizer.optimize(sample_profile, sample_job_analysis, initial_tailored, sample_gap_report)
-
-    assert captured_prompts, "Improvement prompt should have been built at least once"
-    # sample_job_analysis title-cases skills (e.g. "nosql" -> "Nosql"), so
-    # compare case-insensitively against the Category E requirement.
-    for missing_keywords in captured_prompts:
-        assert not any(kw.lower() == "nosql" for kw in missing_keywords), (
-            "Category E item 'NoSQL' must be excluded from improvement targets"
-        )
+    assert captured
+    targeted = " ".join(r.text for r in captured[0])
+    for unsupported in ("CPA", "Tableau", "Snowflake", "PM experience", "Salesforce"):
+        assert unsupported not in targeted
+    prompt = original("Marketing analyst. Excel.", review, captured[0])
+    assert "Never add these terms" in prompt and "CPA" in prompt  # named only as things to leave out
 
 
-def test_optimizer_build_improvement_prompt():
-    """Test that improvement prompt is built correctly."""
+def test_optimizer_build_improvement_prompt_quotes_evidence_and_forbids_fabrication():
+    from resume_tailorer.analyzers.job_analyzer import JobAnalyzer as JA
+    from resume_tailorer.analyzers.requirement_review import build_review, unshown_targets
+    from tests.fixtures.ats import POSTING, PROVENANCE, profile
+
+    review = build_review(JA().analyze(POSTING), profile(), provenance=PROVENANCE, posting=POSTING)
     optimizer = ResumeTailoringOptimizer(llm=_mock_llm())
-    resume = "Current resume text"
-    job_analysis = JobAnalyzer().analyze("Need Python and Docker")
-    missing = ["Kubernetes", "NoSQL"]
-
-    prompt = optimizer._build_improvement_prompt(resume, job_analysis, missing)
-
-    # Prompt should contain instructions and missing keywords
-    assert "Python" in prompt or "Docker" in prompt
-    assert "Kubernetes" in prompt or "NoSQL" in prompt
-    assert "fabricat" in prompt.lower() or "invent" in prompt.lower()
-
-
-def test_optimizer_respects_no_fabrication_in_prompt():
-    """Test that improvement prompt includes no-fabrication guardrails."""
-    optimizer = ResumeTailoringOptimizer(llm=_mock_llm())
-    resume = "Current resume"
-    job_analysis = JobAnalyzer().analyze("Job requirements")
-    missing = ["Skill1"]
-
-    prompt = optimizer._build_improvement_prompt(resume, job_analysis, missing)
-
-    # Must explicitly forbid fabrication
-    prompt_lower = prompt.lower()
-    assert (
-        "fabricate" in prompt_lower
-        or "invent" in prompt_lower
-        or "not add" in prompt_lower
-        or "never" in prompt_lower
-    )
+    prompt = optimizer._build_improvement_prompt("Resume", review, unshown_targets(review, "Resume"))
+    assert 'Evidence (Marketing Analyst at Acme Retail, bullet 2): "Led on-time delivery' in prompt
+    assert "do not invent or fabricate" in prompt.lower()
+    assert "hidden text" in prompt.lower()
 
 
 def test_optimizer_optimize_returns_optimization_result(
@@ -281,26 +250,15 @@ def test_optimizer_optimize_returns_optimization_result(
     assert isinstance(result.missing_qualifications, list)
 
 
-def test_optimizer_stops_at_target_score(sample_profile, sample_job_analysis, sample_gap_report):
-    """Test that optimizer stops when reaching target score (or plateaus)."""
-    high_text = (
-        "Python Go Docker Kubernetes PostgreSQL AWS microservices architecture REST APIs"
-    )
-    optimizer = ResumeTailoringOptimizer(max_iterations=3, llm=_mock_llm(high_text))
-
-    # Create a resume that already has high alignment
-    high_alignment_resume = (
-        "Python Go Docker Kubernetes PostgreSQL AWS "
-        "microservices architecture REST APIs"
-    )
-
-    result = optimizer.optimize(
-        sample_profile, sample_job_analysis, high_alignment_resume, sample_gap_report
-    )
-
-    # Score should be at or near target (85%), or the optimizer should have
-    # detected a plateau before reaching it.
-    assert result.final_score >= optimizer.target_score or result.ceiling_reached
+def test_optimizer_stops_when_nothing_supported_is_left(sample_profile, sample_job_analysis, sample_gap_report):
+    """No unshown supported requirement means no round runs and the model isn't called."""
+    llm = _mock_llm("should not be used")
+    optimizer = ResumeTailoringOptimizer(max_iterations=3, llm=llm)
+    everything = "Python Go JavaScript React Docker PostgreSQL AWS Git Kubernetes microservices REST APIs"
+    result = optimizer.optimize(sample_profile, sample_job_analysis, everything, sample_gap_report)
+    if result.iterations == 0:
+        assert "shown" in result.stop_reason
+        llm.complete.assert_not_called()
 
 
 def test_optimizer_limits_iterations_to_max(
@@ -321,32 +279,51 @@ def test_optimizer_limits_iterations_to_max(
     assert result.iterations <= optimizer.max_iterations
 
 
-def test_optimizer_detects_plateau():
-    """Test that optimizer detects when improvement plateaus (< 2% delta)."""
-    optimizer = ResumeTailoringOptimizer(max_iterations=5, llm=_mock_llm())
+def test_optimizer_stops_after_a_round_that_changes_nothing():
+    from resume_tailorer.analyzers.job_analyzer import JobAnalyzer as JA
+    from resume_tailorer.analyzers.requirement_review import build_review
+    from tests.fixtures.ats import POSTING, PROVENANCE, profile
 
-    # Mock job analysis with specific keywords
-    job_analysis = MagicMock()
-    job_analysis.skills_required = ["Python", "JavaScript"]
-    job_analysis.tools_required = ["Docker", "PostgreSQL"]
+    analysis = JA().analyze(POSTING)
+    review = build_review(analysis, profile(), provenance=PROVENANCE, posting=POSTING)
+    optimizer = ResumeTailoringOptimizer(max_iterations=3, llm=_mock_llm())
+    with patch.object(optimizer.tailorer, "_refine_resume", return_value="Marketing analyst. Excel."):
+        result = optimizer.optimize(profile(), analysis, "Marketing analyst. Excel.", GapReport([], ""), review=review)
+    assert result.iterations == 1 and result.stop_reason == "A round changed nothing." and result.ceiling_reached
 
-    # Create a resume with 50% keyword match
-    initial_resume = "Python Docker"  # 50% match
 
-    empty_gap_report = GapReport(items=[], summary="No gaps found.")
+def test_a_round_that_adds_an_unsupported_term_is_discarded():
+    """A stubbed model that slips in 'CPA' and 'Snowflake' claims: the round is thrown away."""
+    from resume_tailorer.analyzers.job_analyzer import JobAnalyzer as JA
+    from resume_tailorer.analyzers.requirement_review import build_review
+    from tests.fixtures.ats import POSTING, PROVENANCE, profile
 
-    # Mock _refine_resume to return similar content (no improvement)
-    with patch.object(
-        optimizer.tailorer,
-        "_refine_resume",
-        return_value="Python Docker experience",
-    ):
-        result = optimizer.optimize(
-            MagicMock(), job_analysis, initial_resume, empty_gap_report
-        )
+    analysis = JA().analyze(POSTING)
+    review = build_review(analysis, profile(), provenance=PROVENANCE, posting=POSTING)
+    start = "Marketing analyst. Excel."
+    bad = "Licensed CPA. Led project management of Snowflake migrations with on-time delivery. Excel."
+    optimizer = ResumeTailoringOptimizer(max_iterations=3, llm=_mock_llm())
+    with patch.object(optimizer.tailorer, "_refine_resume", return_value=bad):
+        result = optimizer.optimize(profile(), analysis, start, GapReport([], ""), review=review)
+    assert result.tailored_resume == start
+    assert "CPA" not in result.tailored_resume and "Snowflake" not in result.tailored_resume
+    assert "discarded" in result.stop_reason
 
-        # Should detect plateau and ceiling_reached should be True
-        assert result.ceiling_reached is True
+
+def test_a_round_that_shows_something_new_is_kept_and_rounds_are_capped():
+    from resume_tailorer.analyzers.job_analyzer import JobAnalyzer as JA
+    from resume_tailorer.analyzers.requirement_review import build_review
+    from tests.fixtures.ats import POSTING, PROVENANCE, profile
+
+    analysis = JA().analyze(POSTING)
+    review = build_review(analysis, profile(), provenance=PROVENANCE, posting=POSTING)
+    better = "Marketing analyst. Built SQL dashboards used by 40 regional managers. Excel."
+    optimizer = ResumeTailoringOptimizer(max_iterations=3, llm=_mock_llm())
+    calls = iter([better, better + " Led on-time delivery of a 6-month store launch across 4 teams, with weekly risk reviews.",
+                  better + " more"])
+    with patch.object(optimizer.tailorer, "_refine_resume", side_effect=lambda *a: next(calls)):
+        result = optimizer.optimize(profile(), analysis, "Marketing analyst. Excel.", GapReport([], ""), review=review)
+    assert "SQL dashboards" in result.tailored_resume and result.iterations <= 3
 
 
 def test_optimizer_calculates_correct_score():

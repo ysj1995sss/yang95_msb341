@@ -277,6 +277,7 @@ def _run(ws: Workspace, job_id: str, pending: dict, source, request: RunRequest,
             ws.session, original_bytes=source[1], filename=source[0], job_description=pending.get("description") or "",
             pending=pending, llm=LLMClient(settings), target_length=LENGTHS[request.length],
             conservative=request.conservative, progress=step,
+            provenance=None if source[2].startswith("One-off") else ws.record.get("provenance"),
         )
         # Same first step as the Streamlit review room: changes that claim a missing
         # requirement start rejected, and the resume is rebuilt without them.

@@ -1,15 +1,27 @@
 """
-Resume Tailoring Optimization Loop.
+Resume refinement loop for the free-form path (spec 010).
 
-This module provides an iterative optimization loop that tailors a resume,
-scores it, and iteratively refines it to reach an 85% alignment target
-(or identifies when a ceiling has been reached).
+A bounded loop that works only on job requirements the candidate has confirmed evidence for
+but the resume doesn't show yet (the requirement review). It stops when none are left, when a
+round changes nothing or shows nothing new, or after `max_iterations` rounds. The keyword
+overlap number is still computed and reported, but it is never a target: there is no universal
+ATS score to aim for, and chasing one rewards repeating the posting's words over evidence.
 """
 
+import re
 from dataclasses import dataclass
 from resume_tailorer.models import CareerTruthProfile
 from resume_tailorer.analyzers import JobAnalysis
-from resume_tailorer.analyzers.gap_analyzer import GapReport, GapCategory
+from resume_tailorer.analyzers.gap_analyzer import GapReport
+from resume_tailorer.analyzers.requirement_review import (
+    RequirementReview,
+    RequirementRow,
+    blocked_terms,
+    build_review,
+    format_for_prompt,
+    introduced_unsupported,
+    unshown_targets,
+)
 from resume_tailorer.tailorer.resume_tailorer import ResumeTailorer
 from resume_tailorer.utils.scoring import calculate_keyword_alignment, calculate_qualification_alignment
 from resume_tailorer.analyzers.competency_map import find_education_status_evidence, find_transferable_evidence
@@ -29,34 +41,32 @@ class OptimizationResult:
     """Number of iterations performed."""
 
     ceiling_reached: bool
-    """True if the optimization hit a plateau (< 2% improvement) before reaching target."""
+    """True if supported requirements were still not shown when the loop stopped."""
 
     missing_qualifications: list[str]
     """Qualifications/keywords still missing from the final resume."""
 
+    stop_reason: str = ""
+    """Why the loop stopped, in plain words."""
+
 
 class ResumeTailoringOptimizer:
     """
-    Iterative optimizer for resume tailoring.
+    Bounded refinement for the free-form path (spec 010; replaces spec 001 step 14's 85% target).
 
-    Runs a loop: tailor → score → improve, continuing until reaching
-    ≥85% alignment or detecting no further improvement is possible.
-
-    The optimizer respects the Career Truth Profile constraint: it ONLY
-    refines existing content, never fabricates.
+    Each round asks the model to make confirmed, evidence-backed requirements clearer. It never
+    names a requirement the candidate hasn't shown evidence for, and a round that introduces an
+    unsupported term is thrown away.
     """
 
-    def __init__(self, max_iterations: int = 5, llm=None):
+    def __init__(self, max_iterations: int = 3, llm=None):
         """
-        Initialize the optimizer.
-
         Args:
-            max_iterations: Maximum number of refinement iterations (default: 5)
+            max_iterations: The most refinement rounds to run (default 3).
             llm: Optional LLMClient forwarded to ResumeTailorer. When omitted,
                 ResumeTailorer resolves settings from the environment.
         """
         self.max_iterations = max_iterations
-        self.target_score = 0.85  # 85% alignment target
         self.tailorer = ResumeTailorer(llm=llm) if llm is not None else ResumeTailorer()
 
     def optimize(
@@ -66,100 +76,54 @@ class ResumeTailoringOptimizer:
         initial_tailored: str,
         gap_report: GapReport,
         conservative: bool = False,
+        review: RequirementReview | None = None,
     ) -> OptimizationResult:
         """
-        Optimize the tailored resume iteratively.
+        Refine the tailored resume while supported requirements remain unshown.
 
         Args:
-            profile: Career Truth Profile (source of truth passed through to
-                the refinement prompt so it has the same guardrail scope as
-                the initial tailor() call)
-            job_analysis: Job description analysis
-            initial_tailored: Initial tailored resume text
-            gap_report: Gap analysis classifying each requirement A-E. Used
-                to exclude Category D ("needs confirmation") and Category E
-                ("truly missing / never add") items from the "missing
-                keywords to address" list handed to the refinement prompt,
-                so the optimizer never asks Claude to "better address"
-                something the candidate doesn't actually have.
-            conservative: When True, skip the iterative refinement loop
-                entirely and score the single conservative tailor() pass
-                as-is. Refinement's whole purpose is to reorganize/rephrase
-                for alignment, which is exactly what conservative mode
-                (minimal keyword-only edits) is meant to avoid.
-
-        Returns:
-            OptimizationResult with final resume, score, iterations, and status
+            profile: Career Truth Profile (source of truth for the refinement prompt).
+            job_analysis: Job description analysis.
+            initial_tailored: Initial tailored resume text.
+            gap_report: Kept for callers; the requirement review decides the targets.
+            conservative: When True, no refinement rounds run (minimal edits only).
+            review: The requirement review. Built from the profile when omitted (untracked
+                facts count as the person's own).
         """
-        if conservative:
-            score, matched, missing = self._score_resume(initial_tailored, job_analysis, profile)
-            return OptimizationResult(
-                tailored_resume=initial_tailored,
-                final_score=score,
-                iterations=1,
-                ceiling_reached=False,
-                missing_qualifications=missing,
-            )
-
-        current_tailored = initial_tailored
-        previous_score = 0.0
-
-        # Requirements the candidate truly doesn't have (E) or that need
-        # human confirmation (D) must never be surfaced as improvement
-        # targets -- doing so would push the refinement prompt toward
-        # fabrication.
-        excluded_keywords = {
-            item.requirement.lower()
-            for item in gap_report.items
-            if item.category in (GapCategory.D, GapCategory.E)
-        }
-
-        for iteration in range(self.max_iterations):
-            # Score current version
-            score, matched, missing = self._score_resume(current_tailored, job_analysis, profile)
-
-            # Check if target reached
-            if score >= self.target_score:
-                return OptimizationResult(
-                    tailored_resume=current_tailored,
-                    final_score=score,
-                    iterations=iteration + 1,
-                    ceiling_reached=False,
-                    missing_qualifications=missing,
+        review = review if review is not None else build_review(job_analysis, profile)
+        current = initial_tailored
+        rounds = 0
+        stop_reason = "Conservative mode: no refinement rounds."
+        if not conservative:
+            stop_reason = f"Stopped after {self.max_iterations} rounds."
+            for _ in range(self.max_iterations):
+                targets = unshown_targets(review, current)
+                if not targets:
+                    stop_reason = "Every requirement with confirmed evidence is shown."
+                    break
+                refined = self.tailorer._refine_resume(
+                    current, self._build_improvement_prompt(current, review, targets), profile
                 )
+                rounds += 1
+                if _flat(refined) == _flat(current):
+                    stop_reason = "A round changed nothing."
+                    break
+                if introduced_unsupported(current, refined, review):
+                    stop_reason = "A round added something you haven't shown evidence for, so it was discarded."
+                    break
+                if len(unshown_targets(review, refined)) >= len(targets):
+                    stop_reason = "A round showed nothing new, so it was discarded."
+                    break
+                current = refined
 
-            # Check if no improvement possible (< 2% improvement)
-            if iteration > 0 and abs(score - previous_score) < 0.02:
-                return OptimizationResult(
-                    tailored_resume=current_tailored,
-                    final_score=score,
-                    iterations=iteration,
-                    ceiling_reached=True,
-                    missing_qualifications=missing,
-                )
-
-            previous_score = score
-
-            # Improve: identify gaps and ask Claude to refine, excluding
-            # anything classified as Category D/E in the gap report.
-            addressable_missing = [
-                keyword for keyword in missing if keyword.lower() not in excluded_keywords
-            ]
-            improvement_prompt = self._build_improvement_prompt(
-                current_tailored, job_analysis, addressable_missing
-            )
-            current_tailored = self.tailorer._refine_resume(
-                current_tailored, improvement_prompt, profile
-            )
-
-        # Max iterations reached
-        final_score, matched, missing = self._score_resume(current_tailored, job_analysis, profile)
+        score, _matched, missing = self._score_resume(current, job_analysis, profile)
         return OptimizationResult(
-            tailored_resume=current_tailored,
-            final_score=final_score,
-            iterations=self.max_iterations,
-            ceiling_reached=True,
+            tailored_resume=current,
+            final_score=score,
+            iterations=rounds,
+            ceiling_reached=bool(unshown_targets(review, current)),
             missing_qualifications=missing,
+            stop_reason=stop_reason,
         )
 
     @staticmethod
@@ -228,38 +192,37 @@ class ResumeTailoringOptimizer:
     def _build_improvement_prompt(
         self,
         current_resume: str,
-        job_analysis: JobAnalysis,
-        missing_keywords: list[str],
+        review: RequirementReview,
+        targets: list[RequirementRow],
     ) -> str:
-        """
-        Build a prompt asking Claude to improve the resume.
+        """The refinement prompt: the unshown supported requirements with their exact evidence,
+        and the requirement review's do-not-add list. Missing requirements are never targets."""
+        lines = []
+        for row in targets[:5]:
+            lines.append(f"- {row.section.upper()}: {row.text}")
+            for evidence in row.evidence:
+                lines.append(f'  Evidence ({evidence.source}): "{evidence.text}"')
+        never, listed = blocked_terms(review)
+        do_not = ", ".join([*never, *listed]) or "(none)"
+        return f"""Make these job requirements clearer in the resume. The candidate has confirmed evidence
+for each one, quoted below; it is not yet clear in the current resume.
 
-        Args:
-            current_resume: Current resume version
-            job_analysis: Job analysis with requirements
-            missing_keywords: Keywords not yet in the resume
+{chr(10).join(lines)}
 
-        Returns:
-            Formatted improvement prompt
-        """
-        # Only show top 5 missing keywords to focus the refinement
-        top_missing = missing_keywords[:5]
-
-        return f"""The current resume needs improvement to better align with the job requirements.
-
-CURRENT MISSING KEYWORDS: {', '.join(top_missing)}
-
-JOB REQUIREMENTS:
-Skills: {', '.join(job_analysis.skills_required[:10])}
-Tools: {', '.join(job_analysis.tools_required[:10])}
+FULL REQUIREMENT REVIEW:
+{format_for_prompt(review, current_resume)}
 
 INSTRUCTIONS FOR REFINEMENT:
-1. Identify opportunities to reorganize and rephrase existing experience to better match the job requirements
-2. Highlight relevant skills and accomplishments that are present but not prominent
-3. Reorganize bullet points to emphasize job-relevant experience
-4. CRITICAL: Do not invent or fabricate any experience, skills, or accomplishments
-5. Only rephrase and reorganize what is already in the resume
-6. Never change dates, employers, titles, or employment types
-7. Focus on better addressing the missing keywords using existing content
+1. Use only the quoted evidence and the Career Truth Profile. Make terminology, context,
+   responsibility or outcome clearer where the evidence supports it.
+2. CRITICAL: Do not invent or fabricate any experience, skill, credential, duration, number or result.
+3. Never add these terms anywhere they don't already appear: {do_not}
+4. Never change dates, employers, titles, or employment types.
+5. No hidden text, no keyword lists added to bullets, no repeating a term just to repeat it.
+6. If a requirement can't be shown honestly with the evidence, leave it as it is.
 
-Provide an improved version of the resume that better highlights alignment with these requirements:"""
+Provide the improved resume:"""
+
+
+def _flat(text: str) -> str:
+    return re.sub(r"\s+", " ", (text or "").strip().lower())

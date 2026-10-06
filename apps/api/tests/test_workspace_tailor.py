@@ -23,7 +23,7 @@ class StubModel:
         edits = [{"paragraph_index": b["paragraph_index"], "change": "keep", "new_text": ""} for b in bullets]
         for edit, bullet in zip(edits, bullets):
             if bullet["text"].startswith("Built SQL dashboards"):
-                edit.update(change="rewrite", new_text="Built Tableau SQL dashboards used by 40 managers across regional sales teams")
+                edit.update(change="rewrite", new_text="Built SQL reporting dashboards used by 40 managers across regional sales teams")
         return json.dumps(edits)
 
 
@@ -74,7 +74,7 @@ def test_run_review_decide_rebuild_download(tailor_client):
     # Spec 010: the overlap number is kept (compatibility) but explained, never called an ATS score.
     assert set(review["alignment"]) == {"before", "after"} and "not an employer score" in review["overlap_note"]
     assert tailor_client.get("/v2/tailor").json()["ats_explainer"]["title"] == "About ATS checks"
-    change = next(c for c in review["changes"] if "Tableau" in c["proposed"])
+    change = next(c for c in review["changes"] if "reporting dashboards" in c["proposed"])
     assert change["decision"] is None and change["original"].startswith("Built SQL dashboards")
 
     for c in review["changes"]:
@@ -83,7 +83,7 @@ def test_run_review_decide_rebuild_download(tailor_client):
     assert r.json()["progress"]["needs_rebuild"] is True
     rebuilt = tailor_client.post("/v2/tailor/rebuild").json()
     assert rebuilt["progress"]["needs_rebuild"] is False
-    assert "Tableau SQL dashboards" in rebuilt["tailored_text"]
+    assert "SQL reporting dashboards" in rebuilt["tailored_text"]
     # No office suite in tests, so there's no PDF; the Word file is always there.
     assert tailor_client.get("/v2/tailor/download/docx").status_code == 200
     assert tailor_client.get("/v2/tailor/download/pdf").status_code == 404
@@ -93,7 +93,7 @@ def test_an_unverifiable_manual_edit_is_refused(tailor_client):
     _ready(tailor_client)
     _run(tailor_client)
     review = tailor_client.get("/v2/tailor").json()["review"]
-    change = next(c for c in review["changes"] if "Tableau" in c["proposed"])
+    change = next(c for c in review["changes"] if "reporting dashboards" in c["proposed"])
     tailor_client.post("/v2/tailor/decisions", json={"change_id": change["id"], "decision": "MANUALLY_EDITED",
                                                      "manual_text": "  "})
     r = tailor_client.post("/v2/tailor/rebuild")

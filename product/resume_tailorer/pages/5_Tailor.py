@@ -504,7 +504,7 @@ def _render_setup(owner_id: str, pending: dict) -> None:
 
 
 def _run_tailoring(source, pending: dict) -> None:
-    filename, original_bytes, _label = source
+    filename, original_bytes, label = source
     llm_fields = collect_sidebar_llm_fields(
         st.session_state.get("tailor_model", ""), st.session_state.get("tailor_api_key", ""),
         st.session_state.get("tailor_api_base", ""),
@@ -524,6 +524,7 @@ def _run_tailoring(source, pending: dict) -> None:
                 target_length=TARGET_LENGTHS.get(st.session_state.get("tailor_length"), "preserve"),
                 conservative=bool(st.session_state.get("tailor_conservative")),
                 progress=st.write,
+                provenance=None if label.startswith("One-off") else (st.session_state.get(RECORD_KEY) or {}).get("provenance"),
             )
             status.update(label="Your tailored resume is ready to review", state="complete")
     except TailoringError as exc:

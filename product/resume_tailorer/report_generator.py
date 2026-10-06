@@ -165,12 +165,12 @@ class ReportGenerator:
                 f"not added to the resume: {missing_list}."
             )
 
-        # Optimization ceiling reached without hitting target.
-        if optimization_result.ceiling_reached and optimization_result.final_score < 0.85:
+        # Spec 010: no score target. Say plainly when supported requirements are still unclear.
+        if optimization_result.ceiling_reached:
             recommendations.append(
-                "Tailoring reached a plateau below the 85% alignment target "
-                f"(final score: {optimization_result.final_score:.0%}). Remaining gaps may "
-                "require adding genuinely new experience to your profile rather than rewording."
+                "Some requirements you have evidence for still aren't clear in this resume "
+                f"({getattr(optimization_result, 'stop_reason', '') or 'refinement stopped'}). "
+                "Review them in Tailor; requirements you don't have are never added."
             )
 
         # PDF validation issues.

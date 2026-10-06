@@ -111,6 +111,7 @@ class RequirementRow:
 class RequirementReview:
     rows: tuple[RequirementRow, ...]
     computed_from: str = "run"  # "run" (at tailoring time) | "now" (rebuilt for an older review)
+    listed: tuple[str, ...] = ()  # requirement terms the person lists (skills, tools, summary)
 
     def counts(self, section: str) -> tuple[int, int]:
         rows = [r for r in self.rows if r.section == section]
@@ -291,8 +292,9 @@ def _row(rid: str, text: str, section: str, hard_gate: bool, job_analysis: Optio
         if deciding:
             listed = [p for p in lists if any(_mentions_any(t, p.text) for t in deciding)]
             if listed:
-                return make(MENTION, listed, "Only listed, with no passage that shows you using it. "
-                                             "It won't be built into new claims.")
+                return make(MENTION, listed, "Only listed, with no passage that shows you using it, so it "
+                                             "won't be built into new claims. If you used it in a job, add that "
+                                             "to the role in Career Profile.")
         return None
 
     confirmed_pool = [p for p in all_passages if p.confirmed]
@@ -343,7 +345,9 @@ def build_review(job_analysis: JobAnalysis, profile: CareerTruthProfile, *,
             continue
         seen.add(key)
         rows.append(_row(f"r{n}", text.strip(), section, gate, job_analysis, profile, all_passages, posting))
-    review = RequirementReview(tuple(sorted(rows, key=_order)), computed_from)
+    list_text = [p.text for p in all_passages if p.kind not in _CONTEXT_KINDS]
+    listed = tuple(dict.fromkeys(t for r in rows for t in r.terms if any(_mentions_any(t, x) for x in list_text)))
+    review = RequirementReview(tuple(sorted(rows, key=_order)), computed_from, listed)
     return with_resume(review, resume_text) if resume_text is not None else review
 
 
@@ -371,3 +375,108 @@ def with_resume(review: RequirementReview, resume_text: str) -> RequirementRevie
 
     rows = tuple(replace(r, shown_in_resume=shown_in(r, resume_text) if r.supported else None) for r in review.rows)
     return replace(review, rows=rows)
+
+
+# --- Using the review while tailoring (spec 010 steps 3-4) ---------------------------------
+
+def _specific_terms(row: RequirementRow) -> list[str]:
+    return [t for t in row.terms if t not in GENERIC_TERMS]
+
+
+def _evidenced(row: RequirementRow) -> list[str]:
+    """The terms of a supported row that its evidence actually shows (not every term it names:
+    "SQL and Python" shown only through SQL doesn't support Python)."""
+    if not row.supported:
+        return []
+    shown = [t for t in row.terms if any(_mentions_any(t, e.text) for e in row.evidence)]
+    return shown + [t for t in row.terms if t in GENERIC_TERMS and t not in shown]
+
+
+def _supported_terms(review: RequirementReview) -> set[str]:
+    return {t.lower() for r in review.rows for t in _evidenced(r)}
+
+
+def blocked_terms(review: RequirementReview) -> tuple[tuple[str, ...], tuple[str, ...]]:
+    """(never_add, list_only): specific terms a rewrite may not introduce. `never_add` comes from
+    requirements with no supported evidence; `list_only` from terms that are only listed (they may
+    stay in a skills list, never become a new claim in a bullet). A term some other requirement
+    genuinely supports is never blocked."""
+    supported = _supported_terms(review)
+    never: list[str] = []
+    listed: list[str] = []
+    for r in review.rows:
+        if r.supported:
+            # A named term the evidence doesn't show is not supported by this row; it is
+            # list-only when the person lists it, never-add otherwise.
+            for t in _specific_terms(r):
+                if t.lower() not in supported:
+                    (listed if _is_listed(t, review) else never).append(t)
+            continue
+        terms = _specific_terms(r)
+        if r.status == CHECK:
+            terms += [a.upper() for a in AMBIGUOUS_ACRONYMS if re.search(rf"\b{a}\b", r.text, re.IGNORECASE)]
+        for t in terms:
+            if t.lower() in supported:
+                continue
+            (listed if r.status == MENTION else never).append(t)
+    never = list(dict.fromkeys(never))
+    listed = [t for t in dict.fromkeys(listed) if t not in never]
+    return tuple(never), tuple(listed)
+
+
+def _is_listed(term: str, review: RequirementReview) -> bool:
+    return term in review.listed or any(r.status == MENTION and term in r.terms for r in review.rows)
+
+
+def _is_list_line(text: str) -> bool:
+    """A skills/tools style line: mostly short comma- or pipe-separated items."""
+    stripped = re.sub(r"^[^:]{1,30}:\s*", "", (text or "").strip())
+    items = [i.strip() for i in re.split(r"[,|•·;]", stripped) if i.strip()]
+    return len(items) >= 3 and sum(len(i.split()) <= 4 for i in items) >= len(items) - 1
+
+
+def introduced_unsupported(original: str, new: str, review: Optional[RequirementReview]) -> list[str]:
+    """Terms `new` adds that the review doesn't support. Empty when the rewrite is safe."""
+    if review is None or not new:
+        return []
+    never, listed = blocked_terms(review)
+    problems = []
+    for term in never:
+        if _mentions_any(term, new) and not _mentions_any(term, original or ""):
+            problems.append(f"adds “{term}”, which you haven't shown evidence for")
+    for term in listed:
+        if _mentions_any(term, new) and not _mentions_any(term, original or "") and not _is_list_line(new):
+            problems.append(f"turns “{term}” from a listed skill into a claim; it's only listed in your profile")
+    return problems
+
+
+def format_for_prompt(review: RequirementReview, resume_text: Optional[str] = None) -> str:
+    """The requirement review for a tailoring prompt: what to make clearer (with the exact
+    evidence) and what never to add. Missing requirements are named only as things to leave out."""
+    current = with_resume(review, resume_text) if resume_text is not None else review
+    lines = ["MAKE CLEARER (the candidate has confirmed evidence; improve terminology, context, "
+             "responsibility or outcome ONLY where the quoted evidence supports it):"]
+    targets = [r for r in current.targets]
+    if not targets:
+        lines.append("  (none)")
+    for r in targets:
+        state = " [already shown; keep it]" if r.shown_in_resume else ""
+        lines.append(f"  - {r.section.upper()}: {r.text}{state}")
+        for e in r.evidence:
+            lines.append(f"    Evidence ({e.source}): \"{e.text}\"")
+    lines += ["", "DO NOT ADD (no supported evidence; never claim these, never insert their terms):"]
+    never, listed = blocked_terms(review)
+    for r in review.not_to_add:
+        lines.append(f"  - {r.section.upper()}: {r.text} ({STATUS_LABELS[r.status]})")
+    if listed:
+        lines.append(f"  Only listed as skills, so they may stay in a skills list but must not be added to "
+                     f"any bullet: {', '.join(listed)}")
+    if never:
+        lines.append(f"  Terms that must not appear anywhere they don't already: {', '.join(never)}")
+    return "\n".join(lines)
+
+
+def unshown_targets(review: RequirementReview, resume_text: str) -> list[RequirementRow]:
+    """Supported requirements this resume doesn't show yet: the only things a refinement round
+    may work on."""
+    return [r for r in with_resume(review, resume_text).targets if not r.shown_in_resume]

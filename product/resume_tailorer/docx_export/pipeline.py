@@ -17,6 +17,7 @@ from docx import Document
 from resume_tailorer.models import CareerTruthProfile
 from resume_tailorer.analyzers.job_analyzer import JobAnalysis
 from resume_tailorer.analyzers.gap_analyzer import EvidenceLevel, GapCategory, GapReport
+from resume_tailorer.analyzers.requirement_review import RequirementReview, unshown_targets
 from resume_tailorer.parsers.docx_structure import Bullet, extract_docx_structure, DocxStructure
 from resume_tailorer.tailorer.docx_bullet_tailorer import DocxBulletTailorer, BulletEdit, BulletTailoringResult
 from resume_tailorer.tailorer.resume_tailorer import _job_header_lines
@@ -132,6 +133,7 @@ def run_docx_tailoring_pipeline(
     gap_report: GapReport,
     bullet_tailorer: DocxBulletTailorer | None = None,
     convert_to_pdf: bool = True,
+    review: RequirementReview | None = None,
 ) -> DocxTailoringResult:
     """
     convert_to_pdf=False skips the docx2pdf round-trip entirely (no page
@@ -146,7 +148,9 @@ def run_docx_tailoring_pipeline(
     bullets = structure.splice_targets(doc.paragraphs)
 
     tailorer = bullet_tailorer or DocxBulletTailorer()
-    tailoring_result = tailorer.tailor_bullets(bullets, profile, job_analysis, gap_report)
+    # Passed only when there is one, so any bullet tailorer without the argument keeps working.
+    review_kwargs = {"review": review} if review is not None else {}
+    tailoring_result = tailorer.tailor_bullets(bullets, profile, job_analysis, gap_report, **review_kwargs)
 
     # Length-cap, semantic-drift, and fabrication-risk checks all now run
     # as HARD rejects inside DocxBulletTailorer._parse_and_validate itself
@@ -157,8 +161,9 @@ def run_docx_tailoring_pipeline(
     warnings = list(tailoring_result.warnings)
 
     bullets_changed = sum(1 for e in tailoring_result.edits if e.changed)
-    addressable_requirements = sum(
-        1 for item in gap_report.items if item.category in (GapCategory.A, GapCategory.B, GapCategory.C)
+    addressable_requirements = (
+        len(review.targets) if review is not None else
+        sum(1 for item in gap_report.items if item.category in (GapCategory.A, GapCategory.B, GapCategory.C))
     )
     # Threshold is deliberately loose (a real signal, not a precise
     # measurement): flag when there's clearly more addressable evidence
@@ -178,11 +183,19 @@ def run_docx_tailoring_pipeline(
     # remaining strong-evidence gaps just means the resume genuinely
     # doesn't have much more truthful room to improve.
     if tailoring_seems_shallow:
-        priority_focus = _underrepresented_strong_evidence(gap_report, tailoring_result, structure, bullets)
+        if review is not None:
+            # Spec 010: the second pass works only on requirements with confirmed evidence that
+            # the tailored bullets still don't show.
+            current = " ".join(_apply_edits_to_bullets(bullets, tailoring_result.edits)[i].text
+                               for i in range(len(bullets)))
+            priority_focus = [f"{r.text} (evidence: \"{r.evidence[0].text}\")"
+                              for r in unshown_targets(review, current)][:5]
+        else:
+            priority_focus = _underrepresented_strong_evidence(gap_report, tailoring_result, structure, bullets)
         if priority_focus:
             updated_bullets = _apply_edits_to_bullets(bullets, tailoring_result.edits)
             second_pass = tailorer.tailor_bullets(
-                updated_bullets, profile, job_analysis, gap_report, priority_focus=priority_focus
+                updated_bullets, profile, job_analysis, gap_report, priority_focus=priority_focus, **review_kwargs
             )
             tailoring_result = _merge_optimization_pass(tailoring_result, second_pass)
             warnings = list(tailoring_result.warnings)

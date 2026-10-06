@@ -15,6 +15,11 @@ from resume_tailorer.models import CareerTruthProfile
 from resume_tailorer.analyzers.job_analyzer import JobAnalysis
 from resume_tailorer.analyzers.gap_analyzer import GapReport
 from resume_tailorer.analyzers.competency_map import extract_profile_sentences, supported_competencies
+from resume_tailorer.analyzers.requirement_review import (
+    RequirementReview,
+    format_for_prompt,
+    introduced_unsupported,
+)
 from resume_tailorer.diff_generator import DiffGenerator
 from resume_tailorer.llm.client import LLMClient
 from resume_tailorer.llm.settings import LLMSettings, resolve_settings
@@ -134,6 +139,7 @@ class DocxBulletTailorer:
         gap_report: GapReport,
         max_repair_attempts: int = 1,
         priority_focus: list[str] | None = None,
+        review: RequirementReview | None = None,
     ) -> BulletTailoringResult:
         """
         max_repair_attempts: when a proposed rewrite is rejected by a
@@ -158,6 +164,9 @@ class DocxBulletTailorer:
         """
         if not bullets:
             return BulletTailoringResult(edits=[], warnings=[])
+        # Spec 010: with a requirement review, the prompt names only evidence-backed targets and
+        # every rewrite is checked for terms the review doesn't support.
+        self._review = review
 
         by_index = {b.paragraph_index: b for b in bullets}
         system_prompt = self._build_system_prompt()
@@ -344,7 +353,9 @@ When "change" is "keep", "new_text" is ignored -- the original text is always us
         priority_focus: list[str] | None = None,
     ) -> str:
         profile_str = profile_to_string(profile)
-        gaps_str = format_gaps(gap_report)
+        review = getattr(self, "_review", None)
+        gaps_str = (format_for_prompt(review, " ".join(b.text for b in bullets)) if review is not None
+                    else format_gaps(gap_report))
         job_requirements = format_job_requirements(job_analysis)
 
         priority_block = ""
@@ -390,7 +401,7 @@ without violating SEMANTIC PRESERVATION or inventing something, leave it unaddre
 JOB REQUIREMENTS:
 {job_requirements}
 
-GAP ANALYSIS (What to fill and what to ignore):
+REQUIREMENT REVIEW (What to make clearer and what never to add):
 {gaps_str}
 {priority_block}
 
@@ -553,6 +564,17 @@ Return the JSON array now:"""
                 resolved[paragraph_index] = BulletEdit(
                     paragraph_index, bullet.text, bullet.text, changed=False, rejected_reason="unverified content",
                     rejected_text=new_text,
+                )
+                continue
+
+            # Spec 010: never introduce a requirement term the candidate hasn't shown evidence for,
+            # and never turn a skill that is only listed into a claim in a bullet.
+            unsupported = introduced_unsupported(bullet.text, new_text, getattr(self, "_review", None))
+            if unsupported:
+                warnings.append(f"Rejected a rewrite for paragraph {paragraph_index}: {unsupported[0]}")
+                resolved[paragraph_index] = BulletEdit(
+                    paragraph_index, bullet.text, bullet.text, changed=False,
+                    rejected_reason="unsupported requirement term", rejected_text=new_text,
                 )
                 continue
 

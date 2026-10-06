@@ -39,7 +39,7 @@ class RewritingModel:
         edits = [{"paragraph_index": b["paragraph_index"], "change": "keep", "new_text": ""} for b in bullets]
         for edit, bullet in zip(edits, bullets):
             if bullet["text"].startswith("Built SQL dashboards"):
-                edit.update(change="rewrite", new_text="Built Tableau SQL dashboards used by 40 managers across regional sales teams")
+                edit.update(change="rewrite", new_text="Built SQL reporting dashboards used by 40 managers across regional sales teams")
         return json.dumps(edits)
 
 
@@ -60,8 +60,12 @@ def test_a_word_resume_is_tailored_and_rebuilt_from_decisions(session, monkeypat
                           llm=RewritingModel(), progress=steps.append)
     assert steps[0] == "Reading your resume" and len(steps) == 3
     assert state["source_kind"] == "DOCX" and state["version"] == 1
-    proposed = [c for c in state["changes"] if "Tableau" in (c.proposed_text or "")]
+    proposed = [c for c in state["changes"] if "reporting dashboards" in (c.proposed_text or "")]
     assert proposed, [c.proposed_text for c in state["changes"]]
+    # Spec 010: the run stores its requirement review, with "shown in this resume" filled in.
+    review = state["requirement_review"]
+    assert review.rows and review.computed_from == "run"
+    assert any(r.shown_in_resume for r in review.rows if r.supported)
 
     state["dispositions"][proposed[0].change_id] = ChangeDisposition.REJECTED.value
     regenerate(session, state)
@@ -76,7 +80,7 @@ def test_an_empty_manual_edit_is_refused(session, monkeypatch):
     monkeypatch.setattr(converter, "_soffice", lambda: None)
     state = run_tailoring(session, original_bytes=_resume(), filename="riley.docx", job_description=JD,
                           pending={}, llm=RewritingModel())
-    change = next(c for c in state["changes"] if "Tableau" in (c.proposed_text or ""))
+    change = next(c for c in state["changes"] if "reporting dashboards" in (c.proposed_text or ""))
     state["dispositions"][change.change_id] = ChangeDisposition.MANUALLY_EDITED.value
     state["manual_texts"][change.change_id] = "   "
     with pytest.raises(TailoringError, match="empty"):

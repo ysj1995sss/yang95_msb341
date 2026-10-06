@@ -13,7 +13,8 @@ import re
 
 from resume_tailorer.models import CareerTruthProfile
 from resume_tailorer.analyzers.job_analyzer import JobAnalysis
-from resume_tailorer.analyzers.gap_analyzer import GapReport, GapCategory
+from resume_tailorer.analyzers.gap_analyzer import EvidenceLevel, GapReport, GapCategory
+from resume_tailorer.analyzers.requirement_review import RequirementReview, format_for_prompt
 from resume_tailorer.llm.client import LLMClient
 from resume_tailorer.llm.settings import LLMSettings, resolve_settings
 
@@ -328,9 +329,9 @@ def format_gaps(gap_report: GapReport) -> str:
             by_category[item.category] = []
         by_category[item.category].append(item)
 
-    # Category A: Already on resume
+    # Category A: found in the Career Profile
     if GapCategory.A in by_category:
-        lines.append("CATEGORY A - Already on Resume (Optimize presentation):")
+        lines.append("CATEGORY A - In the Career Profile (Optimize presentation):")
         for item in by_category[GapCategory.A]:
             lines.append(f"  - {item.requirement}")
             lines.append(f"    Reason: {item.reason}")
@@ -338,6 +339,14 @@ def format_gaps(gap_report: GapReport) -> str:
         lines.append("")
 
     # Category B: Supported but missing
+    # Spec 010: a weak guess ("likely has this from background") is never a reason to add text.
+    weak = [i for i in by_category.get(GapCategory.B, []) if i.evidence_level == EvidenceLevel.WEAK_INFERRED]
+    by_category[GapCategory.B] = [i for i in by_category.get(GapCategory.B, []) if i not in weak]
+    if not by_category[GapCategory.B]:
+        del by_category[GapCategory.B]
+    if weak:
+        by_category.setdefault(GapCategory.D, []).extend(weak)
+
     if GapCategory.B in by_category:
         lines.append("CATEGORY B - Supported by Experience but Missing (Bring into resume):")
         for item in by_category[GapCategory.B]:
@@ -443,6 +452,7 @@ class ResumeTailorer:
         job_analysis: JobAnalysis,
         gap_report: GapReport,
         conservative: bool = False,
+        review: RequirementReview | None = None,
     ) -> str:
         """
         Tailor resume content to match job requirements.
@@ -465,7 +475,8 @@ class ResumeTailorer:
         - Respect gap categories: fill A/B/C, ignore D/E
         """
         system_prompt = self._build_system_prompt(conservative=conservative)
-        user_prompt = self._build_user_prompt(profile, job_analysis, gap_report, conservative=conservative)
+        user_prompt = self._build_user_prompt(profile, job_analysis, gap_report, conservative=conservative,
+                                              review=review)
         raw = self.llm.complete(system_prompt, user_prompt, max_tokens=2000)
         cleaned = _strip_profile_dump_labels(_strip_markdown_syntax(_strip_non_resume_content(raw)))
         return _reconcile_headers_with_profile(cleaned, profile)
@@ -593,6 +604,7 @@ Your output must be a revised resume that increases alignment with the job while
         job_analysis: JobAnalysis,
         gap_report: GapReport,
         conservative: bool = False,
+        review: RequirementReview | None = None,
     ) -> str:
         """
         Build the user prompt requesting tailored resume.
@@ -607,7 +619,7 @@ Your output must be a revised resume that increases alignment with the job while
             Formatted user prompt for Claude
         """
         profile_str = self._profile_to_string(profile)
-        gaps_str = self._format_gaps(gap_report)
+        gaps_str = format_for_prompt(review) if review is not None else self._format_gaps(gap_report)
         job_requirements = self._format_job_requirements(job_analysis)
 
         if conservative:

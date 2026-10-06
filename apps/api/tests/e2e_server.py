@@ -40,7 +40,7 @@ class StubModel:
         for edit, bullet in zip(edits, bullets):
             if bullet["text"].startswith("Built SQL dashboards"):
                 edit.update(change="rewrite",
-                            new_text="Built Tableau SQL dashboards used by 40 managers across regional sales teams")
+                            new_text="Built SQL reporting dashboards used by 40 managers across regional sales teams")
         return json.dumps(edits)
 
 

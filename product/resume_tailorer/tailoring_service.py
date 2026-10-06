@@ -19,6 +19,7 @@ from typing import Any, Callable, MutableMapping, Optional
 
 from resume_tailorer.analyzers import GapAnalyzer, JobAnalyzer, ResumeBenchmarker
 from resume_tailorer.analyzers.gap_analyzer import find_unsupported_claims
+from resume_tailorer.analyzers.requirement_review import build_review, with_resume
 from resume_tailorer.artifacts.changes import build_freeform_changes
 from resume_tailorer.artifacts.length_control import (
     build_freeform_artifact,
@@ -58,9 +59,14 @@ def run_tailoring(
     target_length: str = "preserve",
     conservative: bool = False,
     progress: Callable[[str], None] = lambda message: None,
+    provenance: Optional[dict] = None,
 ) -> dict:
     """Tailor one resume to one job. Returns the review state (and hands a passing
-    artifact to Apply through `session`). Raises TailoringError with a plain message."""
+    artifact to Apply through `session`). Raises TailoringError with a plain message.
+
+    `provenance` is the Career Profile's per-fact confirmation state, passed when the resume is
+    the Career Profile's own; facts still only "from resume" are then never tailoring targets
+    (spec 010). A one-off file has none, and its facts count as the person's own."""
     if not (job_description or "").strip():
         raise TailoringError("Add the job description first: choose a job in Jobs, or paste one.")
     suffix = os.path.splitext(filename)[1].lower()
@@ -82,13 +88,14 @@ def run_tailoring(
         job_analysis = JobAnalyzer().analyze(job_description)
         benchmark = ResumeBenchmarker().benchmark(profile, job_analysis)
         gap_report = GapAnalyzer().analyze(profile, job_analysis, benchmark)
+        review = build_review(job_analysis, profile, provenance=provenance, posting=job_description)
 
         progress("Writing and checking changes (about a minute)")
         baseline_text = ""
         if is_docx:
             docx_result = run_docx_tailoring_pipeline(
                 original_bytes, profile, job_analysis, gap_report,
-                bullet_tailorer=DocxBulletTailorer(llm=llm), convert_to_pdf=True,
+                bullet_tailorer=DocxBulletTailorer(llm=llm), convert_to_pdf=True, review=review,
             )
             docx_result = correct_docx_length_once(
                 original_docx_bytes=original_bytes, docx_result=docx_result,
@@ -101,13 +108,14 @@ def run_tailoring(
             docx_bytes, pdf_bytes = docx_result.docx_bytes, docx_result.pdf_bytes
             fidelity_mode = FidelityMode.PRESERVED
         else:
-            initial = ResumeTailorer(llm=llm).tailor(profile, job_analysis, gap_report, conservative=conservative)
+            initial = ResumeTailorer(llm=llm).tailor(profile, job_analysis, gap_report, conservative=conservative,
+                                                     review=review)
             optimization = ResumeTailoringOptimizer(llm=llm).optimize(
-                profile, job_analysis, initial, gap_report, conservative=conservative
+                profile, job_analysis, initial, gap_report, conservative=conservative, review=review
             )
             tailored_text = optimization.tailored_resume
             tailored_alignment = optimization.final_score
-            changes = build_freeform_changes(profile, tailored_text, gap_report)
+            changes = build_freeform_changes(profile, tailored_text, gap_report, review=review)
             pdf_bytes, validation, tailored_text, changes, _attempts = build_freeform_artifact(
                 tailored_text=tailored_text, changes=changes, profile=profile,
                 target_length=target_length, style_hints=style_hints, llm=llm,
@@ -152,6 +160,7 @@ def run_tailoring(
         "gap_report": gap_report,
         "job_analysis": job_analysis,
         "original_alignment": benchmark.original_match_score,
+        "requirement_review": with_resume(review, tailored_text),
         "candidate_fit": candidate_fit,
         "company": pending.get("company", ""),
         "role": pending.get("title", ""),
@@ -245,6 +254,8 @@ def regenerate(session: MutableMapping[str, Any], state: dict) -> None:
         fidelity_mode=state["fidelity_mode"],
         unsupported_claims=unsupported_claims,
     )
+    if state.get("requirement_review") is not None:
+        state["requirement_review"] = with_resume(state["requirement_review"], tailored_text)
     state.update(
         changes=updated_changes,
         tailored_text=tailored_text,
