@@ -36,7 +36,8 @@ from resume_tailorer.artifacts.report import build_final_report
 from resume_tailorer.docx_export import run_docx_tailoring_pipeline
 from resume_tailorer.parsers import ResumeParser
 from resume_tailorer.pdf.validator import PDFValidator
-from resume_tailorer.session_profile import RESUME_UPLOAD, set_career_profile
+from resume_tailorer.docx_export.profile_sync import sync_docx_to_profile
+from resume_tailorer.session_profile import FACT_VAULT, RESUME_UPLOAD, set_career_profile
 from resume_tailorer.tailorer import ResumeTailorer, ResumeTailoringOptimizer
 from resume_tailorer.tailorer.docx_bullet_tailorer import DocxBulletTailorer
 from resume_tailorer.tailoring_session import publish_artifact_handoff
@@ -60,13 +61,18 @@ def run_tailoring(
     conservative: bool = False,
     progress: Callable[[str], None] = lambda message: None,
     provenance: Optional[dict] = None,
+    career_profile=None,
 ) -> dict:
     """Tailor one resume to one job. Returns the review state (and hands a passing
     artifact to Apply through `session`). Raises TailoringError with a plain message.
 
     `provenance` is the Career Profile's per-fact confirmation state, passed when the resume is
     the Career Profile's own; facts still only "from resume" are then never tailoring targets
-    (spec 010). A one-off file has none, and its facts count as the person's own."""
+    (spec 010). A one-off file has none, and its facts count as the person's own.
+
+    `career_profile` (spec 011): the Career Profile, passed with the Career Profile's own resume.
+    Tailoring then uses its facts, with every edit, instead of re-reading the file; a Word file is
+    first brought up to date with it (profile_sync), so its layout is kept."""
     if not (job_description or "").strip():
         raise TailoringError("Add the job description first: choose a job in Jobs, or paste one.")
     suffix = os.path.splitext(filename)[1].lower()
@@ -77,7 +83,21 @@ def run_tailoring(
             f.write(original_bytes)
         progress("Reading your resume")
         parser = ResumeParser()
-        profile = set_career_profile(session, parser.parse(resume_path), RESUME_UPLOAD)
+        sync_summary = ""
+        if career_profile is None:
+            profile = set_career_profile(session, parser.parse(resume_path), RESUME_UPLOAD)
+            review_profile = profile
+        elif is_docx:
+            progress("Bringing your Career Profile into your Word file")
+            sync = sync_docx_to_profile(original_bytes, career_profile)
+            original_bytes = sync.docx_bytes
+            sync_summary = sync.summary
+            set_career_profile(session, career_profile, FACT_VAULT)  # the session keeps the real profile
+            profile = sync.aligned_profile  # the file's role order, for the bullet tailorer only
+            review_profile = career_profile  # in the Career Profile's own order, so paths match provenance
+        else:
+            profile = set_career_profile(session, career_profile, FACT_VAULT)
+            review_profile = career_profile
         try:
             raw_resume_text = parser.get_raw_text(resume_path)
         except ValueError:
@@ -88,7 +108,7 @@ def run_tailoring(
         job_analysis = JobAnalyzer().analyze(job_description)
         benchmark = ResumeBenchmarker().benchmark(profile, job_analysis)
         gap_report = GapAnalyzer().analyze(profile, job_analysis, benchmark)
-        review = build_review(job_analysis, profile, provenance=provenance, posting=job_description)
+        review = build_review(job_analysis, review_profile, provenance=provenance, posting=job_description)
 
         progress("Writing and checking changes (about a minute)")
         baseline_text = ""
@@ -161,6 +181,7 @@ def run_tailoring(
         "job_analysis": job_analysis,
         "original_alignment": benchmark.original_match_score,
         "requirement_review": with_resume(review, tailored_text),
+        "sync_summary": sync_summary,
         "candidate_fit": candidate_fit,
         "company": pending.get("company", ""),
         "role": pending.get("title", ""),

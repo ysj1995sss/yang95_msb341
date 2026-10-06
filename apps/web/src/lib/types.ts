@@ -150,7 +150,7 @@ export type Readability = {
 export type Review = {
   version: number; status: "PASS" | "WARNING" | "FAIL"; status_text: string; status_tone: string; findings: string[];
   fidelity: string; page_count: number | null; preview_pages: number; has_pdf: boolean; has_docx: boolean;
-  tailored_text: string; alignment: { before: number | null; after: number | null }; overlap_note: string;
+  tailored_text: string; alignment: { before: number | null; after: number | null }; overlap_note: string; sync_summary: string;
   requirement_review: RequirementReviewView | null; readability: Readability; keyword_report: KeywordReportView | null;
   pages_before_after: [number | null, number | null]; unsupported_claims: string[];
   progress: { reviewed: number; total: number; needs_rebuild: boolean; can_continue: boolean; blocker: string; label: string };

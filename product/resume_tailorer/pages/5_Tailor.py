@@ -32,6 +32,7 @@ except Exception:
 
 from resume_tailorer.identity import artifacts_dir
 from resume_tailorer.profile_import import RECORD_KEY, store_for
+from resume_tailorer.session_profile import get_career_profile
 from resume_tailorer.ui.auth_gate import require_identity
 from resume_tailorer.tailoring_session import HANDOFF_KEY, sync_pending_job
 from resume_tailorer.llm.settings import resolve_settings
@@ -269,6 +270,8 @@ def _render_review_room(pending: dict) -> None:
             help="Hidden by default because they don't change what your resume says.",
         )
 
+        if state.get("sync_summary"):
+            st.info(state["sync_summary"])
         review = review_for_state(state, (st.session_state.get(RECORD_KEY) or {}).get("provenance"))
         if review is not None:
             render_keyword_report(keyword_report_view(review, state))
@@ -538,6 +541,7 @@ def _run_tailoring(source, pending: dict) -> None:
                 conservative=bool(st.session_state.get("tailor_conservative")),
                 progress=st.write,
                 provenance=None if label.startswith("One-off") else (st.session_state.get(RECORD_KEY) or {}).get("provenance"),
+                career_profile=None if label.startswith("One-off") else get_career_profile(st.session_state),
             )
             status.update(label="Your tailored resume is ready to review", state="complete")
     except TailoringError as exc:

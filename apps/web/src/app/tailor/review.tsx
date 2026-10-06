@@ -118,6 +118,7 @@ export function ReviewRoom({ review, onChange, onDiscard }: {
   return (
     <>
       <Steps review={review} />
+      {review.sync_summary && <div className="mb-4"><Alert tone="primary">{review.sync_summary}</Alert></div>}
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,1.15fr)_minmax(0,0.85fr)]">
         <div className="flex min-w-0 flex-col gap-5">
           <h2 className="text-[22px] font-semibold">Proposed changes</h2>

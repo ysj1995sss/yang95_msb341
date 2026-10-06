@@ -180,6 +180,7 @@ def _review_view(ws: Workspace, state: dict, show_all: bool = False) -> dict:
         "readability": readability_view(report.validation.findings, state.get("source_kind", ""),
                                         getattr(report.validation, "checks_run", ())),
         "overlap_note": ats_explainer.OVERLAP_NOTE,
+        "sync_summary": state.get("sync_summary") or "",
         "pages_before_after": [report.original_page_count, report.tailored_page_count],
         "unsupported_claims": list(report.unsupported_claims or ()),
         "progress": {**jsonable(progress), "label": progress.label},
@@ -275,6 +276,7 @@ def _worker(owner, job_id: str, pending: dict, source, request: RunRequest, sett
 
 def _run(ws: Workspace, job_id: str, pending: dict, source, request: RunRequest, settings) -> None:
     from resume_tailorer.llm.client import LLMClient
+    from resume_tailorer.session_profile import get_career_profile
     from resume_tailorer.tailoring_service import TailoringError, regenerate, run_tailoring
     from resume_tailorer.ui.tailoring_view import safe_default_dispositions
 
@@ -288,6 +290,7 @@ def _run(ws: Workspace, job_id: str, pending: dict, source, request: RunRequest,
             pending=pending, llm=LLMClient(settings), target_length=LENGTHS[request.length],
             conservative=request.conservative, progress=step,
             provenance=None if source[2].startswith("One-off") else ws.record.get("provenance"),
+            career_profile=None if source[2].startswith("One-off") else get_career_profile(ws.session),
         )
         # Same first step as the Streamlit review room: changes that claim a missing
         # requirement start rejected, and the resume is rebuilt without them.
