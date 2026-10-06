@@ -125,7 +125,7 @@ export type JobDetail = {
 export type Decision = "ACCEPTED" | "MANUALLY_EDITED" | "REJECTED";
 
 export type Change = {
-  id: string; requirement: string; fact: string; reason: string; original: string; proposed: string;
+  id: string; section_label: string; requirement: string; fact: string; reason: string; original: string; proposed: string;
   check: string; decision: Decision | null; decision_label: string; manual_text: string;
 };
 

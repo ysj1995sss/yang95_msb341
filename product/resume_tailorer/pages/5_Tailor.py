@@ -61,6 +61,7 @@ from resume_tailorer.ui.tailor_progress import (
     VERBS,
     artifact_status_text,
     artifact_tone,
+    change_section_label,
     empty_queue_message,
     rejected_by_checks,
     next_undecided,
@@ -161,7 +162,7 @@ def _render_change_focus(state: dict, change, profile) -> None:
     with st.container(border=True):
         status_text = DECISION_DONE.get(current, "Not reviewed yet") if decided else "Not reviewed yet"
         st.markdown(
-            f'<div class="jc-eyebrow">Review this change · {escape(status_text)}</div>',
+            f'<div class="jc-eyebrow">{escape(change_section_label(change))} · Review this change · {escape(status_text)}</div>',
             unsafe_allow_html=True,
         )
         st.markdown(

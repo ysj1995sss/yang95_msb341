@@ -71,6 +71,7 @@ def test_run_review_decide_rebuild_download(tailor_client):
 
     review = tailor_client.get("/v2/tailor").json()["review"]
     assert review["version"] >= 1 and review["progress"]["can_continue"] is False
+    assert "sync_summary" in review
     # Spec 010: the overlap number is kept (compatibility) but explained, never called an ATS score.
     assert set(review["alignment"]) == {"before", "after"} and "not an employer score" in review["overlap_note"]
     assert tailor_client.get("/v2/tailor").json()["ats_explainer"]["title"] == "About ATS checks"
@@ -85,6 +86,7 @@ def test_run_review_decide_rebuild_download(tailor_client):
     assert review["readability"]["items"][0]["label"] == "Text can be read from the file"
     change = next(c for c in review["changes"] if "reporting dashboards" in c["proposed"])
     assert change["decision"] is None and change["original"].startswith("Built SQL dashboards")
+    assert change["section_label"] == "Work experience"
 
     for c in review["changes"]:
         r = tailor_client.post("/v2/tailor/decisions", json={"change_id": c["id"], "decision": "ACCEPTED"})
@@ -107,6 +109,21 @@ def test_an_unverifiable_manual_edit_is_refused(tailor_client):
                                                      "manual_text": "  "})
     r = tailor_client.post("/v2/tailor/rebuild")
     assert r.status_code == 400 and "empty" in r.json()["detail"]
+
+
+def test_conflicting_word_employer_stops_before_review_or_download(tailor_client):
+    _ready(tailor_client)
+    role = tailor_client.get("/v2/profile").json()["profile"]["work_experience"][0]
+    edited = tailor_client.put("/v2/profile/work", json={
+        "index": 0, "title": role["title"], "employer": "Cedar Analytics",
+        "dates": role["dates"],
+        "bullets": [*role["responsibilities"], *role["accomplishments"]],
+    })
+    assert edited.status_code == 200
+    status = _run(tailor_client)
+    assert status["status"] == "failed" and "Word file" in status["error"]
+    assert tailor_client.get("/v2/tailor").json()["review"] is None
+    assert tailor_client.get("/v2/tailor/download/docx").status_code == 404
 
 
 def test_discard_starts_over(tailor_client):

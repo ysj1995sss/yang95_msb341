@@ -113,7 +113,7 @@ def validate_pdf_content(
             and change.proposed_text
             and _contains(text, change.proposed_text)
         ):
-            if change.disposition is ChangeDisposition.ACCEPTED:
+            if change.disposition is ChangeDisposition.ACCEPTED and change.section not in {"summary", "skills"}:
                 # The user explicitly vouched for it (changes are accepted one at a time).
                 findings.append(ValidationFinding(
                     "USER_CONFIRMED_UNVERIFIED_CLAIM", FindingSeverity.WARNING, FindingCategory.TRUTH,

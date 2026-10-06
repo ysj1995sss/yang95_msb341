@@ -54,6 +54,7 @@ test("resume → profile → goals → jobs → tailor → apply → tracker", a
   await expect(page).toHaveURL(/\/tailor$/);
   await page.getByRole("button", { name: "Tailor my resume" }).click();
   await expect(page.getByRole("heading", { name: "Proposed changes" })).toBeVisible({ timeout: 60_000 });
+  await expect(page.getByText(/Work experience · Review this change/)).toBeVisible();
   // Spec 010: the requirement review with linked evidence, and the local readability check.
   await expect(page.getByRole("heading", { name: "Requirement review" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Keywords" })).toBeVisible();  // spec 011

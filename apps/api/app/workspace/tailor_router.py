@@ -136,6 +136,7 @@ def _review_view(ws: Workspace, state: dict, show_all: bool = False) -> dict:
     from resume_tailorer.ui.tailor_progress import (
         DECISION_DONE, VERBS, artifact_status_text, artifact_tone, empty_queue_message, next_undecided,
         readable_requirement, rejected_by_checks, review_progress, supporting_fact, validation_word,
+        change_section_label,
     )
 
     report = state["report"]
@@ -151,6 +152,7 @@ def _review_view(ws: Workspace, state: dict, show_all: bool = False) -> dict:
         is_decided = change.change_id in decided
         return {
             "id": change.change_id,
+            "section_label": change_section_label(change),
             "requirement": readable_requirement(change),
             "fact": supporting_fact(change, state["profile"]),
             "reason": change.reason or "Reworded to match the posting",

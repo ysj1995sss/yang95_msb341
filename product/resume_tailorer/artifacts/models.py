@@ -114,6 +114,9 @@ class ResumeChange:
     # anchor and silently dropped every manual edit on regeneration (found
     # live during Task 9 acceptance testing, spec 002 section 10).
     manual_text: str | None = None
+    # Exact character slice in the saved free-form baseline for a section edit.
+    # None keeps format-2/legacy bullet reviews on their original behavior.
+    baseline_span: tuple[int, int] | None = None
 
 
 @dataclass(frozen=True)

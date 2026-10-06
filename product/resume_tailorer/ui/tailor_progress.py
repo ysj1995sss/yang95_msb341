@@ -14,6 +14,10 @@ VERBS = {"ACCEPTED": "Accept change", "MANUALLY_EDITED": "Edit manually", "REJEC
 DECISION_DONE = {"ACCEPTED": "Accepted", "MANUALLY_EDITED": "Edited by you", "REJECTED": "Original kept"}
 
 
+def change_section_label(change: ResumeChange) -> str:
+    return {"summary": "Summary", "skills": "Skills"}.get(change.section, "Work experience")
+
+
 @dataclass(frozen=True)
 class ReviewProgress:
     reviewed: int
@@ -71,6 +75,10 @@ def supporting_fact(change: ResumeChange, profile: Any) -> str:
     repeat the bullet). Otherwise the recorded evidence or the original line.
     """
     data = profile.to_dict() if hasattr(profile, "to_dict") else (profile or {})
+    if change.section == "summary":
+        return f"Your Career Profile summary: {data.get('summary') or change.evidence_text}"
+    if change.section == "skills":
+        return "Your Career Profile skills: " + ", ".join(data.get("skills") or [])
     proposed = (change.proposed_text or "").lower()
     original = (change.original_text or "").lower()
     for label, key in (("your skills", "skills"), ("your tools", "tools"), ("your certifications", "certifications")):

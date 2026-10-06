@@ -90,6 +90,12 @@ def run_tailoring(
         elif is_docx:
             progress("Bringing your Career Profile into your Word file")
             sync = sync_docx_to_profile(original_bytes, career_profile)
+            if sync.has_blockers:
+                detail = "; ".join(f"{item.field}: {item.reason}" for item in sync.fields if item.blocking)
+                raise TailoringError(
+                    f"Your Word file could not be safely synced: {detail}. "
+                    "Edit the Word file or use a rebuilt layout."
+                )
             original_bytes = sync.docx_bytes
             sync_summary = sync.summary
             set_career_profile(session, career_profile, FACT_VAULT)  # the session keeps the real profile
@@ -224,7 +230,8 @@ def regenerate(session: MutableMapping[str, Any], state: dict) -> None:
                 raise TailoringError(
                     f"Your edit for '{change.original_text[:40]}…' is empty. Write the text or keep the original."
                 )
-            issues = validate_manual_text(change.original_text, manual_text, state["profile"])
+            issues = validate_manual_text(change.original_text, manual_text, state["profile"],
+                                          state.get("requirement_review"))
             if issues:
                 raise TailoringError(
                     f"Your edit for '{change.original_text[:40]}…' adds something we can't verify: " + "; ".join(issues)
@@ -245,10 +252,13 @@ def regenerate(session: MutableMapping[str, Any], state: dict) -> None:
         docx_bytes = result.docx_bytes
         pdf_bytes = result.pdf_bytes
     else:
-        pdf_bytes, tailored_text = regenerate_freeform_artifact(
-            baseline_tailored_text=state["baseline_text"], changes=updated_changes, profile=profile,
-            target_length=state["target_length"], style_hints=state["style_hints"] or {}, company="", role="",
-        )
+        try:
+            pdf_bytes, tailored_text = regenerate_freeform_artifact(
+                baseline_tailored_text=state["baseline_text"], changes=updated_changes, profile=profile,
+                target_length=state["target_length"], style_hints=state["style_hints"] or {}, company="", role="",
+            )
+        except ValueError as exc:
+            raise TailoringError(str(exc)) from exc
         with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as tmp:
             tmp.write(pdf_bytes)
             tmp_path = tmp.name

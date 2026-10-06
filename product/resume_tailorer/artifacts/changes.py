@@ -3,10 +3,14 @@
 from __future__ import annotations
 
 import re
+from dataclasses import replace
 
 from resume_tailorer.analyzers.gap_analyzer import GapItem, GapReport
 from resume_tailorer.diff_generator import BulletChange, DiffGenerator
 from resume_tailorer.models import CareerTruthProfile
+from resume_tailorer.artifacts.freeform_sections import (
+    comparable_content, find_sections, missing_section_anchor, profile_section,
+)
 
 from .models import ChangeCategory, ChangeDisposition, ResumeChange, ValidationStatus
 
@@ -53,7 +57,14 @@ def build_freeform_changes(
     from resume_tailorer.analyzers.requirement_review import introduced_unsupported
 
     diff_generator = DiffGenerator()
-    diff = diff_generator.generate_diff(profile, tailored_text)
+    sections = find_sections(tailored_text)
+    bullet_text = tailored_text
+    for span in sorted(sections.values(), key=lambda item: item.start, reverse=True):
+        bullet_text = bullet_text[:span.start] + bullet_text[span.end:]
+    # Keep the decision-018 global matcher intact, but don't feed section list items
+    # into the work-bullet queue. The full profile is still used in truth checks below.
+    bullet_profile = replace(profile, summary="", skills=[], tools=[]) if sections else profile
+    diff = diff_generator.generate_diff(bullet_profile, bullet_text)
     changes: list[ResumeChange] = []
     for index, change in enumerate(diff.changes):
         similarity = change.similarity
@@ -106,4 +117,39 @@ def build_freeform_changes(
                 disposition=disposition,
             )
         )
+    for name in ("summary", "skills"):
+        if not sections:
+            # An unsectioned text resume has no safe anchor for a section-level decision;
+            # preserve the pre-existing bullet review behavior for that format.
+            continue
+        original = profile_section(profile, name)
+        span = sections.get(name)
+        if span is None:
+            if not original:
+                continue
+            position = missing_section_anchor(tailored_text, name)
+            proposed = ""
+            baseline_span = (position, position)
+        else:
+            proposed = span.text
+            baseline_span = (span.start, span.end)
+        if comparable_content(original, name) == comparable_content(proposed, name):
+            continue
+        old_body = "\n".join(original.splitlines()[1:])
+        new_body = "\n".join(proposed.splitlines()[1:])
+        issues = []
+        if new_body:
+            if old_body:
+                issues.extend(diff_generator.check_semantic_drift(old_body, new_body))
+            issues.extend(diff_generator.check_bullet_pair_fabrication_risk(old_body, new_body, profile))
+            issues.extend(introduced_unsupported(old_body, new_body, review))
+        changes.append(ResumeChange(
+            change_id=f"freeform:{name}:0", section=name, source_index=None,
+            original_text=original, proposed_text=proposed,
+            category=ChangeCategory.REPHRASED if name == "summary" else ChangeCategory.COMPETENCY_CHANGED,
+            reason=" ".join(issues) if issues else f"{name.title()} wording changed",
+            job_requirement="", evidence_source="career_profile", evidence_text=old_body,
+            validation_status=ValidationStatus.FAIL if issues else ValidationStatus.PASS,
+            baseline_span=baseline_span,
+        ))
     return changes

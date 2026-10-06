@@ -40,7 +40,7 @@ function ChangeCard({ change, review, onDecide }: {
   return (
     <Card aria-labelledby={`change-${change.id}`}>
       <p id={`change-${change.id}`} className="text-[14px] font-semibold tracking-wide text-primary uppercase">
-        Review this change · {change.decision_label}
+        {change.section_label} · Review this change · {change.decision_label}
       </p>
       <ol className="mt-3 grid gap-2 text-[15px] md:grid-cols-3">
         <li className="rounded-[var(--radius-control)] bg-canvas p-3"><span className="block text-[13px] text-muted">Job requirement</span>{change.requirement}</li>

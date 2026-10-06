@@ -53,7 +53,23 @@ def apply_dispositions_to_text(
     baseline every time keeps regeneration idempotent regardless of how many
     times a user flips a disposition back and forth."""
     text = baseline_text
+    span_changes = [change for change in changes if change.baseline_span is not None]
+    ordered = sorted(span_changes, key=lambda change: change.baseline_span[0])
+    previous_end = -1
+    for change in ordered:
+        start, end = change.baseline_span
+        if not (0 <= start <= end <= len(baseline_text)) or start < previous_end:
+            raise ValueError(f"Overlapping or invalid reviewed {change.section} spans")
+        if baseline_text[start:end] != change.proposed_text:
+            raise ValueError(f"Could not locate reviewed {change.section} text in this resume")
+        previous_end = end
+    for change in reversed(ordered):
+        start, end = change.baseline_span
+        text = text[:start] + final_text_for_change(change) + text[end:]
+
     for change in changes:
+        if change.baseline_span is not None:
+            continue
         final_text = final_text_for_change(change)
         in_baseline = change.proposed_text
         if not in_baseline:
@@ -177,17 +193,19 @@ def regenerate_freeform_artifact(
 
 
 def validate_manual_text(
-    original_text: str, manual_text: str, profile: CareerTruthProfile
+    original_text: str, manual_text: str, profile: CareerTruthProfile, review=None
 ) -> list[str]:
     """Manual edits must pass the SAME semantic-drift/fabrication/length
     checks an AI-proposed rewrite would (spec 002 section 10) -- reuses
     the existing, already-tested per-pair checks rather than a separate,
     weaker manual-text validator."""
     from resume_tailorer.diff_generator import DiffGenerator
+    from resume_tailorer.analyzers.requirement_review import introduced_unsupported
     from resume_tailorer.utils.length_check import bullet_length_delta
 
     generator = DiffGenerator()
     issues = list(generator.check_semantic_drift(original_text, manual_text))
     issues.extend(generator.check_bullet_pair_fabrication_risk(original_text, manual_text, profile))
+    issues.extend(introduced_unsupported(original_text, manual_text, review))
     issues.extend(bullet_length_delta(original_text, manual_text))
     return issues

@@ -49,6 +49,240 @@ def _texts(docx_bytes):
     return [p.text for p in Document(io.BytesIO(docx_bytes)).paragraphs]
 
 
+def _two_acme_roles() -> bytes:
+    doc = Document(io.BytesIO(_docx()))
+    education = next(p for p in doc.paragraphs if p.text == "EDUCATION")
+    education.insert_paragraph_before("Sales Analyst")
+    education.insert_paragraph_before("Acme Retail | Jan 2020 - Dec 2021")
+    out = io.BytesIO()
+    doc.save(out)
+    return out.getvalue()
+
+
+def test_unique_employer_and_unchanged_dates_identify_a_renamed_title():
+    profile = _profile([A1, A2, A3])
+    profile.work_experience[1].title = "Senior Marketing Analyst"
+    result = sync_docx_to_profile(_docx(), profile)
+    texts = _texts(result.docx_bytes)
+    assert "Senior Marketing Analyst" in texts
+    assert "Marketing Analyst" not in texts
+    assert any(f.field == "work.title" and f.outcome == "updated" for f in result.fields)
+
+
+def test_two_roles_at_one_employer_do_not_guess_a_renamed_title():
+    profile = _profile([A1, A2, A3])
+    profile.work_experience[1].title = "Senior Marketing Analyst"
+    profile.work_experience.append(WorkExperience(
+        employer="Acme Retail", title="Sales Analyst", dates="Jan 2020 - Dec 2021",
+        responsibilities=[], accomplishments=[],
+    ))
+    result = sync_docx_to_profile(_two_acme_roles(), profile)
+    assert result.has_blockers
+    assert any(f.field == "work.title" and "ambiguous" in f.reason.lower() for f in result.fields)
+    assert "Senior Marketing Analyst" not in _texts(result.docx_bytes)
+
+
+def test_summary_skills_and_tools_sync_to_their_existing_sections():
+    doc = Document(io.BytesIO(_docx()))
+    experience = next(p for p in doc.paragraphs if p.text == "EXPERIENCE")
+    experience.insert_paragraph_before("Old summary about retail reporting")
+    doc.add_paragraph("SKILLS")
+    doc.add_paragraph("Skills: SQL")
+    doc.add_paragraph("Tools: Excel")
+    out = io.BytesIO()
+    doc.save(out)
+    profile = _profile([A1, A2, A3])
+    profile.summary = "Marketing analyst focused on retail reporting"
+    profile.skills = ["SQL", "Tableau"]
+    profile.tools = ["Excel", "Power BI"]
+    result = sync_docx_to_profile(out.getvalue(), profile)
+    texts = _texts(result.docx_bytes)
+    assert profile.summary in texts
+    assert "Skills: SQL, Tableau" in texts
+    assert "Tools: Excel, Power BI" in texts
+    assert texts.index("EXPERIENCE") < texts.index("EDUCATION") < texts.index("SKILLS")
+
+
+def test_missing_skills_section_reports_unplaced_fact_without_inserting_it():
+    profile = _profile([A1, A2, A3])
+    profile.skills = ["Tableau"]
+    result = sync_docx_to_profile(_docx(), profile)
+    assert any(f.field == "skills" and f.outcome == "unplaced" for f in result.fields)
+    assert "Tableau" not in " ".join(_texts(result.docx_bytes))
+
+
+def test_unique_header_email_syncs_in_place():
+    doc = Document(io.BytesIO(_docx()))
+    doc.paragraphs[1].text = ""
+    doc.sections[0].header.paragraphs[0].text = "riley.old@example.com"
+    out = io.BytesIO()
+    doc.save(out)
+    profile = _profile([A1, A2, A3])
+    profile.contact_info["email"] = "riley.new@example.com"
+    result = sync_docx_to_profile(out.getvalue(), profile)
+    changed = Document(io.BytesIO(result.docx_bytes))
+    assert changed.sections[0].header.paragraphs[0].text == "riley.new@example.com"
+    assert any(f.field == "contact.email" and f.outcome == "updated" for f in result.fields)
+
+
+def test_education_degree_and_year_sync_without_losing_field():
+    profile = _profile([A1, A2, A3])
+    profile.education[0].degree = "Bachelor of Science"
+    profile.education[0].year = 2020
+    result = sync_docx_to_profile(_docx(), profile)
+    assert "Bachelor of Science Economics, State University, 2020" in _texts(result.docx_bytes)
+
+
+def test_duplicate_institution_does_not_swap_education_entries():
+    doc = Document(io.BytesIO(_docx()))
+    doc.add_paragraph("MS Marketing, State University, 2021")
+    out = io.BytesIO()
+    doc.save(out)
+    profile = _profile([A1, A2, A3])
+    profile.education = [
+        EducationEntry("Bachelor of Science", "Economics", "State University", 2020),
+        EducationEntry("Master of Science", "Marketing", "State University", 2022),
+    ]
+    result = sync_docx_to_profile(out.getvalue(), profile)
+    assert result.has_blockers
+    assert "BS Economics, State University, 2019" in _texts(result.docx_bytes)
+    assert "MS Marketing, State University, 2021" in _texts(result.docx_bytes)
+
+
+def test_missing_certifications_section_is_reported_without_insertion():
+    profile = _profile([A1, A2, A3])
+    profile.certifications = ["PMP"]
+    result = sync_docx_to_profile(_docx(), profile)
+    assert any(f.field == "certifications" and f.outcome == "unplaced" for f in result.fields)
+    assert "PMP" not in " ".join(_texts(result.docx_bytes))
+
+
+def test_two_education_entries_at_one_school_match_by_degree():
+    doc = Document(io.BytesIO(_docx()))
+    doc.add_paragraph("MS Marketing, State University, 2021")
+    out = io.BytesIO()
+    doc.save(out)
+    profile = _profile([A1, A2, A3])
+    profile.education.append(EducationEntry("MS", "Marketing", "State University", 2022))
+    result = sync_docx_to_profile(out.getvalue(), profile)
+    assert not result.has_blockers
+    assert "BS Economics, State University, 2019" in _texts(result.docx_bytes)
+    assert "MS Marketing, State University, 2022" in _texts(result.docx_bytes)
+
+
+def test_job_dates_change_without_discarding_existing_location():
+    doc = Document(io.BytesIO(_docx()))
+    next(p for p in doc.paragraphs if p.text == "Acme Retail | Jan 2022 - Present").text = (
+        "Acme Retail | Denver, CO | Jan 2022 - Present"
+    )
+    out = io.BytesIO()
+    doc.save(out)
+    profile = _profile([A1, A2, A3])
+    profile.work_experience[1].dates = "Jan 2023 - Present"
+    profile.work_experience[1].location = "Denver, CO"
+    result = sync_docx_to_profile(out.getvalue(), profile)
+    assert "Acme Retail | Denver, CO | Jan 2023 - Present" in _texts(result.docx_bytes)
+
+
+def test_changed_employer_with_same_title_is_reported_as_blocking():
+    profile = _profile([A1, A2, A3])
+    profile.work_experience[1].employer = "Cedar Retail"
+    result = sync_docx_to_profile(_docx(), profile)
+    assert result.has_blockers
+    assert any(f.field == "work.employer" for f in result.fields)
+
+
+def test_single_skills_line_under_skills_heading_is_updated_in_place():
+    doc = Document(io.BytesIO(_docx()))
+    doc.add_paragraph("SKILLS")
+    old = doc.add_paragraph("SQL, Excel")
+    old.style = "List Paragraph"
+    out = io.BytesIO()
+    doc.save(out)
+    profile = _profile([A1, A2, A3])
+    profile.skills = ["SQL", "Tableau"]
+    result = sync_docx_to_profile(out.getvalue(), profile)
+    changed = Document(io.BytesIO(result.docx_bytes))
+    line = next(p for p in changed.paragraphs if p.text == "SQL, Tableau")
+    assert line.style.name == "List Paragraph"
+
+
+def test_contact_location_line_is_updated_without_moving_it():
+    doc = Document(io.BytesIO(_docx()))
+    doc.paragraphs[2].insert_paragraph_before("Denver, CO")
+    out = io.BytesIO()
+    doc.save(out)
+    profile = _profile([A1, A2, A3])
+    profile.contact_info["location"] = "Boulder, CO"
+    result = sync_docx_to_profile(out.getvalue(), profile)
+    texts = _texts(result.docx_bytes)
+    assert "Boulder, CO" in texts
+    assert "Denver, CO" not in texts
+    assert any(f.field == "contact.location" and f.outcome == "updated" for f in result.fields)
+
+
+def test_location_in_combined_contact_line_is_replaced_without_losing_email_or_phone():
+    doc = Document(io.BytesIO(_docx()))
+    doc.paragraphs[1].text = "riley@example.com | 555-0100 | Denver, CO"
+    out = io.BytesIO()
+    doc.save(out)
+    profile = _profile([A1, A2, A3])
+    profile.contact_info["location"] = "Boulder, CO"
+    result = sync_docx_to_profile(out.getvalue(), profile)
+    assert "riley@example.com | 555-0100 | Boulder, CO" in _texts(result.docx_bytes)
+    assert not result.has_blockers
+
+
+def test_existing_certifications_line_is_updated_not_moved():
+    doc = Document(io.BytesIO(_docx()))
+    doc.add_paragraph("CERTIFICATIONS")
+    doc.add_paragraph("Old Certificate")
+    out = io.BytesIO()
+    doc.save(out)
+    profile = _profile([A1, A2, A3])
+    profile.certifications = ["PMP"]
+    result = sync_docx_to_profile(out.getvalue(), profile)
+    assert not result.has_blockers
+    assert _texts(result.docx_bytes)[-2:] == ["CERTIFICATIONS", "PMP"]
+
+
+def test_core_competencies_heading_is_a_safe_skills_target():
+    doc = Document(io.BytesIO(_docx()))
+    doc.add_paragraph("CORE COMPETENCIES")
+    doc.add_paragraph("SQL, Excel")
+    out = io.BytesIO()
+    doc.save(out)
+    profile = _profile([A1, A2, A3])
+    profile.skills = ["SQL", "Tableau"]
+    result = sync_docx_to_profile(out.getvalue(), profile)
+    assert "SQL, Tableau" in _texts(result.docx_bytes)
+
+
+def test_ambiguous_stale_role_blocks_tailoring_before_the_model(tmp_path):
+    import pytest
+
+    from resume_tailorer.tailoring_service import TailoringError, run_tailoring
+
+    profile = _profile([A1, A2, A3])
+    profile.work_experience[1].title = "Senior Marketing Analyst"
+    profile.work_experience.append(WorkExperience(
+        employer="Acme Retail", title="Sales Analyst", dates="Jan 2020 - Dec 2021",
+        responsibilities=[], accomplishments=[],
+    ))
+
+    class FailIfCalled:
+        def complete(self, system, user, max_tokens=2000):
+            raise AssertionError("Blocked Word runs must not call the model")
+
+    session = {"artifacts_dir": str(tmp_path)}
+    with pytest.raises(TailoringError, match="Word file"):
+        run_tailoring(session, original_bytes=_two_acme_roles(), filename="riley.docx",
+                      job_description="Marketing analyst with SQL reporting experience",
+                      pending={"job_id": "j1", "title": "Analyst", "company": "Acme"},
+                      llm=FailIfCalled(), career_profile=profile)
+    assert not session.get("active_handoff")
+
+
 def test_an_unchanged_profile_leaves_the_file_byte_for_byte():
     original = _docx()
     result = sync_docx_to_profile(original, _profile([A1, A2, A3]))

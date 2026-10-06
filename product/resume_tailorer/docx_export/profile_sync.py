@@ -2,15 +2,17 @@
 
 Tailoring edits the person's own Word file so its layout is kept (decision 006). The Career
 Profile is where they fix and add facts, so without this step those edits never reached a
-tailored resume. This updates a copy of the file to match the profile:
+tailored resume. This updates a copy of the file to match identifiable profile facts:
 
-- roles are matched by employer and title, never by position;
+- roles are matched by employer/title and a safe date anchor, never by position;
 - for a matched role, the file's bullet order is kept: an unchanged bullet is left byte-for-byte,
   an edited one is rewritten in place (same paragraph, same formatting), a bullet the profile no
   longer has is removed, and a new profile bullet is added after the role's last bullet with that
   bullet's style and numbering;
 - a profile role the file doesn't have can't be placed in the original layout, and a file role
   the profile doesn't have is left as it is. Both are reported.
+- contact, summary, title/date/location, skills/tools, education and certification fields are
+  updated only at structurally identifiable paragraphs; unresolved contradictions are reported.
 
 It also returns the profile reordered to the file's role order, because the bullet tailorer looks
 roles up by their position in the file.
@@ -26,6 +28,7 @@ from dataclasses import dataclass, field, replace
 
 from docx import Document
 
+from resume_tailorer.docx_export.profile_fields import SyncField, sync_education_and_certifications, sync_simple_fields
 from resume_tailorer.models import CareerTruthProfile, WorkExperience
 from resume_tailorer.parsers.bullets import strip_typed_bullet, typed_bullet_prefix
 from resume_tailorer.parsers.docx_structure import extract_docx_structure
@@ -42,6 +45,11 @@ class SyncResult:
     removed: int = 0
     unmatched_profile_roles: list[str] = field(default_factory=list)
     unmatched_file_roles: list[str] = field(default_factory=list)
+    fields: list[SyncField] = field(default_factory=list)
+
+    @property
+    def has_blockers(self) -> bool:
+        return any(item.blocking for item in self.fields)
 
     @property
     def summary(self) -> str:
@@ -55,6 +63,15 @@ class SyncResult:
         if self.unmatched_file_roles:
             parts.append("In your Word file but not your Career Profile (left as it is): "
                          + "; ".join(self.unmatched_file_roles) + ".")
+        if self.fields:
+            updated = [item.field for item in self.fields if item.outcome == "updated"]
+            unplaced = [item for item in self.fields if item.outcome == "unplaced"]
+            if updated:
+                parts.append("Updated profile fields in your Word file: " + ", ".join(updated) + ".")
+            if unplaced:
+                parts.append("Could not safely sync: " + "; ".join(
+                    f"{item.field} ({item.reason})" for item in unplaced
+                ) + ".")
         return " ".join(parts)
 
 
@@ -66,17 +83,6 @@ def _role_label(job: WorkExperience) -> str:
     return " at ".join(p for p in (job.title, job.employer) if p) or "A role"
 
 
-def _match_score(job: WorkExperience, block_text: str) -> float:
-    text = _norm(block_text)
-    employer, title = _norm(job.employer), _norm(job.title)
-    score = 0.0
-    if employer and employer in text:
-        score += 2
-    if title and title in text:
-        score += 1
-    return score
-
-
 def _bullets(job: WorkExperience) -> list[str]:
     return [b.strip() for b in [*job.responsibilities, *job.accomplishments] if b and b.strip()]
 
@@ -86,23 +92,56 @@ def sync_docx_to_profile(docx_bytes: bytes, profile: CareerTruthProfile) -> Sync
     paragraphs = doc.paragraphs
     structure = extract_docx_structure(doc)
 
-    # Match each file role to the profile role with the best employer/title match (one to one).
+    # Match each file role to the profile role with exact employer/title identity first.
     block_texts = []
     for block in structure.jobs:
         parts = [paragraphs[block.anchor_index].text]
         if block.title_index is not None:
             parts.append(paragraphs[block.title_index].text)
         block_texts.append(" ".join(parts))
-    pairs = sorted(((_match_score(job, text), b, j) for b, text in enumerate(block_texts)
-                    for j, job in enumerate(profile.work_experience)), reverse=True)
+    employer_pairs: dict[int, list[int]] = {}
+    for b, block in enumerate(structure.jobs):
+        anchor = _norm(paragraphs[block.anchor_index].text.split("|")[0])
+        employer_pairs[b] = [j for j, job in enumerate(profile.work_experience)
+                             if _norm(job.employer) == anchor]
     block_to_job: dict[int, int] = {}
     used_jobs: set[int] = set()
-    for score, b, j in pairs:
-        if score >= 2 and b not in block_to_job and j not in used_jobs:  # the employer must match
-            block_to_job[b] = j
-            used_jobs.add(j)
+    for b, block in enumerate(structure.jobs):
+        title = _norm(paragraphs[block.title_index].text) if block.title_index is not None else ""
+        exact = [j for j in employer_pairs[b] if _norm(profile.work_experience[j].title) == title]
+        if len(exact) == 1 and exact[0] not in used_jobs:
+            block_to_job[b] = exact[0]
+            used_jobs.add(exact[0])
 
     result = SyncResult(docx_bytes=docx_bytes, aligned_profile=profile)
+    for b, block in enumerate(structure.jobs):
+        if b in block_to_job:
+            continue
+        if not employer_pairs[b]:
+            title = _norm(paragraphs[block.title_index].text) if block.title_index is not None else ""
+            dates = _norm(paragraphs[block.anchor_index].text.rsplit("|", 1)[-1])
+            same_role = [job for job in profile.work_experience
+                         if title and _norm(job.title) == title and dates == _norm(job.dates)]
+            if len(same_role) == 1:
+                result.fields.append(SyncField("work.employer", block_texts[b], "unplaced",
+                                               "employer differs for an otherwise matching role", True))
+            continue
+        candidates = [j for j in employer_pairs[b] if j not in used_jobs]
+        same_employer_blocks = [i for i, values in employer_pairs.items()
+                                if set(values) & set(employer_pairs[b])]
+        if len(candidates) == 1 and len(same_employer_blocks) == 1:
+            j = candidates[0]
+            anchor_text = paragraphs[block.anchor_index].text
+            file_dates = _norm(anchor_text.rsplit("|", 1)[1]) if "|" in anchor_text else ""
+            if file_dates and file_dates == _norm(profile.work_experience[j].dates):
+                block_to_job[b] = j
+                used_jobs.add(j)
+                continue
+            reason = "title and dates both differ; the role identity is uncertain"
+        else:
+            reason = "ambiguous roles at the same employer"
+        result.fields.append(SyncField("work.title", block_texts[b], "unplaced", reason, True))
+
     result.unmatched_profile_roles = [_role_label(job) for j, job in enumerate(profile.work_experience)
                                       if j not in used_jobs]
     result.unmatched_file_roles = [" ".join(block_texts[b].split())[:80] for b in range(len(structure.jobs))
@@ -112,6 +151,24 @@ def sync_docx_to_profile(docx_bytes: bytes, profile: CareerTruthProfile) -> Sync
     for b in sorted(block_to_job, reverse=True):
         block = structure.jobs[b]
         job = profile.work_experience[block_to_job[b]]
+        if block.title_index is not None:
+            title_para = paragraphs[block.title_index]
+            if _norm(title_para.text) != _norm(job.title):
+                _set_text(title_para, job.title)
+                result.fields.append(SyncField("work.title", job.title, "updated"))
+        anchor_para = paragraphs[block.anchor_index]
+        anchor_parts = [part.strip() for part in anchor_para.text.split("|")]
+        if len(anchor_parts) >= 2 and _norm(anchor_parts[-1]) != _norm(job.dates):
+            anchor_parts[-1] = job.dates
+            _set_text(anchor_para, " | ".join(anchor_parts))
+            result.fields.append(SyncField("work.dates", job.dates, "updated"))
+        if job.location and len(anchor_parts) >= 3 and _norm(anchor_parts[-2]) != _norm(job.location):
+            anchor_parts[-2] = job.location
+            _set_text(anchor_para, " | ".join(anchor_parts))
+            result.fields.append(SyncField("work.location", job.location, "updated"))
+        elif job.location and len(anchor_parts) < 3:
+            result.fields.append(SyncField("work.location", job.location, "unplaced",
+                                           "location has no identifiable slot in this role"))
         file_paras = [paragraphs[i] for i in block.bullet_paragraph_indices]
         wanted = _bullets(job)
         _sync_role(file_paras, wanted, result)
@@ -126,7 +183,10 @@ def sync_docx_to_profile(docx_bytes: bytes, profile: CareerTruthProfile) -> Sync
     aligned = replace(profile, work_experience=aligned_jobs)
     result.aligned_profile = aligned
 
-    if result.changed or result.added or result.removed:
+    result.fields.extend(sync_simple_fields(doc, profile))
+    result.fields.extend(sync_education_and_certifications(doc, profile))
+
+    if result.changed or result.added or result.removed or any(f.outcome == "updated" for f in result.fields):
         out = io.BytesIO()
         doc.save(out)
         result.docx_bytes = out.getvalue()
