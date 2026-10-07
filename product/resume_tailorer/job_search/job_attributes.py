@@ -8,7 +8,7 @@ job is kept by a filter rather than hidden -- except where noted.
 """
 
 import re
-from typing import Dict, Iterable, List, Set
+from typing import Dict, Iterable, List, Optional, Set
 
 from resume_tailorer.job_search.models import JobPosting, SearchGoals
 
@@ -129,8 +129,10 @@ _TYPE_RULES = [
 ]
 
 
-def industry_for(job: JobPosting) -> str:
-    return _INDUSTRY_BY_COMPANY.get((job.company or "").strip().lower(), NOT_SPECIFIED)
+def industry_for(job: JobPosting, labels: Optional[Dict[str, str]] = None) -> str:
+    """The curated directory's industry, else the one the person chose for a board they added."""
+    company = (job.company or "").strip().lower()
+    return _INDUSTRY_BY_COMPANY.get(company) or (labels or {}).get(company) or NOT_SPECIFIED
 
 
 def experience_level_for(job: JobPosting) -> str:
@@ -181,7 +183,8 @@ def selected_values(raw) -> Set[str]:
     return values
 
 
-def apply_goal_filters(jobs: List[JobPosting], goals: SearchGoals) -> List[JobPosting]:
+def apply_goal_filters(jobs: List[JobPosting], goals: SearchGoals,
+                       industry_labels: Optional[Dict[str, str]] = None) -> List[JobPosting]:
     industries = selected_values(goals.industries)
     levels = selected_values(goals.experience_level)
     job_types = selected_values(goals.employment_type)
@@ -190,7 +193,7 @@ def apply_goal_filters(jobs: List[JobPosting], goals: SearchGoals) -> List[JobPo
     for job in jobs:
         if goals.job_title and not title_matches(goals.job_title, job.title):
             continue
-        if industries and not _passes_industry(industry_for(job), industries):
+        if industries and not _passes_industry(industry_for(job, industry_labels), industries):
             continue
         if levels and not _passes_level(experience_level_for(job), levels):
             continue

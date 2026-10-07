@@ -237,9 +237,17 @@ class SearchRunSummary:
     save_failed: int = 0
     save_error: Optional[str] = None
     status: SearchRunStatus = SearchRunStatus.OK
+    # Spec 013: boards actually searched, how many didn't answer, and each added board's outcome
+    # ({"lever:northwind": {"status": "ok" | "failed" | "not_found", "matched": 3}}).
+    boards_searched: int = 0
+    boards_failed: int = 0
+    custom_board_results: Dict[str, Dict[str, Any]] = field(default_factory=dict)
 
     def to_dict(self) -> Dict[str, Any]:
         return {
+            "boards_searched": self.boards_searched,
+            "boards_failed": self.boards_failed,
+            "custom_board_results": dict(self.custom_board_results),
             "started_at": self.started_at.isoformat(),
             "finished_at": self.finished_at.isoformat(),
             "providers": [p.to_dict() for p in self.providers],

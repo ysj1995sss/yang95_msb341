@@ -45,6 +45,8 @@ class SmartRecruitersScraper(BaseScraper):
         super().__init__(api_key=api_key)
         self.data_source = None
         self.coverage_note = None
+        self._extra: Dict[str, Tuple[str, str]] = {}
+        self.board_results: Dict[str, dict] = {}
 
     def get_platform_name(self) -> str:
         return "smartrecruiters"
@@ -52,14 +54,25 @@ class SmartRecruitersScraper(BaseScraper):
     def board_tokens(self) -> List[str]:
         return list(self.BOARDS)
 
+    def search_tokens(self, include_curated: bool = True) -> List[str]:
+        curated = self.board_tokens() if include_curated else []
+        known = {t.lower() for t in self.board_tokens()}
+        return [*curated, *(t for t in self._extra if t.lower() not in known)]
+
     def company_name(self, token: str) -> str:
+        if token in self._extra:
+            return self._extra[token][0]
         return self.BOARDS.get(token, (token,))[0]
 
-    def scrape(self, goals: SearchGoals) -> List[JobPosting]:
+    def scrape(self, goals: SearchGoals, extra_boards: Optional[Dict[str, Tuple[str, str]]] = None,
+               include_curated: bool = True) -> List[JobPosting]:
+        """`extra_boards`: {company id: (name, industry)} a person added (spec 013)."""
         self.data_source = None
         self.coverage_note = None
+        self._extra = dict(extra_boards or {})
+        self.board_results = {}
         try:
-            return self._scrape_real(goals)
+            return self._scrape_real(goals, include_curated)
         except Exception as error:
             self._handle_error(error, "scrape")
             self.data_source = "unavailable"
@@ -95,8 +108,11 @@ class SmartRecruitersScraper(BaseScraper):
             return data
         return None
 
-    def _scrape_real(self, goals: SearchGoals) -> List[JobPosting]:
-        tokens = self.board_tokens()
+    def _scrape_real(self, goals: SearchGoals, include_curated: bool = True) -> List[JobPosting]:
+        tokens = self.search_tokens(include_curated)
+        if not tokens:
+            self.data_source = "real"
+            return []
         query = (goals.job_title or "").strip()
         with ThreadPoolExecutor(max_workers=self.MAX_PARALLEL) as pool:
             listings = list(pool.map(lambda token: self._list(token, query), tokens))
@@ -105,10 +121,12 @@ class SmartRecruitersScraper(BaseScraper):
         answered = 0
         for token, items in zip(tokens, listings):
             if items is None:
+                self.board_results[token] = {"status": "failed", "matched": 0}
                 continue
             answered += 1
             matches = [item for item in items
                        if item.get("id") and (not query or title_matches(query, str(item.get("name") or "")))]
+            self.board_results[token] = {"status": "ok", "matched": len(matches)}
             wanted += [(token, str(item["id"])) for item in matches[: self.MAX_DETAILS_PER_BOARD]]
 
         pool = ThreadPoolExecutor(max_workers=self.MAX_PARALLEL)
@@ -158,7 +176,7 @@ class SmartRecruitersScraper(BaseScraper):
             work_mode=work_mode,
             url=str(url),
             ats_platform="SmartRecruiters",
-            raw_json={"id": job_id, "company": token},
+            raw_json={"id": job_id, "company": token, "board": token},
             employment_type=normalize_job_type((raw_job.get("typeOfEmployment") or {}).get("label")),
         )
 

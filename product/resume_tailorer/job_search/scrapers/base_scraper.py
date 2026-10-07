@@ -87,8 +87,12 @@ class BaseScraper(ABC):
         """
         try:
             response = requests.get(url, timeout=timeout)
+            self._note_status(url, response.status_code)
             if response.status_code != 200:
                 return None
             return response.json()
         except Exception:
             return None
+
+    def _note_status(self, url: str, status: int) -> None:
+        """Hook: board scrapers remember which boards answered 404 (spec 013)."""

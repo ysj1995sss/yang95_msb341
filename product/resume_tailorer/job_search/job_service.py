@@ -6,7 +6,7 @@ Coordinates: user goals → scraper selection → scraping → deduplication →
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import nullcontext
 from datetime import datetime
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Sequence, Tuple
 from resume_tailorer.job_search.models import (
     SearchGoals,
     JobPosting,
@@ -111,7 +111,8 @@ class JobService:
     def search_and_store(
         self,
         goals: SearchGoals,
-        sources: List[JobSource]
+        sources: List[JobSource],
+        custom_boards: Sequence[dict] = (),
     ) -> SearchRunSummary:
         """Search for jobs and store in database.
 
@@ -131,21 +132,43 @@ class JobService:
             goals: SearchGoals object with search criteria
             sources: List of JobSource enum values to scrape
 
+            custom_boards: boards the person added (spec 013, `custom_boards.boards_in`). Each is
+                searched on its platform even when that platform's curated source is unticked.
+
         Returns:
             SearchRunSummary with per-provider outcomes and totals
         """
+        from resume_tailorer.job_search.custom_boards import board_id, extra_boards
+
         started = datetime.now()
         self._validate_goals(goals)
 
         all_postings: List[JobPosting] = []
         provider_results: List[ProviderRunResult] = []
 
+        extras = extra_boards(custom_boards)
+        chosen = [getattr(s, "value", s) for s in sources]
+        # (source, search its curated boards?, boards the person added on it)
+        plan = [(src, True, extras.get(key) or {}) for src, key in zip(sources, chosen)]
+        plan += [(JobSource(platform), False, boards) for platform, boards in extras.items() if platform not in chosen]
+
         # Sources are independent, so they are searched in parallel; results keep request order.
-        with ThreadPoolExecutor(max_workers=max(1, len(sources))) as pool:
-            outcomes = list(pool.map(lambda src: self._run_provider(src, goals), sources))
-        for result, batch in outcomes:
+        with ThreadPoolExecutor(max_workers=max(1, len(plan))) as pool:
+            outcomes = list(pool.map(lambda item: self._run_provider(item[0], goals, item[2], item[1]), plan))
+        boards_searched = boards_failed = 0
+        custom_results: Dict[str, Dict[str, Any]] = {}
+        for (src, _, added), (result, batch) in zip(plan, outcomes):
             provider_results.append(result)
             all_postings.extend(batch)
+            if result.status == ProviderRunStatus.SKIPPED:
+                continue
+            board_results = getattr(self._get_scraper(src), "board_results", None)
+            board_results = board_results if isinstance(board_results, dict) else {}
+            boards_searched += len(board_results)
+            boards_failed += sum(1 for r in board_results.values() if r.get("status") != "ok")
+            for token in added:
+                custom_results[board_id(getattr(src, "value", src), token)] = dict(
+                    board_results.get(token) or {"status": "failed", "matched": 0})
 
         deduplicated_postings = self.deduplicator.deduplicate(all_postings)
         total_after_dedupe = len(deduplicated_postings)
@@ -189,6 +212,9 @@ class JobService:
             save_failed=save_failed,
             save_error=save_error,
             status=run_status,
+            boards_searched=boards_searched,
+            boards_failed=boards_failed,
+            custom_board_results=custom_results,
         )
         self.last_search_run = summary
         return summary
@@ -206,7 +232,8 @@ class JobService:
         return warm_board_cache([s for s in scrapers if isinstance(s, BoardApiScraper)])
 
     def _run_provider(
-        self, source: JobSource, goals: SearchGoals
+        self, source: JobSource, goals: SearchGoals, extra_boards: Optional[dict] = None,
+        include_curated: bool = True,
     ) -> Tuple[ProviderRunResult, List[JobPosting]]:
         """Search one source in isolation: its failure never affects the others."""
         scraper = self._get_scraper(source)
@@ -216,7 +243,11 @@ class JobService:
                 error="No scraper configured for this source",
             ), []
         try:
-            batch = list(scraper.scrape(goals) or [])
+            if extra_boards or not include_curated:
+                batch = list(scraper.scrape(goals, extra_boards=extra_boards or {},
+                                            include_curated=include_curated) or [])
+            else:
+                batch = list(scraper.scrape(goals) or [])
             if getattr(scraper, "data_source", None) == "unavailable":
                 raise ConnectionError("Source could not be reached")
         except Exception as exc:
@@ -231,7 +262,8 @@ class JobService:
         ), batch
 
     def get_available_jobs(
-        self, goals: SearchGoals, seen_since: Optional[datetime] = None
+        self, goals: SearchGoals, seen_since: Optional[datetime] = None,
+        industry_labels: Optional[Dict[str, str]] = None,
     ) -> List[JobPosting]:
         """Retrieve jobs from database matching search goals.
 
@@ -243,7 +275,8 @@ class JobService:
         Returns:
             List of JobPosting objects matching the goals
         """
-        jobs = apply_goal_filters(self.db.search_jobs(goals, seen_since=seen_since), goals)
+        jobs = apply_goal_filters(self.db.search_jobs(goals, seen_since=seen_since), goals,
+                                  industry_labels=industry_labels)
 
         # Sort by posted_date descending (most recent first)
         jobs = sort_jobs(jobs, sort_by="posted_date", sort_dir="desc")

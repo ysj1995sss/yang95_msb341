@@ -47,6 +47,9 @@ class BoardIndex:
 _SHARED_CACHE: Dict[str, Tuple[float, object]] = {}
 _IN_FLIGHT: Dict[str, threading.Event] = {}
 _SHARED_LOCK = threading.Lock()
+# Board URLs whose last fetch was a 404, so a search can say "not found" rather than
+# "didn't respond" for a board someone added (spec 013). Never cached as a board.
+_NOT_FOUND: set = set()
 _last_warm = float("-inf")
 
 
@@ -55,6 +58,7 @@ def clear_board_cache() -> None:
     with _SHARED_LOCK:
         _SHARED_CACHE.clear()
         _IN_FLIGHT.clear()
+        _NOT_FOUND.clear()
         _last_warm = float("-inf")
 
 
@@ -171,9 +175,18 @@ class BoardApiScraper(BaseScraper):
         self.coverage_note = None
         self._board_cache = _SHARED_CACHE
         self._cache_lock = _SHARED_LOCK
+        # Per search (spec 013): the boards a person added, and how each board did.
+        self._extra: Dict[str, Tuple[str, str]] = {}
+        self.board_results: Dict[str, dict] = {}
 
     def board_tokens(self) -> List[str]:
         return list(self.BOARDS)
+
+    def search_tokens(self, include_curated: bool = True) -> List[str]:
+        """Curated boards (unless switched off) plus added boards that aren't curated."""
+        curated = self.board_tokens() if include_curated else []
+        known = {t.lower() for t in self.board_tokens()}
+        return [*curated, *(t for t in self._extra if t.lower() not in known)]
 
     def board_url(self, token: str) -> str:
         raise NotImplementedError
@@ -186,14 +199,21 @@ class BoardApiScraper(BaseScraper):
         raise NotImplementedError
 
     def company_name(self, token: str) -> str:
+        if token in self._extra:
+            return self._extra[token][0]
         return self.BOARDS.get(token, (token.replace("-", " ").replace("_", " ").title(),))[0]
 
-    def scrape(self, goals: SearchGoals) -> List[JobPosting]:
-        """Real postings whose titles match the goal title."""
+    def scrape(self, goals: SearchGoals, extra_boards: Optional[Dict[str, Tuple[str, str]]] = None,
+               include_curated: bool = True) -> List[JobPosting]:
+        """Real postings whose titles match the goal title.
+
+        `extra_boards`: {token: (company name, industry)} a person added (spec 013)."""
         self.data_source = None
         self.coverage_note = None
+        self._extra = dict(extra_boards or {})
+        self.board_results = {}
         try:
-            return self._scrape_real(goals)
+            return self._scrape_real(goals, include_curated)
         except Exception as error:
             self._handle_error(error, "scrape")
             self.data_source = "unavailable"
@@ -202,6 +222,13 @@ class BoardApiScraper(BaseScraper):
     def _fetch_board(self, token: str):
         """The board's raw response, straight from the network (no cache)."""
         return self._make_get_request(self.board_url(token), timeout=self.REQUEST_TIMEOUT)
+
+    def _note_status(self, url: str, status: int) -> None:
+        with self._cache_lock:
+            if status == 404:
+                _NOT_FOUND.add(url)
+            else:
+                _NOT_FOUND.discard(url)
 
     def _index_for(self, token: str) -> Optional[BoardIndex]:
         data = self._fetch_board(token)
@@ -238,8 +265,11 @@ class BoardApiScraper(BaseScraper):
             if event is not None:
                 event.set()
 
-    def _scrape_real(self, goals: SearchGoals) -> List[JobPosting]:
-        tokens = self.board_tokens()
+    def _scrape_real(self, goals: SearchGoals, include_curated: bool = True) -> List[JobPosting]:
+        tokens = self.search_tokens(include_curated)
+        if not tokens:
+            self.data_source = "real"
+            return []
         with ThreadPoolExecutor(max_workers=self.MAX_PARALLEL_BOARDS) as pool:
             indexes = list(pool.map(self._board_index, tokens))
 
@@ -247,8 +277,12 @@ class BoardApiScraper(BaseScraper):
         boards_answered = 0
         for token, index in zip(tokens, indexes):
             if index is None:
+                with self._cache_lock:
+                    missing = self.board_url(token) in _NOT_FOUND
+                self.board_results[token] = {"status": "not_found" if missing else "failed", "matched": 0}
                 continue
             boards_answered += 1
+            self.board_results[token] = {"status": "ok", "matched": 0}
             # Titles first: mapping cleans the full HTML description, and boards list
             # thousands of other roles.
             wanted = [i for i, title in enumerate(index.titles)
@@ -262,7 +296,10 @@ class BoardApiScraper(BaseScraper):
                     continue
                 job = self.map_job(raw_job, token)
                 if job is not None:
+                    if isinstance(job.raw_json, dict):
+                        job.raw_json["board"] = token  # which board it came from (spec 013)
                     all_jobs.append(job)
+                    self.board_results[token]["matched"] += 1
 
         self.data_source = "real" if boards_answered else "unavailable"
         missed = len(tokens) - boards_answered
