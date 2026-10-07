@@ -1,7 +1,7 @@
 """Usage limits per person (decision 030): tailoring spends the model key, searches load every
 job board, imports parse files. Counts live in the user's folder, so they hold across restarts.
-Limits come from settings (TAILOR_RUNS_PER_DAY, SEARCHES_PER_HOUR, IMPORTS_PER_DAY); 0 turns a
-limit off."""
+Limits come from settings (TAILOR_RUNS_PER_DAY, SEARCHES_PER_HOUR, IMPORTS_PER_DAY,
+BOARD_CHECKS_PER_DAY); 0 turns a limit off."""
 
 from __future__ import annotations
 
@@ -14,14 +14,15 @@ from fastapi import HTTPException
 from app.config import get_settings
 
 _LOCK = threading.Lock()
-WINDOWS = {"tailor": 24 * 3600, "search": 3600, "import": 24 * 3600}
-WORDS = {"tailor": ("tailoring runs", "today"), "search": ("searches", "this hour"), "import": ("resume imports", "today")}
+WINDOWS = {"tailor": 24 * 3600, "search": 3600, "import": 24 * 3600, "boards": 24 * 3600}
+WORDS = {"tailor": ("tailoring runs", "today"), "search": ("searches", "this hour"), "import": ("resume imports", "today"),
+         "boards": ("career-board checks", "today")}
 
 
 def _limit(kind: str) -> int:
     settings = get_settings()
     return {"tailor": settings.tailor_runs_per_day, "search": settings.searches_per_hour,
-            "import": settings.imports_per_day}[kind]
+            "import": settings.imports_per_day, "boards": settings.board_checks_per_day}[kind]
 
 
 def use(owner_id: str, kind: str, now: float | None = None) -> None:

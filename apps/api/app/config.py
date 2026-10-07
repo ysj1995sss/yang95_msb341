@@ -34,6 +34,8 @@ class Settings(BaseSettings):
     tailor_runs_per_day: int = 15
     searches_per_hour: int = 30
     imports_per_day: int = 20
+    # Spec 013: checks of a pasted company career board with its platform, per day.
+    board_checks_per_day: int = 30
     # Optional: a Slack or Discord incoming-webhook address for server error alerts (app/alerts.py).
     error_webhook_url: str = ""
 

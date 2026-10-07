@@ -16,7 +16,6 @@ from resume_tailorer.job_search.board_links import (
     BoardRef,
     LinkProblem,
     Verification,
-    http_fetch,
     parse_board_link,
     verify_board,
 )
@@ -75,7 +74,7 @@ def precheck(record: dict, ref: BoardRef) -> Optional[AddResult]:
 
 
 def add_board(record: dict, link: str, *, name: str = "", industry: str = "",
-              fetch=http_fetch, now: Optional[datetime] = None) -> AddResult:
+              fetch=None, now: Optional[datetime] = None) -> AddResult:
     """Parse, check, verify and (only when verified) save. Changes `record` in place on success."""
     ref = parse_board_link(link)
     if isinstance(ref, LinkProblem):
@@ -83,7 +82,9 @@ def add_board(record: dict, link: str, *, name: str = "", industry: str = "",
     refused = precheck(record, ref)
     if refused is not None:
         return refused
-    result: Verification = verify_board(ref, fetch)
+    from resume_tailorer.job_search import board_links
+
+    result: Verification = verify_board(ref, fetch or board_links.http_fetch)
     if not result.ok:
         return AddResult(False, result.outcome, result.message)
     stamp = (now or datetime.now()).isoformat(timespec="seconds")
