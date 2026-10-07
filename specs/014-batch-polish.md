@@ -1,6 +1,8 @@
 # Spec 014: Batch polish — resume, out-of-date warnings, and a non-blocking Streamlit batch
 
-**Status:** Draft for the builder's review (2026-10-06). Nothing is built yet.
+**Status:** Implemented and locally verified on 2026-10-07; see decision 036 and `discovery/experiments/2026-10-spec-014-batch-polish.md`. Two changes from this draft: a batch
+also records its computer and process id, so a restart is detected at once (not after 3 minutes);
+and Tailor again redoes the job inside the existing batch instead of starting a one-job batch.
 **Builds on:** spec 011 / decision 033 (batches), decision 016 (never submit).
 
 ## Problem and evidence (checked against `main` at `8f32867`)

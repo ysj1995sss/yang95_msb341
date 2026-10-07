@@ -15,7 +15,17 @@ decisions 001, 006, 009, 012, 014, 015, 016, or 017 unless new evidence forces i
 This section supersedes everything below it. The older sections are history; trust the code, the
 `specs/` and the `decisions/` over them.
 
-**Spec 013 update (2026-10-06, newest):** people can add public Greenhouse, Lever, Ashby and
+**Spec 014 update (2026-10-07, newest):** batches use one shared runner
+(`product/resume_tailorer/batch_runner.py`) in both apps. A batch stopped by a restart, a failure
+or "Stop" can be continued with its saved options (`POST /v2/batch/continue`). Reviews record the
+Career Profile version (`profile_version`); a later profile edit flags them ("Profile changed")
+and `prepare_jobs` returns `tailor_again` instead of tracking them. "Tailor again"
+(`POST /v2/batch/again`) redoes one job inside the batch. Streamlit batches run in the background
+with a self-refreshing fragment. Read `specs/014`, decision 036 and
+`discovery/experiments/2026-10-spec-014-batch-polish.md`. Local verification: product 1,240
+passed (1 skipped); API 134; web lint/types clean; 22 Playwright cases passed. Not pushed yet.
+
+**Spec 013 update (2026-10-06):** people can add public Greenhouse, Lever, Ashby and
 SmartRecruiters career boards (verified with the platform, saved per person in `custom_boards`,
 searched with the 75 curated boards, failures named per board). The sponsorship filter keeps
 unstated jobs, labeled. Shared search help (`ui/search_help.py`) names the filters that hide
@@ -84,10 +94,8 @@ builder's approval. Then build in small verified commits, and record decisions i
 2. **Spec 012 follow-up:** Test one additional anonymized Word template with unusual contact or
    education layout, and investigate the Playwright shutdown hang. Do not loosen fail-closed
    matching without a reproduction.
-3. **Batch polish:**
-   - resume a batch that a restart stopped (`batch_router._read_batch` marks it "stopped");
-   - show a "the profile changed since this review" warning;
-   - run the Streamlit batch without blocking the page.
+3. **Batch follow-ups (spec 014 is done):** run the Streamlit background batch once with the real
+   model in a browser; consider warning only when facts the resume uses changed.
 4. **Recognition:**
    - add vocabulary for fields the builder targets (`analyzers/ats_keywords.py`, `GENERIC_TERMS`,
      `AMBIGUOUS_ACRONYMS` in `requirement_review.py`);

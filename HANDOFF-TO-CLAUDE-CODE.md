@@ -9,7 +9,19 @@ Read this file first, then `CLAUDE.md`, then the decisions listed below. Do not 
 
 ---
 
-## Latest update (2026-10-06) — added company career boards (spec 013, decision 035)
+## Latest update (2026-10-07) — batch polish (spec 014, decision 036)
+
+- **One runner:** `resume_tailorer/batch_runner.py` serves the API and Streamlit alike. State is
+  in `tailor/batch.json`, with a heartbeat plus the process id for restart detection.
+- **Continue:** a stopped, failed or cancelled batch shows "Continue batch (N left)".
+- **Out-of-date warnings:** a profile edit flags tailored jobs ("Profile changed"); "Prepare"
+  refuses them until "Tailor again", which redoes the job inside the batch.
+- **Streamlit:** batches no longer block the page, and they're visible in any session.
+- **Supervised run:** `discovery/experiments/2026-10-spec-014-batch-polish.md` (a real restart
+  mid-batch).
+- **Test baseline:** `product/` 1240 (1 skipped), `apps/api/` 134, 22 browser tests.
+
+## Update (2026-10-06) — added company career boards (spec 013, decision 035)
 
 - **Add a board:** Jobs → Company boards. Paste a public Greenhouse, Lever, Ashby or
   SmartRecruiters board or job link. The platform's API confirms the board before it's saved in
