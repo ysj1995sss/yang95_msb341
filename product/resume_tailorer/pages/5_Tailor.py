@@ -34,6 +34,7 @@ from resume_tailorer.identity import artifacts_dir
 from resume_tailorer.profile_import import RECORD_KEY, store_for
 from resume_tailorer.session_profile import get_career_profile
 from resume_tailorer.ui.auth_gate import OWNER_KEY, job_service_for, require_identity
+from resume_tailorer.freshness import review_freshness
 from resume_tailorer.ui.batch_panel import render_batch_switcher
 from resume_tailorer.tailoring_session import HANDOFF_KEY, sync_pending_job
 from resume_tailorer.llm.settings import resolve_settings
@@ -218,6 +219,10 @@ def _render_review_room(pending: dict) -> None:
         st.rerun()
 
     _render_context(pending, state)
+    # Spec 014: this review came from an older Career Profile.
+    fresh = review_freshness(state, get_career_profile(st.session_state))
+    if fresh.stale:
+        st.warning(f"**Profile changed.** {fresh.message}")
 
     shown = visible_changes(state["changes"], advanced=state.get("show_all", False))
     groups = group_changes(shown, report.true_gaps)

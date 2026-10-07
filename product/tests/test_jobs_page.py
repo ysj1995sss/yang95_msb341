@@ -281,3 +281,59 @@ def test_few_results_say_what_is_narrowing_them(app):
     assert "Location “Denver” is hiding 1 more role." in text
     _click(app, "Search without this filter")
     assert len(app.radio(key="w_jobs_selected").options) == 2
+
+
+# --- spec 014: the Streamlit batch runs in the background -----------------------------------
+
+def test_a_batch_runs_in_the_background_and_any_session_sees_it(app):
+    import time
+
+    from resume_tailorer import batch_runner
+    from resume_tailorer.identity import user_dir
+
+    started = []
+
+    def fake_tailor_job(job, **kwargs):
+        started.append(job.title)
+        time.sleep(0.3)  # a page that waited for this would be slow; the click must return first
+
+    _search(app)
+    with patch("resume_tailorer.llm.settings.resolve_settings", lambda **kw: object()), \
+         patch("resume_tailorer.llm.client.LLMClient", lambda settings: object()), \
+         patch("resume_tailorer.batch.tailor_job", fake_tailor_job):
+        app.multiselect(key="batch_pick").set_value(["greenhouse_1", "greenhouse_2"]).run()
+        began = time.monotonic()
+        _click(app, "Tailor selected (2)")
+        assert time.monotonic() - began < 5
+        for _ in range(200):
+            data = batch_runner.read_batch(user_dir("local"))
+            if data and data["status"] == "done":
+                break
+            time.sleep(0.05)
+    assert data["status"] == "done" and len(started) == 2
+    app.run()
+    assert "2 of 2 tailored" in _text(app)
+
+    # A new session (or the web app) sees the same batch: Tailor offers its jobs.
+    fresh = AppTest.from_file(APP, default_timeout=60)
+    fresh.switch_page("pages/5_Tailor.py")
+    fresh.run()
+    assert not fresh.exception, fresh.exception
+    assert set(fresh.selectbox(key="batch_open_pick").options) >= {"greenhouse_1", "greenhouse_2"} or \
+        len(fresh.selectbox(key="batch_open_pick").options) == 2
+
+
+def test_a_stopped_batch_offers_to_continue(app):
+    from resume_tailorer import batch_runner
+    from resume_tailorer.identity import user_dir
+
+    batch_runner.write_batch(user_dir("local"), {
+        "id": "s1", "status": "running", "heartbeat": 1.0, "process": "gone", "created": 1.0, "note": "",
+        "options": dict(batch_runner.DEFAULT_OPTIONS),
+        "items": [{"job_id": "greenhouse_1", "title": "Product Manager, Growth", "company": "GitLab",
+                   "status": "running", "error": "", "resumable": False}]})
+    _search(app)
+    text = _text(app)
+    assert "stopped before it finished" in "\n".join(w.value for w in app.warning)
+    assert any(b.label == "Continue batch (1 left)" for b in app.button), [b.label for b in app.button]
+    assert "Not started" in text
