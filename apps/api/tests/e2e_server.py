@@ -25,6 +25,23 @@ BOARD = {"jobs": [
 ]}
 
 
+# Spec 013: a company board that isn't curated, which a person can add by pasting its link.
+NORTHWIND = {"jobs": [
+    {"id": 901, "title": "Data Analyst, Retail Insights", "absolute_url": "https://job-boards.greenhouse.io/northwind/jobs/901",
+     "location": {"name": "Austin, TX"}, "updated_at": "2026-09-28T12:00:00-00:00",
+     "content": "&lt;p&gt;Requirements: SQL and Tableau for store reporting.&lt;/p&gt;"},
+]}
+
+
+def platform_answers(url):
+    """What the platforms' public APIs say when a pasted board is checked (stand-in)."""
+    if url == "https://boards-api.greenhouse.io/v1/boards/northwind":
+        return 200, {"name": "Northwind Outdoor"}
+    if url == "https://boards-api.greenhouse.io/v1/boards/northwind/jobs":
+        return 200, NORTHWIND
+    return 404, {"error": "not found"}
+
+
 class StubModel:
     """Rewrites the dashboards bullet; keeps everything else."""
 
@@ -77,7 +94,9 @@ if __name__ == "__main__":
     from resume_tailorer.job_search.scrapers import AshbyScraper, GreenhouseScraper, LeverScraper
     from resume_tailorer.job_search.scrapers.smartrecruiters_scraper import SmartRecruitersScraper
 
-    with patch.object(GreenhouseScraper, "_fetch_board", lambda self, token: BOARD if token == "gitlab" else {"jobs": []}), \
+    boards = {"gitlab": BOARD, "northwind": NORTHWIND}
+    with patch.object(GreenhouseScraper, "_fetch_board", lambda self, token: boards.get(token, {"jobs": []})), \
+         patch("resume_tailorer.job_search.board_links.http_fetch", platform_answers), \
          patch.object(LeverScraper, "_fetch_board", lambda self, token: []), \
          patch.object(AshbyScraper, "_fetch_board", lambda self, token: {"jobs": []}), \
          patch.object(SmartRecruitersScraper, "_make_get_request", lambda self, url, timeout=10: {"content": [], "totalFound": 0}), \

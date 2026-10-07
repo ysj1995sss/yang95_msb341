@@ -86,26 +86,44 @@ export type JobForm = {
   job_title: string; location: string; remote_preference: string; experience_level: string[];
   industries: string[]; min_salary: number; employment_type: string[]; sponsorship_required: boolean;
   relocation_willing: boolean; target_companies: string; exclude_companies: string; sources: string[];
+  include_custom: boolean;
 };
 
 export type Option = { value: string; label: string };
 
+// Spec 013: a company career board the person added, and the search help shared with Streamlit.
+export type CustomBoard = {
+  id: string; name: string; platform: string; industry: string; source_url: string; status: string;
+  tone: "verified" | "review" | "blocked" | "neutral";
+};
+export type SearchHelp = {
+  sources: string; add_board: string; company_filter: string; title_rule: string; sponsorship: string;
+  paste: string; limit: string;
+};
+export type Narrowing = { key: keyof JobForm; label: string; extra: number; text: string };
+
 export type JobsSetup = {
   form: JobForm; has_goals: boolean; searched: boolean; summary_line: string; suggested_titles: string[];
-  board_count: number; saved_count: number;
-  options: { experience_levels: string[]; industries: string[]; employment_types: string[]; work_modes: Option[]; sources: Option[] };
+  board_count: number; all_curated_count: number; saved_count: number; custom_boards: CustomBoard[];
+  max_custom_boards: number; help: SearchHelp;
+  options: {
+    experience_levels: string[]; industries: string[]; employment_types: string[]; work_modes: Option[];
+    sources: Array<Option & { curated_count: number }>;
+  };
 };
 
 export type JobRow = {
   job_id: string; title: string; company: string; location: string; work_mode: string; salary: string;
   source: string; is_demo: boolean; freshness: string; quality: string; quality_tone: string;
-  fit: string; fit_tone: string; status: string;
+  fit: string; fit_tone: string; status: string; added_board: boolean; sponsorship_note: string;
 };
 
 export type JobsList = {
   view: "best" | "newest" | "saved"; state: string; partial_failure: boolean; source_note: string;
   summary_line: string; searched_at: string | null; coverage_notes: string[]; rows: JobRow[];
   total: number; offset: number;
+  boards_line: string; failed_boards: string[]; narrowing: Narrowing[]; broader_titles: string[];
+  company_notes: string[]; help: SearchHelp;
 };
 
 export type Evidence = { requirement: string; evidence: string };

@@ -217,3 +217,42 @@ test("a batch: select two jobs, tailor them, open one, prepare from Apply (nothi
   await expect(results).toContainText(/Ready to apply|Review first|Already tracked/);
   await expectAccessible(page, "apply, batch prepared");
 });
+
+test("add a company career board, search it, and remove it (spec 013; platform answers are stubbed)", async ({ page }) => {
+  await page.goto("/jobs");
+  await page.getByRole("button", { name: "Edit search" }).first().click();
+  const boards = page.locator("summary", { hasText: "Company boards" });
+  await expect(boards).toContainText(/\d+ will be searched/);
+  await boards.click();
+  await expect(page.getByText(/not every company on that platform/)).toBeVisible();
+
+  // A board its platform doesn't know is never saved.
+  const link = page.getByLabel("Career board link");
+  await link.fill("https://jobs.lever.co/nosuchco");
+  await page.getByRole("button", { name: "Check and add board" }).click();
+  await expect(page.getByRole("alert").filter({ hasText: "Lever has no public board called 'nosuchco'" })).toBeVisible();
+
+  // A real (stubbed) Greenhouse board is checked, then saved for this person.
+  await link.fill("https://job-boards.greenhouse.io/northwind/jobs/901");
+  await page.getByRole("button", { name: "Check and add board" }).click();
+  await expect(page.getByRole("status").filter({ hasText: "Added Northwind Outdoor (Greenhouse): 1 open posting right now." })).toBeVisible();
+  await expect(page.getByText("Northwind Outdoor · Greenhouse")).toBeVisible();
+  await expect(boards).toContainText("1 you added");
+  await expect(page.getByRole("checkbox", { name: "Your added boards: 1" })).toBeChecked();
+  await expectAccessible(page, "jobs, company boards");
+
+  // The next search includes it, and its job says where it came from.
+  await page.getByRole("button", { name: "Find matching jobs" }).click();
+  const row = page.getByRole("button", { name: /Data Analyst, Retail Insights/ });
+  await expect(row).toBeVisible();
+  await expect(row).toContainText("Board you added");
+  await expect(page.getByText(/Searched \d+ boards/)).toBeVisible();
+  await expectAccessible(page, "jobs, results with an added board");
+
+  // Removing the board keeps the jobs already found.
+  await page.getByRole("button", { name: "Edit search" }).first().click();
+  await page.locator("summary", { hasText: "Company boards" }).click();
+  await page.getByRole("button", { name: "Remove Northwind Outdoor" }).click();
+  await expect(page.getByText(/Removed Northwind Outdoor/)).toBeVisible();
+  await expect(page.getByRole("button", { name: "Remove Northwind Outdoor" })).toHaveCount(0);
+});

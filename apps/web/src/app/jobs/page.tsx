@@ -7,6 +7,7 @@ import { Alert, Button, Card, Chip, ErrorBox, PageHeader, Spinner, cx, toneOf, u
 import { api, useResource } from "@/lib/api";
 import type { JobForm, JobsList, JobsSetup } from "@/lib/types";
 import { JobDetailPanel } from "./job-detail";
+import { SearchHelpPanel } from "./narrowing";
 import { SearchForm } from "./search-form";
 
 const MAX_BATCH = 10;
@@ -77,7 +78,7 @@ export default function JobsPage() {
 
   const form = (compact: boolean) => (
     <SearchForm key={s.summary_line} setup={s} busy={searching} error={searchError} onSearch={search}
-      onCancel={compact ? () => setEditing(false) : undefined} />
+      onCancel={compact ? () => setEditing(false) : undefined} onBoardsChanged={setup.reload} />
   );
 
   if (!s.searched && view !== "saved") {
@@ -90,7 +91,7 @@ export default function JobsPage() {
               <>
                 <p className="text-[14px] font-semibold tracking-wide text-primary uppercase">Your search</p>
                 <h2 className="mt-1 text-[22px] font-semibold">{s.summary_line}</h2>
-                <p className="mt-1 text-muted">Live openings from {s.board_count} company boards on Greenhouse, Lever, Ashby and SmartRecruiters.</p>
+                <p className="mt-1 text-muted">Live openings from {s.board_count} company boards{s.custom_boards.length ? `, including ${s.custom_boards.length} you added` : ""}.</p>
                 {searchError && <div className="mt-3"><Alert tone="blocked" role="alert">{searchError}</Alert></div>}
                 <div className="mt-5 flex flex-wrap gap-2">
                   <Button variant="primary" busy={searching} onClick={() => search(s.form)}>
@@ -103,7 +104,7 @@ export default function JobsPage() {
             ) : (
               <>
                 <h2 className="text-[22px] font-semibold">Find a role worth preparing for</h2>
-                <p className="mb-5 text-muted">Live openings from {s.board_count} company boards on Greenhouse, Lever, Ashby and SmartRecruiters.</p>
+                <p className="mb-5 text-muted">Live openings from company career boards on Greenhouse, Lever, Ashby and SmartRecruiters. You can add a company&apos;s board under Company boards.</p>
                 {form(s.has_goals)}
               </>
             )}
@@ -135,7 +136,7 @@ export default function JobsPage() {
     ? [`${total} saved ${total === 1 ? "job" : "jobs"}`]
     : [`${total} matching ${total === 1 ? "role" : "roles"}`,
       data.searched_at ? `searched ${new Date(data.searched_at).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" })}` : "",
-      data.source_note]).filter(Boolean).join(" · ") : "";
+      data.source_note, data.boards_line]).filter(Boolean).join(" · ") : "";
 
   return (
     <>
@@ -154,6 +155,8 @@ export default function JobsPage() {
       {searching && <div className="mb-4"><Alert tone="primary" role="status">Searching {s.board_count} company boards… Your current results stay here until the new ones arrive.</Alert></div>}
       {searchError && !editing && <div className="mb-4"><Alert tone="blocked" role="alert">{searchError}</Alert></div>}
       {editing && <Card className="mb-6"><h2 className="mb-4 text-[18px] font-semibold">Edit search</h2>{form(true)}</Card>}
+
+      {data && view !== "saved" && <SearchHelpPanel data={data} form={s.form} busy={searching} onSearch={search} />}
 
       <div role="group" aria-label="Show" className="mb-4 inline-flex rounded-[var(--radius-control)] border border-line-strong bg-paper p-1">
         {VIEWS.map((v) => (
@@ -188,6 +191,7 @@ export default function JobsPage() {
           ) : (
             <>
               <p><span className="font-semibold">No open postings matched this search.</span> Try a broader role name, another location, or no work-mode preference.</p>
+              <p className="mt-2 text-muted">{data.help.paste}</p>
               <Button variant="primary" className="mt-4" onClick={() => setEditing(true)}>Edit search</Button>
             </>
           )}
@@ -219,7 +223,9 @@ export default function JobsPage() {
                       <span className="flex flex-wrap gap-1.5">
                         <Chip tone={toneOf(r.fit_tone)}>{r.fit}</Chip>
                         {["Saved", "Passed", "Preparing application"].includes(r.status) && <Chip tone="primary">{r.status}</Chip>}
+                        {r.added_board && <Chip>Board you added</Chip>}
                       </span>
+                      {r.sponsorship_note && <span className="text-[14px] text-review">{r.sponsorship_note}</span>}
                     </button>
                   </li>
                 );
