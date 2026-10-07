@@ -165,3 +165,27 @@ def test_the_heartbeat_keeps_a_long_job_alive(tmp_path, monkeypatch):
     br.start(tmp_path, _items("a"), {}, br.Hooks(tailor_one=tailor_one))
     assert release.wait(5)
     assert len(set(beats)) > 2  # the ticker moved the heartbeat while the job ran
+
+
+def test_a_batch_from_an_exited_process_on_this_computer_is_stopped_at_once(tmp_path):
+    import os
+    import socket
+    import subprocess
+    import sys
+    import time
+
+    gone = subprocess.Popen([sys.executable, "-c", "pass"])
+    gone.wait()
+    batch = {"id": "r1", "status": "running", "heartbeat": time.time(), "process": "old", "created": 1.0, "note": "",
+             "host": socket.gethostname(), "pid": gone.pid,
+             "items": [{"job_id": "a", "title": "A", "company": "C", "status": "running", "error": "", "resumable": False}]}
+    br.write_batch(tmp_path, batch)
+    assert br.read_batch(tmp_path)["status"] == "stopped"  # heartbeat is fresh, but its process is gone
+
+    alive = dict(batch, id="r2", pid=os.getpid(), status="running")
+    br.write_batch(tmp_path, alive)
+    assert br.read_batch(tmp_path)["status"] == "running"  # this very process: rely on the heartbeat
+    other_host = dict(batch, id="r3", host="another-computer", status="running")
+    br.write_batch(tmp_path, other_host)
+    assert br.read_batch(tmp_path)["status"] == "running"  # another computer: rely on the heartbeat
+    assert br._pid_alive(os.getpid()) and not br._pid_alive(gone.pid)

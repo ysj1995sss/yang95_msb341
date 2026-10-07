@@ -2,9 +2,10 @@
 thread, with the state kept in `users/<owner>/tailor/batch.json` so it survives restarts and is
 shared by the web app and the Streamlit app. Nothing is ever submitted (decision 016).
 
-- A running batch writes a heartbeat every 30 s. One whose heartbeat is older than 3 minutes
-  was stopped (a restart or a crash): it's marked "stopped" in the file, and the jobs it didn't
-  finish can be continued with the same options.
+- A running batch records its process (computer and process id) and writes a heartbeat every
+  30 s. It was stopped (a restart or a crash) when that process has exited on this computer, or
+  when its heartbeat is older than 3 minutes (another computer). It's then marked "stopped" in
+  the file, and the jobs it didn't finish can be continued with the same options.
 - One batch at a time per person, across processes: starting or continuing checks the file
   under a short lock file.
 - App-specific pieces come in as hooks: how to tailor one job, the daily limit, and progress.
@@ -15,6 +16,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import socket
 import threading
 import time
 import uuid
@@ -101,9 +103,38 @@ def write_batch(user_dir: Path, data: dict) -> None:
             time.sleep(0.01)
 
 
+def _pid_alive(pid: int) -> bool:
+    """Is a process with this id running on this computer? (Never signals or stops it.)"""
+    if pid <= 0:
+        return False
+    if os.name == "nt":
+        import ctypes
+
+        kernel32 = ctypes.windll.kernel32
+        handle = kernel32.OpenProcess(0x1000, False, pid)  # PROCESS_QUERY_LIMITED_INFORMATION
+        if not handle:
+            return False
+        try:
+            code = ctypes.c_ulong()
+            return bool(kernel32.GetExitCodeProcess(handle, ctypes.byref(code))) and code.value == 259  # STILL_ACTIVE
+        finally:
+            kernel32.CloseHandle(handle)
+    try:
+        os.kill(pid, 0)  # signal 0 only checks; on POSIX it never stops anything
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    return True
+
+
 def _is_stale(data: dict, now: float) -> bool:
     if data.get("status") != "running":
         return False
+    # Run by another process on this computer that has exited (a restart): stopped right away.
+    pid = data.get("pid")
+    if data.get("host") == socket.gethostname() and isinstance(pid, int) and pid != os.getpid()             and not _pid_alive(pid):
+        return True
     beat = data.get("heartbeat")
     if beat is None:  # written before spec 014: only the process id says who runs it
         return data.get("boot") != PROCESS_ID
@@ -142,7 +173,7 @@ def view(data: Optional[dict]) -> Optional[dict]:
     """The batch as shown: a summary line and how many jobs can be continued."""
     if not data:
         return None
-    shown = {k: v for k, v in data.items() if k not in ("boot", "heartbeat", "process")}
+    shown = {k: v for k, v in data.items() if k not in ("boot", "heartbeat", "process", "host", "pid")}
     items = shown["items"]
     counts = {s: sum(1 for i in items if i["status"] == s) for s in ("done", "failed", "skipped")}
     shown["summary"] = (f"{counts['done']} of {len(items)} tailored"
@@ -165,7 +196,8 @@ def _claim(user_dir: Path, data: dict, now: float) -> None:
     current = read_batch(user_dir, now)
     if current and current.get("status") == "running":
         raise BatchBusy("A batch is already running. Wait for it to finish or stop it.")
-    data.update(status="running", process=PROCESS_ID, boot=PROCESS_ID, heartbeat=now)
+    data.update(status="running", process=PROCESS_ID, boot=PROCESS_ID, heartbeat=now,
+                host=socket.gethostname(), pid=os.getpid())
     write_batch(user_dir, data)
 
 
