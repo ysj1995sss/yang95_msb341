@@ -173,7 +173,7 @@ def continue_batch(body: RunRequest, ws: Workspace = Depends(workspace)):
 
 @router.post("/batch/again")
 def tailor_again(body: JobChoice, ws: Workspace = Depends(workspace)):
-    """Spec 014: tailor one job again (its profile changed) as a one-job batch with the last options."""
+    """Spec 014: tailor one job again (its profile changed) with the batch's options, keeping the batch."""
     from resume_tailorer import batch_runner
 
     job = ws.service.db.get_job_posting(body.job_id)
@@ -185,7 +185,13 @@ def tailor_again(body: JobChoice, ws: Workspace = Depends(workspace)):
     settings = _check_can_run(ws, request)
     hooks = _hooks(ws.owner, settings, request)
     items = [batch_runner.new_item(body.job_id, job.title, job.company, job.description or "")]
-    return _begin(ws, lambda: batch_runner.start(_user_dir(ws.owner_id), items, options, hooks))
+
+    def launch():
+        # Keep the batch (its other jobs stay listed); a job not in it gets a batch of its own.
+        if batch_runner.redo(_user_dir(ws.owner_id), body.job_id, hooks) is None:
+            batch_runner.start(_user_dir(ws.owner_id), items, options, hooks)
+
+    return _begin(ws, launch)
 
 
 @router.get("/batch")

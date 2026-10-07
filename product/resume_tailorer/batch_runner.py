@@ -233,6 +233,26 @@ def continue_batch(user_dir: Path, hooks: Hooks, *, background: bool = True) -> 
     return data
 
 
+def redo(user_dir: Path, job_id: str, hooks: Hooks, *, background: bool = True) -> Optional[dict]:
+    """Tailor one job of the batch again (its profile changed), keeping the rest of the batch as
+    it is. None when the job isn't in the batch (the caller starts a one-job batch instead)."""
+    now = hooks.clock()
+    with _file_lock(user_dir):
+        data = read_batch(user_dir, now)
+        if not data or not any(i["job_id"] == job_id for i in data["items"]):
+            return None
+        if data.get("status") == "running":
+            raise BatchBusy("This batch is still running.")
+        for item in data["items"]:
+            if item["job_id"] == job_id:
+                item.update(status="queued", error="", resumable=False)
+        data["note"] = ""
+        data.setdefault("options", dict(DEFAULT_OPTIONS))
+        _claim(user_dir, data, now)
+    _launch(user_dir, data["id"], hooks, background)
+    return data
+
+
 def cancel(user_dir: Path) -> Optional[dict]:
     """Stop after the job that's running now; jobs not started can be continued later."""
     with _file_lock(user_dir):

@@ -129,4 +129,5 @@ def test_a_profile_edit_flags_tailored_jobs_and_blocks_preparing(tailor_client, 
     assert r.status_code == 200, r.text
     batch = _wait(tailor_client)
     assert [i["job_id"] for i in batch["items"]] == ["greenhouse_101"] and batch["items"][0]["stale"] is False
+    assert batch["summary"] == "1 of 1 tailored"  # the same batch, redone in place
     assert tailor_client.post("/v2/batch/again", json={"job_id": "nope_1"}).status_code == 404

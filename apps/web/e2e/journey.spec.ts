@@ -272,11 +272,12 @@ test("batch polish: out-of-date jobs, tailor again, and continuing a stopped bat
   await page.getByRole("button", { name: "Prepare reviewed jobs for applying" }).click();
   await expect(page.getByRole("list", { name: "Preparation results" })).toContainText("Tailor again first");
 
-  // Tailor one again: a one-job batch on the current profile.
+  // Tailor one again: it's redone in place on the current profile; the other job stays listed, still flagged.
   await page.goto("/tailor");
+  await expect(strip.getByText("Profile changed", { exact: true })).toHaveCount(2);
   await strip.getByRole("button", { name: /^Tailor .* again$/ }).first().click();
-  await expect(strip.getByText(/1 of 1 tailored/)).toBeVisible({ timeout: 90_000 });
-  await expect(strip.getByText("Profile changed")).toHaveCount(0);
+  await expect(strip.getByText("Profile changed", { exact: true })).toHaveCount(1, { timeout: 90_000 });
+  await expect(strip.getByText(/2 of 2 tailored/)).toBeVisible();
 
   // A batch the server was running when it restarted (its heartbeat stopped long ago) can be continued.
   const fs = await import("node:fs");

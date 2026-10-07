@@ -189,3 +189,14 @@ def test_a_batch_from_an_exited_process_on_this_computer_is_stopped_at_once(tmp_
     br.write_batch(tmp_path, other_host)
     assert br.read_batch(tmp_path)["status"] == "running"  # another computer: rely on the heartbeat
     assert br._pid_alive(os.getpid()) and not br._pid_alive(gone.pid)
+
+
+def test_tailor_again_redoes_one_job_and_keeps_the_batch(tmp_path):
+    hooks, done, _ = _hooks()
+    br.start(tmp_path, _items("a", "b", "c"), {"length": "2_page"}, hooks, background=False)
+    hooks2, done2, _ = _hooks()
+    assert br.redo(tmp_path, "b", hooks2, background=False) is not None
+    data = br.read_batch(tmp_path)
+    assert done2 == ["b"] and [i["job_id"] for i in data["items"]] == ["a", "b", "c"]
+    assert all(i["status"] == "done" for i in data["items"]) and data["options"]["length"] == "2_page"
+    assert br.redo(tmp_path, "zzz", hooks2, background=False) is None  # not in the batch

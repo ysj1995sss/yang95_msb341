@@ -144,10 +144,7 @@ def _render_batch(in_fragment: bool) -> None:
                 left, right = st.columns([4, 1])
                 left.caption(fresh["stale_message"])
                 if shown["status"] != "running" and right.button("Tailor again", key=f"batch_again_{item['job_id']}"):
-                    options = shown["options"]
-                    again = [{"job_id": item["job_id"], "title": item["title"], "company": item["company"],
-                              "status": "queued", "error": "", "resumable": False}]
-                    _run(lambda: batch_runner.start(_user_dir(), again, options, _hooks(options)))
+                    _run(lambda job_id=item["job_id"]: batch_runner.redo(_user_dir(), job_id, _hooks(shown["options"])))
                     st.rerun()
         if shown["status"] == "running":
             if st.button("Stop after the current job", key="batch_stop"):
