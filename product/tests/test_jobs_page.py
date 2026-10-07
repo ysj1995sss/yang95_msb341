@@ -221,3 +221,63 @@ def test_tailor_offers_the_existing_tailored_resume_in_a_new_session(app, tmp_pa
     assert "Create your tailored resume" not in text
     _click(fresh, "Tailor again")
     assert "Create your tailored resume" in _text(fresh)
+
+
+# --- spec 013: company boards a person adds, and search help ---------------------------------
+
+NORTHWIND = {"jobs": [
+    {"id": 9, "title": "Product Manager, Stores", "absolute_url": "https://job-boards.greenhouse.io/northwind/jobs/9",
+     "location": {"name": "Austin, TX"}, "content": "<p>Requirements: product management.</p>",
+     "updated_at": "2026-09-30T12:00:00-00:00"},
+]}
+
+
+def _platform(url):
+    if url == "https://boards-api.greenhouse.io/v1/boards/northwind":
+        return 200, {"name": "Northwind Outdoor"}
+    if url == "https://boards-api.greenhouse.io/v1/boards/northwind/jobs":
+        return 200, NORTHWIND
+    return 404, {}
+
+
+def _with_northwind(self, token):
+    return {"gitlab": BOARD, "northwind": NORTHWIND}.get(token, {"jobs": []})
+
+
+def test_add_a_board_search_it_and_remove_it(app):
+    from resume_tailorer.job_search import board_links
+
+    _click(app, "Edit search")
+    with patch.object(board_links, "http_fetch", _platform), \
+         patch.object(GreenhouseScraper, "_fetch_board", _with_northwind):
+        app.text_input(key="board_link").set_value("https://jobs.lever.co/nosuchco")
+        _click(app, "Check and add board")
+        assert any("no public board called 'nosuchco'" in e.value for e in app.error)
+        app.text_input(key="board_link").set_value("https://job-boards.greenhouse.io/northwind/jobs/9")
+        _click(app, "Check and add board")
+        assert any("Added Northwind Outdoor (Greenhouse): 1 open posting" in s.value for s in app.success)
+        assert store_for("local").load()["custom_boards"][0]["id"] == "greenhouse:northwind"
+        assert any("1 you added" in e.label for e in app.expander)
+        _click(app, "Find matching jobs")
+    options = app.radio(key="w_jobs_selected").options
+    assert "Product Manager, Stores" in options and "Product Manager, Growth" in options
+    assert "Board you added" in "\n".join(app.radio(key="w_jobs_selected").proto.captions)
+    assert "Searched " in _text(app)
+    last = store_for("local").load()["custom_boards"][0]["last_search"]
+    assert last["status"] == "ok" and last["matched"] == 1
+
+    _click(app, "Edit search")
+    _click(app, "Remove")
+    assert any("Removed Northwind Outdoor" in s.value for s in app.success)
+    assert store_for("local").load()["custom_boards"] == []
+
+
+def test_few_results_say_what_is_narrowing_them(app):
+    _click(app, "Edit search")
+    app.text_input(key="location").set_value("Denver")
+    _click(app, "Find matching jobs")
+    text = _text(app)
+    assert "What's narrowing your results" in text
+    assert "Location “Denver” is hiding 1 more role." in text
+    _click(app, "Search without this filter")
+    assert len(app.radio(key="w_jobs_selected").options) == 2

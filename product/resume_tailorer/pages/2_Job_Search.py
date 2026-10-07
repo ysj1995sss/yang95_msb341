@@ -24,14 +24,17 @@ from resume_tailorer.ui import ats_explainer
 from resume_tailorer.ui.ats_panel import render_ats_explainer
 from resume_tailorer.ui.batch_panel import render_batch_runner
 from resume_tailorer.job_search.job_attributes import (
-    ASHBY_BOARDS,
-    COMPANY_DIRECTORY,
-    LEVER_BOARDS,
-    LIVE_BOARD_COUNT,
-    SMARTRECRUITERS_BOARDS,
     EMPLOYMENT_TYPE_OPTIONS,
     EXPERIENCE_LEVEL_OPTIONS,
     INDUSTRY_OPTIONS,
+)
+from resume_tailorer.job_search.custom_boards import (
+    add_board,
+    added_board_keys,
+    boards_in,
+    industry_labels,
+    record_search_results,
+    remove_board,
 )
 from resume_tailorer.job_search.job_quality import evaluate_job_quality
 from resume_tailorer.job_search.job_service import PENDING_TAILOR_JOB_KEY, JobService, build_tailor_snapshot
@@ -40,6 +43,7 @@ from resume_tailorer.job_search.ui_helpers import build_search_goals_from_form
 from resume_tailorer.profile_import import RECORD_KEY, save_record
 from resume_tailorer.session_profile import get_career_profile
 from resume_tailorer.ui import chip, render_app_shell, render_page_header
+from resume_tailorer.ui import search_help
 from resume_tailorer.ui.auth_gate import OWNER_KEY, job_service_for, require_identity
 from resume_tailorer.ui.job_view import build_detail, build_row, job_id_for
 from resume_tailorer.ui.shell import md_literal as _md_literal
@@ -65,12 +69,8 @@ st.set_page_config(page_title="Jobs · Job Copilot", page_icon="\U0001F50D", lay
 
 WORK_MODES = ["any", "remote", "hybrid", "onsite"]
 LIVE_SOURCES = [JobSource.GREENHOUSE, JobSource.LEVER, JobSource.ASHBY, JobSource.SMARTRECRUITERS]
-SOURCE_LABELS = {
-    JobSource.GREENHOUSE: f"Greenhouse ({len(COMPANY_DIRECTORY)} companies)",
-    JobSource.LEVER: f"Lever ({len(LEVER_BOARDS)} companies)",
-    JobSource.ASHBY: f"Ashby ({len(ASHBY_BOARDS)} companies)",
-    JobSource.SMARTRECRUITERS: f"SmartRecruiters ({len(SMARTRECRUITERS_BOARDS)} companies)",
-}
+# Spec 013: a source is its curated companies on that platform, not every company on it.
+SOURCE_LABELS = {source: search_help.source_label(source.value) for source in LIVE_SOURCES}
 _LABEL_TO_SOURCE = {v: k for k, v in SOURCE_LABELS.items()}
 
 # Non-widget session keys: they survive leaving the page and coming back.
@@ -79,7 +79,21 @@ SELECTED_KEY = "selected_job_id"
 EDITING_KEY = "jobs_editing"
 PENDING_SEARCH_KEY = "jobs_pending_search"
 LAST_FORM_KEY = "jobs_last_form"
-SEARCHING_HTML = f'<div class="jc-status action">Searching {LIVE_BOARD_COUNT} company boards…{{}}</div>'
+SEARCHING_HTML = '<div class="jc-status action">{}…{}</div>'
+
+
+def _searching_html(count: int, extra: str = "") -> str:
+    return SEARCHING_HTML.format(escape(search_help.searching_text(count)), extra)
+
+
+def _pending_board_count() -> int:
+    request = st.session_state.get(PENDING_SEARCH_KEY) or {}
+    boards = _custom_boards() if request.get("include_custom", True) else []
+    return search_help.boards_in_scope(request.get("sources", []), boards)
+
+
+def _custom_boards() -> list:
+    return boards_in(_record())
 
 
 def _service() -> JobService:
@@ -124,7 +138,8 @@ def _render_form(compact: bool) -> None:
             col.button(title, key=f"jobs_suggest_{title}", on_click=_use_suggestion, args=(title,),
                        use_container_width=True)
     c1, c2, c3 = st.columns([1.4, 1.2, 0.9])
-    c1.text_input("Target role", key="job_title", placeholder="e.g. Product marketing manager")
+    c1.text_input("Target role", key="job_title", placeholder="e.g. Product marketing manager",
+                  help=search_help.TITLE_RULE)
     c2.text_input("Location", key="location", placeholder="City, state or country")
     c3.selectbox("Work mode", WORK_MODES, key="remote_preference", format_func=WORK_MODE_LABELS.get)
     with st.expander("More filters"):
@@ -133,12 +148,11 @@ def _render_form(compact: bool) -> None:
         f2.multiselect("Industry", INDUSTRY_OPTIONS, key="industries")
         f1.number_input("Minimum salary (USD)", min_value=0, step=5000, key="min_salary")
         f2.multiselect("Job type", EMPLOYMENT_TYPE_OPTIONS, key="employment_type")
-        f1.checkbox("I need visa sponsorship", key="sponsorship_required")
+        f1.checkbox("I need visa sponsorship", key="sponsorship_required", help=search_help.SPONSORSHIP_HELP)
         f2.checkbox("I'm open to relocating", key="relocation_willing")
-        f1.text_input("Only these companies (comma-separated)", key="target_companies")
+        f1.text_input("Only these companies", key="target_companies", help=search_help.COMPANY_FILTER_HELP)
         f2.text_input("Skip these companies (comma-separated)", key="exclude_companies")
-        st.multiselect("Sources", [SOURCE_LABELS[s] for s in LIVE_SOURCES], key="selected_sources",
-                       help="Greenhouse, Lever and Ashby list real openings. Demo sources show sample listings only.")
+    _render_company_boards()
     with st.container(horizontal=True):
         if st.button("Find matching jobs", type="primary", key="jobs_find"):
             _queue_search_from_form()
@@ -163,8 +177,9 @@ def _queue_search_from_form() -> None:
         return
     labels = st.session_state.get("selected_sources") or []
     sources = [_LABEL_TO_SOURCE[l] for l in labels if l in _LABEL_TO_SOURCE]
-    if not sources:
-        st.error("Choose at least one source under More filters.")
+    include_custom = bool(st.session_state.get("include_custom", True))
+    if not sources and not (include_custom and _custom_boards()):
+        st.error("Choose at least one source under Company boards.")
         return
     record = _record()
     if record.get("profile"):
@@ -172,13 +187,19 @@ def _queue_search_from_form() -> None:
         save_record(st.session_state, st.session_state[OWNER_KEY], record)
     # LAST_FORM_KEY changes only when the search finishes, so the header keeps describing
     # the results on screen while a new search runs.
-    st.session_state[PENDING_SEARCH_KEY] = {"form": form, "sources": [s.value for s in sources]}
+    st.session_state[PENDING_SEARCH_KEY] = {"form": form, "sources": [s.value for s in sources],
+                                            "include_custom": include_custom}
     st.session_state[EDITING_KEY] = False
 
 
-def _queue_search_again() -> None:
-    form = st.session_state.get(LAST_FORM_KEY) or dict(_saved_goals())
-    st.session_state[PENDING_SEARCH_KEY] = {"form": dict(form, max_salary=0), "sources": [s.value for s in LIVE_SOURCES]}
+def _queue_search_again(form: dict | None = None) -> None:
+    form = form or st.session_state.get(LAST_FORM_KEY) or dict(_saved_goals())
+    last = st.session_state.get("last_search_request") or {}
+    st.session_state[PENDING_SEARCH_KEY] = {
+        "form": dict(form, max_salary=0),
+        "sources": last.get("sources", [s.value for s in LIVE_SOURCES]),
+        "include_custom": last.get("include_custom", True),
+    }
 
 
 def _run_pending_search(status_slot) -> None:
@@ -191,13 +212,20 @@ def _run_pending_search(status_slot) -> None:
     except ValueError as exc:
         status_slot.error(f"Check your search: {exc}")
         return
-    status_slot.markdown(SEARCHING_HTML.format(""), unsafe_allow_html=True)
+    include_custom = request.get("include_custom", True)
+    boards = _custom_boards() if include_custom else []
+    status_slot.markdown(_searching_html(search_help.boards_in_scope(request["sources"], boards)), unsafe_allow_html=True)
     try:
-        summary = _service().search_and_store(goals, [JobSource(v) for v in request["sources"]])
+        summary = _service().search_and_store(goals, [JobSource(v) for v in request["sources"]], custom_boards=boards)
     except Exception as exc:
         status_slot.error(f"The search didn't finish: {exc}. Your previous results are still here; try again.")
         return
+    if boards:
+        record = _record()
+        record_search_results(record, summary.custom_board_results, summary.started_at.isoformat(timespec="seconds"))
+        save_record(st.session_state, st.session_state[OWNER_KEY], record)
     st.session_state.last_search_run = summary
+    st.session_state.last_search_request = {"sources": list(request["sources"]), "include_custom": include_custom}
     st.session_state.last_search_goals = goals
     st.session_state[LAST_FORM_KEY] = form
     st.session_state.pop(SELECTED_KEY, None)
@@ -217,7 +245,8 @@ def _load_jobs(view: str):
     if goals is None:
         return []
     last_run = st.session_state.get("last_search_run")
-    return service.get_available_jobs(goals, seen_since=last_run.started_at if last_run else None)
+    return service.get_available_jobs(goals, seen_since=last_run.started_at if last_run else None,
+                                      industry_labels=industry_labels(_custom_boards()))
 
 
 def _record_action(job, action: str, fit) -> None:
@@ -249,6 +278,10 @@ def _render_workspace_header(view_state, view_choice: str, count: int) -> None:
             meta = [f"{count} matching {'role' if count == 1 else 'roles'}"] if run is not None else []
             meta.append(searched_at_text(getattr(run, "started_at", None)))
             meta.append(view_state.source_note)
+            if run is not None:
+                meta.append(search_help.search_result_line(
+                    getattr(run, "boards_searched", 0), getattr(run, "boards_failed", 0),
+                    search_help.failed_added_boards(_custom_boards(), getattr(run, "custom_board_results", {}) or {})))
         cls = "jc-warn-line" if view_state.partial_failure else "jc-meta"
         st.markdown(f'<div class="{cls}">{escape(" · ".join(m for m in meta if m))}</div>', unsafe_allow_html=True)
     with right:
@@ -261,11 +294,13 @@ def _render_workspace_header(view_state, view_choice: str, count: int) -> None:
                 _queue_search_again()
 
 
-def _render_list(jobs, fits, actions, ids) -> None:
+def _render_list(jobs, fits, actions, ids, sponsorship_needed: bool = False) -> None:
     labels, captions = {}, {}
+    added = added_board_keys(_custom_boards())
     for job in jobs:
         job_id = job_id_for(job)
-        row = build_row(job, fits.get(job_id), actions.get(job_id))
+        row = build_row(job, fits.get(job_id), actions.get(job_id), added_keys=added,
+                        sponsorship_needed=sponsorship_needed)
         label = _md_literal(row.title)
         # Identical titles (one role in several cities) must stay distinguishable to the radio,
         # or the highlighted row and the selected job can disagree. Zero-width spaces are invisible.
@@ -282,6 +317,10 @@ def _render_list(jobs, fits, actions, ids) -> None:
             bits.append(row.status)
         if row.is_demo:
             bits.append("Demo listing")
+        if row.added_board:
+            bits.append("Board you added")
+        if row.sponsorship_note:
+            bits.append(row.sponsorship_note)
         captions[job_id] = _md_literal(" · ".join(bits))
     current = st.session_state.get(SELECTED_KEY)
     if st.session_state.get("w_jobs_selected") not in ids:
@@ -403,6 +442,119 @@ def _render_keywords(job, review=None) -> None:
     render_ats_explainer()
 
 
+# --- company boards and search help (spec 013) --------------------------------
+
+def _board_count_text() -> str:
+    count = search_help.boards_in_scope([s.value for s in LIVE_SOURCES], _custom_boards())
+    added = len(_custom_boards())
+    return f"{count} company boards" + (f", including {added} you added" if added else "")
+
+
+def _add_board_clicked() -> None:
+    record = _record()
+    result = add_board(record, st.session_state.get("board_link", ""), name=st.session_state.get("board_name", ""),
+                       industry=st.session_state.get("board_industry", ""))
+    st.session_state["board_result"] = (result.ok, result.message)
+    if result.ok:
+        save_record(st.session_state, st.session_state[OWNER_KEY], record)
+        for key in ("board_link", "board_name"):
+            st.session_state[key] = ""
+        st.session_state["board_industry"] = "Not specified"
+
+
+def _remove_board_clicked(board_id: str, name: str) -> None:
+    record = _record()
+    if remove_board(record, board_id):
+        save_record(st.session_state, st.session_state[OWNER_KEY], record)
+        st.session_state["board_result"] = (True, f"Removed {name}. Jobs you already found from it stay in your lists.")
+
+
+def _render_company_boards() -> None:
+    boards = _custom_boards()
+    sources = [_LABEL_TO_SOURCE[l].value for l in st.session_state.get("selected_sources") or [] if l in _LABEL_TO_SOURCE]
+    count = search_help.boards_in_scope(sources, boards, bool(st.session_state.get("include_custom", True)))
+    title = f"Company boards · {count} will be searched" + (f" · {len(boards)} you added" if boards else "")
+    with st.expander(title):
+        st.multiselect("Sources", [SOURCE_LABELS[s] for s in LIVE_SOURCES], key="selected_sources")
+        st.caption(search_help.SOURCES_HELP)
+        if boards:
+            st.session_state.setdefault("include_custom", True)
+            st.checkbox(search_help.added_source_label(len(boards)), key="include_custom")
+            st.markdown(f"**Your added boards ({len(boards)} of {search_help.MAX_CUSTOM_BOARDS})**")
+            for board in boards:
+                view = search_help.board_view(board)
+                left, right = st.columns([4, 1])
+                industry = "" if view["industry"] == "Not specified" else f" · {view['industry']}"
+                left.markdown(f"**{_md_literal(view['name'])}** · {view['platform']}{industry}  \n"
+                              f"{chip(_status_chip(view['tone']), view['tone'])} {escape(view['status'])}",
+                              unsafe_allow_html=True)
+                right.button("Remove", key=f"board_remove_{view['id']}", on_click=_remove_board_clicked,
+                             args=(view["id"], view["name"]), help=f"Remove {view['name']}")
+        st.markdown("**Add a company career board**")
+        st.caption(search_help.ADD_BOARD_HELP)
+        full = len(boards) >= search_help.MAX_CUSTOM_BOARDS
+        st.text_input("Career board link", key="board_link", disabled=full,
+                      placeholder="e.g. https://job-boards.greenhouse.io/company")
+        n1, n2 = st.columns(2)
+        n1.text_input("Company name (optional)", key="board_name", disabled=full,
+                      help="Shown on its jobs. Taken from the board when it says.")
+        n2.selectbox("Industry (optional)", ["Not specified", *INDUSTRY_OPTIONS], key="board_industry", disabled=full)
+        st.button("Check and add board", key="board_add", on_click=_add_board_clicked, disabled=full)
+        if full:
+            st.caption(f"{search_help.ADDED_BOARDS_LIMIT_TEXT} Remove one to add another.")
+        result = st.session_state.pop("board_result", None)
+        if result:
+            (st.success if result[0] else st.error)(result[1])
+        st.caption(search_help.PASTE_PATH)
+
+
+def _status_chip(tone: str) -> str:
+    return {"blocked": "Not found", "review": "Didn't answer"}.get(tone, "Live board")
+
+
+def _render_search_help(current: int) -> None:
+    """What's narrowing the results, when a search finds few roles. Buttons search again on request."""
+    form = dict(st.session_state.get(LAST_FORM_KEY) or {})
+    if not form.get("job_title"):
+        return
+    service = _service()
+    run = st.session_state.get("last_search_run")
+    labels = industry_labels(_custom_boards())
+
+    def count(relaxed: dict) -> int:
+        try:
+            goals = build_search_goals_from_form(dict(relaxed, max_salary=0))
+        except ValueError:
+            return current
+        return len(service.get_available_jobs(goals, seen_since=getattr(run, "started_at", None), industry_labels=labels))
+
+    request = st.session_state.get("last_search_request") or {}
+    boards = _custom_boards() if request.get("include_custom", True) else []
+    notes = search_help.unknown_company_notes(form.get("target_companies") or "", request.get("sources", []), boards)
+    narrowing = search_help.narrowing(form, current, count)
+    broader = search_help.broader_titles(form["job_title"]) if current < search_help.FEW_RESULTS else []
+    if not (notes or narrowing or broader):
+        return
+    with st.container(border=True):
+        st.markdown("**What's narrowing your results**")
+        for note in notes:
+            st.markdown(_md_literal(note))
+        for item in narrowing:
+            left, right = st.columns([3, 1.2])
+            left.markdown(_md_literal(item["text"]))
+            if right.button("Search without this filter", key=f"jobs_relax_{item['key']}"):
+                _queue_search_again(search_help.cleared(form, item["key"]))
+                st.rerun()
+        if broader:
+            st.markdown(_md_literal(f"{search_help.TITLE_RULE} Broader titles to try:"))
+            with st.container(horizontal=True):
+                for title in broader:
+                    if st.button(f"Search “{title}”", key=f"jobs_broader_{title}"):
+                        _queue_search_again(dict(form, job_title=title))
+                        st.rerun()
+        st.caption(search_help.PASTE_PATH)
+
+
 # --- page states -------------------------------------------------------------
 
 def _render_setup_card() -> None:
@@ -410,7 +562,8 @@ def _render_setup_card() -> None:
     with main:
         with st.container(border=True):
             st.markdown('<h2 class="jc-card-title">Find a role worth preparing for</h2>'
-                        f'<p class="jc-meta">Live openings from {LIVE_BOARD_COUNT} company boards on Greenhouse, Lever, Ashby and SmartRecruiters.</p>',
+                        '<p class="jc-meta">Live openings from company career boards on Greenhouse, Lever, Ashby and '
+                        "SmartRecruiters. You can add a company's board under Company boards.</p>",
                         unsafe_allow_html=True)
             _render_form(compact=False)
     with side:
@@ -429,7 +582,7 @@ def _render_ready_card() -> None:
         with st.container(border=True):
             st.markdown(f'<div class="jc-eyebrow">Your search</div><div class="jc-search-summary">'
                         f"{escape(goals_summary_line(goals))}</div>"
-                        f'<p class="jc-meta">Live openings from {LIVE_BOARD_COUNT} company boards on Greenhouse, Lever, Ashby and SmartRecruiters.</p>',
+                        f'<p class="jc-meta">Live openings from {_board_count_text()}.</p>',
                         unsafe_allow_html=True)
             with st.container(horizontal=True):
                 if st.button("Find matching jobs", type="primary", key="jobs_find_saved"):
@@ -476,10 +629,13 @@ def _render_results(status_slot, has_goals: bool, searched: bool) -> None:
                               result_ids=ids, selected_id=st.session_state.get(SELECTED_KEY),
                               view=view_choice, provider_statuses=() if view_choice == SAVED_VIEW else statuses))
     if view.state is JobsState.SEARCHING:
-        status_slot.markdown(SEARCHING_HTML.format(" Your current results stay here until the new ones arrive."),
+        status_slot.markdown(_searching_html(_pending_board_count(),
+                                             " Your current results stay here until the new ones arrive."),
                              unsafe_allow_html=True)
 
     _render_workspace_header(view, view_choice, len(ids))
+    if view_choice != SAVED_VIEW and searched:
+        _render_search_help(len(ids))
     if not ids:
         chosen_view = st.segmented_control("Show", VIEWS, key="w_jobs_view", label_visibility="collapsed")
         st.session_state[VIEW_KEY] = chosen_view or VIEWS[0]
@@ -489,6 +645,7 @@ def _render_results(status_slot, has_goals: bool, searched: bool) -> None:
             else:
                 st.markdown("**No open postings matched this search.** Try a broader role name, another location, "
                             "or no work-mode preference.")
+                st.caption(search_help.PASTE_PATH)
                 if st.button("Edit search", type="primary", key="jobs_edit_empty"):
                     st.session_state[EDITING_KEY] = True
                     st.rerun()
@@ -499,7 +656,9 @@ def _render_results(status_slot, has_goals: bool, searched: bool) -> None:
         chosen_view = st.segmented_control("Show", VIEWS, key="w_jobs_view", label_visibility="collapsed")
         st.session_state[VIEW_KEY] = chosen_view or VIEWS[0]
         render_batch_runner(jobs, job_id_for, service, st.session_state[OWNER_KEY])  # spec 011
-        _render_list(jobs, fits, actions, ids)
+        _render_list(jobs, fits, actions, ids,
+                     sponsorship_needed=view_choice != SAVED_VIEW
+                     and bool((st.session_state.get(LAST_FORM_KEY) or {}).get("sponsorship_required")))
     selected = st.session_state.get(SELECTED_KEY)
     job = next((j for j in jobs if job_id_for(j) == selected), jobs[0])
     with detail_col:
@@ -528,7 +687,7 @@ def main():
     if searched or view_choice == SAVED_VIEW:
         _render_results(status_slot, has_goals, searched)
     elif entry.state is JobsState.SEARCHING:
-        status_slot.markdown(SEARCHING_HTML.format(""), unsafe_allow_html=True)
+        status_slot.markdown(_searching_html(_pending_board_count()), unsafe_allow_html=True)
     elif not editing and entry.state is JobsState.NO_GOALS:
         _render_setup_card()
     elif not editing and entry.state is JobsState.READY_TO_SEARCH:
