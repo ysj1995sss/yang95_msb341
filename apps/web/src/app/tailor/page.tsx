@@ -154,6 +154,9 @@ export default function TailorPageView() {
       <>
         {header}
         <Context page={data} />
+        {data.stale_message && (
+          <div className="mb-4"><Alert tone="review" title="Profile changed" role="status">{data.stale_message}</Alert></div>
+        )}
         <ReviewRoom review={data.review} onChange={(r: Review) => set({ ...data, review: r })} onDiscard={discard} />
       </>
     );

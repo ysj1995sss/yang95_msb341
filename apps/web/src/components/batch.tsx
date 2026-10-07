@@ -46,6 +46,15 @@ export function BatchStrip({ onOpened, currentJobId }: { onOpened: () => void; c
     await api("/batch", { method: "DELETE" });
     reload();
   }
+  // Spec 014: finish the jobs that didn't (restart, failure, stop), or redo one from an older profile.
+  async function start(path: string, json: object, key: string) {
+    setBusy(key);
+    try {
+      await api(path, { method: "POST", json });
+      reload();
+      onOpened();
+    } catch (e) { toast((e as Error).message); } finally { setBusy(null); }
+  }
 
   return (
     <Card className="mb-6" aria-labelledby="batch-heading">
@@ -61,8 +70,14 @@ export function BatchStrip({ onOpened, currentJobId }: { onOpened: () => void; c
           return (
             <li key={item.job_id} className="flex flex-wrap items-center gap-2 rounded-[var(--radius-control)] bg-canvas px-3 py-2">
               <span className="min-w-0 flex-1"><span className="font-semibold">{item.title}</span> <span className="text-muted">at {item.company}</span>
-                {item.error && <span className="block text-[14px] text-muted">{item.error}</span>}</span>
+                {item.error && <span className="block text-[14px] text-muted">{item.error}</span>}
+                {item.stale && <span className="block text-[14px] text-review">{item.stale_message}</span>}</span>
               <Chip tone={s.tone}>{s.label}</Chip>
+              {item.stale && <Chip tone="review">Profile changed</Chip>}
+              {item.stale && batch.status !== "running" && (
+                <Button busy={busy === `again-${item.job_id}`} onClick={() => start("/batch/again", { job_id: item.job_id }, `again-${item.job_id}`)}
+                  aria-label={`Tailor ${item.title} again`}>Tailor again</Button>
+              )}
               {item.status === "done" && (isOpen
                 ? <Chip tone="primary">Open now</Chip>
                 : <Button busy={busy === item.job_id} onClick={() => open(item.job_id)}>Open review</Button>)}
@@ -71,6 +86,11 @@ export function BatchStrip({ onOpened, currentJobId }: { onOpened: () => void; c
         })}
       </ul>
       {batch.status === "running" && <Button variant="ghost" className="mt-3" onClick={cancel}>Stop after the current job</Button>}
+      {batch.status !== "running" && batch.resumable_count > 0 && (
+        <Button variant="primary" className="mt-3" busy={busy === "continue"} onClick={() => start("/batch/continue", {}, "continue")}>
+          {`Continue batch (${batch.resumable_count} left)`}
+        </Button>
+      )}
     </Card>
   );
 }
@@ -79,6 +99,7 @@ const PREPARED: Record<string, { label: string; tone: "verified" | "review" | "b
   tracked: { label: "Ready to apply", tone: "verified" },
   already_tracked: { label: "Already tracked", tone: "neutral" },
   review_first: { label: "Review first", tone: "review" },
+  tailor_again: { label: "Tailor again first", tone: "review" },
   not_found: { label: "Not found", tone: "blocked" },
 };
 

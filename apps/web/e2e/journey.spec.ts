@@ -256,3 +256,40 @@ test("add a company career board, search it, and remove it (spec 013; platform a
   await expect(page.getByText(/Removed Northwind Outdoor/)).toBeVisible();
   await expect(page.getByRole("button", { name: "Remove Northwind Outdoor" })).toHaveCount(0);
 });
+
+test("batch polish: out-of-date jobs, tailor again, and continuing a stopped batch (spec 014)", async ({ page }) => {
+  // The batch from the earlier test is done. Editing the Career Profile makes its jobs out of date.
+  const edited = await page.request.put("/api/backend/profile/summary", { data: { summary: "Analyst who explains numbers plainly." } });
+  expect(edited.ok()).toBeTruthy();
+  await page.goto("/tailor");
+  const strip = page.getByRole("region", { name: "Batch" });
+  await expect(strip.getByText("Profile changed").first()).toBeVisible();
+  await expect(strip.getByText(/changed after this was tailored/).first()).toBeVisible();
+  await expectAccessible(page, "tailor, batch out of date");
+
+  // Preparing refuses an out-of-date job.
+  await page.goto("/apply");
+  await page.getByRole("button", { name: "Prepare reviewed jobs for applying" }).click();
+  await expect(page.getByRole("list", { name: "Preparation results" })).toContainText("Tailor again first");
+
+  // Tailor one again: a one-job batch on the current profile.
+  await page.goto("/tailor");
+  await strip.getByRole("button", { name: /^Tailor .* again$/ }).first().click();
+  await expect(strip.getByText(/1 of 1 tailored/)).toBeVisible({ timeout: 90_000 });
+  await expect(strip.getByText("Profile changed")).toHaveCount(0);
+
+  // A batch the server was running when it restarted (its heartbeat stopped long ago) can be continued.
+  const fs = await import("node:fs");
+  const path = await import("node:path");
+  const file = path.join(process.env.E2E_DATA_DIR!, "users", "local", "tailor", "batch.json");
+  fs.writeFileSync(file, JSON.stringify({
+    id: "stop1", status: "running", heartbeat: 1, process: "gone", created: 1, note: "",
+    options: { model: null, length: "preserve", conservative: false },
+    items: [{ job_id: "greenhouse_101", title: "Senior Data Analyst", company: "GitLab", status: "running", error: "", resumable: false }],
+  }));
+  await page.reload();
+  await expect(strip.getByText(/stopped before it finished/)).toBeVisible();
+  await strip.getByRole("button", { name: "Continue batch (1 left)" }).click();
+  await expect(strip.getByText(/1 of 1 tailored/)).toBeVisible({ timeout: 90_000 });
+  await expect(strip.getByRole("button", { name: /Continue batch/ })).toHaveCount(0);
+});

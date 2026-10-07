@@ -178,8 +178,15 @@ export type Review = {
   blocked: string[]; show_all: boolean; verbs: Record<Decision, string>;
 };
 
-export type BatchItem = { job_id: string; title: string; company: string; status: string; error: string };
-export type Batch = { id: string; status: "running" | "done" | "cancelled" | "stopped"; items: BatchItem[]; note: string; summary: string };
+export type BatchItem = {
+  job_id: string; title: string; company: string; status: string; error: string;
+  // Spec 014: can be continued; tailored from an older Career Profile.
+  resumable?: boolean; stale: boolean | null; stale_message: string;
+};
+export type Batch = {
+  id: string; status: "running" | "done" | "cancelled" | "stopped"; items: BatchItem[]; note: string; summary: string;
+  resumable_count: number; options: { model: string | null; length: string; conservative: boolean };
+};
 export type PrepareResult = { job_id: string; title: string; company: string; url: string; status: string; message: string };
 
 export type RunStatus = { status: "idle" | "running" | "done" | "failed"; step?: string; error?: string; job_id?: string };
@@ -193,6 +200,7 @@ export type TailorPage = {
   run: RunStatus;
   review: Review | null;
   existing: { version: number; status: string; review_complete: boolean } | null;
+  stale_message: string; // spec 014: the open review came from an older Career Profile
 };
 
 // --- Apply and Tracker (phase 4) ---
