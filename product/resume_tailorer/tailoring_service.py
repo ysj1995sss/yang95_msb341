@@ -15,12 +15,14 @@ from __future__ import annotations
 import os
 import tempfile
 from dataclasses import replace
+from datetime import datetime
 from typing import Any, Callable, MutableMapping, Optional
 
 from resume_tailorer.analyzers import GapAnalyzer, JobAnalyzer, ResumeBenchmarker
 from resume_tailorer.analyzers.gap_analyzer import find_unsupported_claims
 from resume_tailorer.analyzers.requirement_review import build_review, with_resume
 from resume_tailorer.artifacts.changes import build_freeform_changes
+from resume_tailorer.freshness import profile_version
 from resume_tailorer.artifacts.length_control import (
     build_freeform_artifact,
     correct_docx_length_once,
@@ -208,6 +210,10 @@ def run_tailoring(
         "candidate_name": profile.name,
         "reviewed": False,
         "version": 1,
+        # Spec 014: which Career Profile this was tailored from (None for a one-off file), so a
+        # later profile edit can be flagged.
+        "profile_version": profile_version(career_profile),
+        "tailored_at": datetime.now().isoformat(timespec="seconds"),
     }
     publish_artifact_handoff(
         session, pdf_bytes=pdf_bytes, validation_status=validation.status.value,

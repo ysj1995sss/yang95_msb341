@@ -29,7 +29,8 @@ router = APIRouter(prefix="/v2", tags=["workspace"])
 # Run status and one-off resumes live in the user's data folder, so a restart loses neither
 # (decision 030). BOOT_ID marks which server start a "running" status belongs to: a run from an
 # earlier start can't still be running, and is reported as interrupted.
-BOOT_ID = uuid.uuid4().hex
+# One id per process, shared with the batch runner (spec 014), so both agree on restarts.
+from resume_tailorer.batch_runner import PROCESS_ID as BOOT_ID  # noqa: E402
 logger = logging.getLogger("job_copilot.tailor")
 _RUNS_LOCK = threading.Lock()
 
@@ -207,6 +208,16 @@ def _run_status(owner_id: str) -> dict:
     return data
 
 
+def _stale_message(ws: Workspace, state) -> str:
+    from resume_tailorer.freshness import review_freshness
+    from resume_tailorer.session_profile import get_career_profile
+
+    if not state:
+        return ""
+    fresh = review_freshness(state, get_career_profile(ws.session))
+    return fresh.message if fresh.stale else ""
+
+
 @router.get("/tailor")
 def tailor_page(show_all: bool = False, ws: Workspace = Depends(workspace)):
     from resume_tailorer.llm.settings import resolve_settings
@@ -236,6 +247,8 @@ def tailor_page(show_all: bool = False, ws: Workspace = Depends(workspace)):
         "ats_explainer": ats_explainer.as_dict(),
         "run": run,
         "review": _review_view(ws, state, show_all) if state else None,
+        # Spec 014: the open review was tailored from an older Career Profile.
+        "stale_message": _stale_message(ws, state),
         "existing": {"version": handoff.get("version"), "status": handoff.get("validation_status"),
                      "review_complete": bool(handoff.get("review_complete"))}
         if handoff and handoff.get("job_id") == pending.get("job_id") and not state else None,

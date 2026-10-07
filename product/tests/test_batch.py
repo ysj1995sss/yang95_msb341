@@ -105,3 +105,54 @@ def test_prepare_tracks_only_reviewed_jobs_and_never_submits(setup):
 
 def test_review_ready_explains_why_not():
     assert review_ready(None) == (False, "Not tailored yet.")
+
+
+# --- spec 014: a tailored resume from an older Career Profile -------------------------------
+
+def test_a_review_remembers_its_profile_and_flags_later_edits(setup):
+    import copy
+
+    from resume_tailorer.batch import item_freshness
+    from resume_tailorer.freshness import profile_version, review_freshness
+
+    service, jobs, artifacts = setup
+    profile = _profile([A1, A2, A3])
+    tailor_job(jobs[0], artifacts_dir=artifacts, original_bytes=_docx(), filename="r.docx",
+               llm=RewritesTheSqlBullet(), career_profile=profile)
+    state = load_review(artifacts, "greenhouse_1")  # saved and loaded: the new keys survive format 2
+    assert state["profile_version"] == profile_version(profile) and state["tailored_at"]
+    assert review_freshness(state, profile).stale is False
+
+    edited = copy.deepcopy(profile)
+    edited.skills.append("Looker")
+    fresh = review_freshness(state, edited)
+    assert fresh.stale is True and "changed after this was tailored" in fresh.message
+    assert item_freshness(artifacts, {"job_id": "greenhouse_1", "status": "done"}, edited)["stale"] is True
+    assert item_freshness(artifacts, {"job_id": "greenhouse_2", "status": "failed"}, edited)["stale"] is None
+
+    # Preparing never tracks it: tailor it again first.
+    state["decided"] = {c.change_id for c in state["changes"]}
+    save_review(artifacts, "greenhouse_1", state)
+    (result,) = prepare_jobs(["greenhouse_1"], service=service, profile=edited, artifacts_dir=artifacts)
+    assert result.status == "tailor_again" and "Tailor it again first" in result.message
+    assert not service.applications_db.get_submissions_by_job("greenhouse_1")
+    (result,) = prepare_jobs(["greenhouse_1"], service=service, profile=profile, artifacts_dir=artifacts)
+    assert result.status == "tracked"  # the unchanged profile still prepares
+
+
+def test_reviews_without_a_profile_version_claim_nothing(tmp_path):
+    import shutil
+    from pathlib import Path
+
+    from resume_tailorer.freshness import review_freshness
+    from resume_tailorer.review_store import _path
+
+    fixture = Path(__file__).parent / "fixtures" / "ats" / "legacy_review_format2.json"
+    target = _path(str(tmp_path), "greenhouse_1")
+    target.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy(fixture, target)
+    legacy = load_review(str(tmp_path), "greenhouse_1")
+    assert legacy is not None and "profile_version" not in legacy
+    assert review_freshness(legacy, _profile([A1])).stale is None
+    assert review_freshness({"profile_version": None}, _profile([A1])).stale is None  # a one-off file run
+    assert review_freshness(None, _profile([A1])).stale is None

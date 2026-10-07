@@ -40,13 +40,11 @@ def _profile_hash(profile: CareerTruthProfile) -> str:
     """Content hash of a profile snapshot -- same canonical-JSON-then-sha256
     approach as apps/api's profile_snapshot_hash (Steps 16-20), so an
     application record can show whether the candidate's profile has
-    changed since they applied, without storing the whole profile twice."""
-    import dataclasses
-    import hashlib
-    import json
+    changed since they applied, without storing the whole profile twice.
+    Spec 014's saved-review check uses the same hash (freshness.py)."""
+    from resume_tailorer.freshness import profile_version
 
-    canonical = json.dumps(dataclasses.asdict(profile), sort_keys=True, default=str)
-    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+    return profile_version(profile)
 
 
 def build_tailor_snapshot(

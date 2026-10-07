@@ -69,3 +69,64 @@ def test_batch_limits_and_cancel(tailor_client):  # noqa: F811
     assert tailor_client.post("/v2/batch/tailor", json={"job_ids": ["nope_1"]}).status_code == 404
     assert tailor_client.post("/v2/batch/prepare", json={}).status_code == 409  # nothing tailored yet
     assert tailor_client.delete("/v2/batch").json()["batch"] is None
+
+
+# --- spec 014: continue, tailor again, and out-of-date reviews -------------------------------
+
+def _batch_file(client):
+    """The local (single-user) person's folder, where the batch file lives."""
+    from resume_tailorer.identity import user_dir
+
+    return user_dir("local")
+
+
+def test_a_stopped_batch_can_be_continued_with_its_options(tailor_client):  # noqa: F811
+    from resume_tailorer import batch_runner
+
+    _setup(tailor_client)
+    assert tailor_client.post("/v2/batch/continue", json={}).status_code == 409  # no batch yet
+    # A batch the server was running when it restarted: its heartbeat stopped long ago.
+    batch_runner.write_batch(_batch_file(tailor_client), {
+        "id": "old1", "status": "running", "heartbeat": 1.0, "process": "gone", "created": 1.0, "note": "",
+        "options": {"model": None, "length": "preserve", "conservative": True},
+        "items": [{"job_id": "greenhouse_101", "title": "Senior Data Analyst", "company": "GitLab",
+                   "status": "running", "error": "", "resumable": False}]})
+    stopped = tailor_client.get("/v2/batch").json()["batch"]
+    assert stopped["status"] == "stopped" and stopped["resumable_count"] == 1
+    assert "Continue it to tailor the rest" in stopped["note"]
+    assert stopped["items"][0]["status"] == "not_started"
+
+    r = tailor_client.post("/v2/batch/continue", json={})
+    assert r.status_code == 200, r.text
+    batch = _wait(tailor_client)
+    assert batch["status"] == "done" and batch["items"][0]["status"] == "done", batch
+    assert batch["options"]["conservative"] is True and batch["resumable_count"] == 0
+    assert tailor_client.post("/v2/batch/continue", json={}).status_code == 409  # nothing left
+
+
+def test_a_profile_edit_flags_tailored_jobs_and_blocks_preparing(tailor_client, monkeypatch):  # noqa: F811
+    from resume_tailorer.docx_export import pipeline
+
+    from tests.e2e_server import fake_pdf
+
+    monkeypatch.setattr(pipeline, "convert_docx_to_pdf", fake_pdf)
+    _setup(tailor_client)
+    tailor_client.post("/v2/batch/tailor", json={"job_ids": ["greenhouse_101"]})
+    batch = _wait(tailor_client)
+    assert batch["items"][0]["stale"] is False and batch["items"][0]["stale_message"] == ""
+    tailor_client.post("/v2/batch/open", json={"job_id": "greenhouse_101"})
+    assert tailor_client.get("/v2/tailor").json()["stale_message"] == ""
+
+    assert tailor_client.put("/v2/profile/summary", json={"summary": "Analyst who explains numbers plainly."}).status_code == 200
+    item = tailor_client.get("/v2/batch").json()["batch"]["items"][0]
+    assert item["stale"] is True and "changed after this was tailored" in item["stale_message"]
+    assert "Tailor it again" in tailor_client.get("/v2/tailor").json()["stale_message"]
+    (result,) = tailor_client.post("/v2/batch/prepare", json={}).json()["results"]
+    assert result["status"] == "tailor_again"
+
+    # Tailor again: a one-job batch, after which the review is current.
+    r = tailor_client.post("/v2/batch/again", json={"job_id": "greenhouse_101"})
+    assert r.status_code == 200, r.text
+    batch = _wait(tailor_client)
+    assert [i["job_id"] for i in batch["items"]] == ["greenhouse_101"] and batch["items"][0]["stale"] is False
+    assert tailor_client.post("/v2/batch/again", json={"job_id": "nope_1"}).status_code == 404

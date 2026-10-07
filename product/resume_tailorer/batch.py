@@ -72,13 +72,14 @@ class Prepared:
     title: str
     company: str
     url: str
-    status: str  # "tracked" | "already_tracked" | "review_first" | "not_found"
+    status: str  # "tracked" | "already_tracked" | "review_first" | "tailor_again" | "not_found"
     message: str = ""
 
 
 def prepare_jobs(job_ids: list[str], *, service, profile, artifacts_dir: str) -> list[Prepared]:
-    """Track each reviewed, passing job as "Ready to apply". Never submits anything."""
+    """Track each reviewed, passing, up-to-date job as "Ready to apply". Never submits anything."""
     from resume_tailorer.applications.models import ApplicationMode
+    from resume_tailorer.freshness import TAILOR_AGAIN_FIRST, review_freshness
     from resume_tailorer.review_store import load_review
     from resume_tailorer.tailoring_session import ACTIVE_JOB_KEY, publish_artifact_handoff
 
@@ -90,6 +91,9 @@ def prepare_jobs(job_ids: list[str], *, service, profile, artifacts_dir: str) ->
             continue
         base = dict(job_id=job_id, title=job.title, company=job.company, url=job.url or "")
         state = load_review(artifacts_dir, job_id)
+        if review_freshness(state, profile).stale:  # spec 014: never track a resume from an old profile
+            results.append(Prepared(**base, status="tailor_again", message=TAILOR_AGAIN_FIRST))
+            continue
         ready, why = review_ready(state)
         if not ready:
             results.append(Prepared(**base, status="review_first", message=why))
@@ -131,3 +135,14 @@ def handoff_for_saved_review(session: dict[str, Any], artifacts_dir: str, job_id
         session, pdf_bytes=state.get("pdf_bytes"), validation_status=state["report"].validation.status.value,
         tailored_alignment=state["report"].tailored_alignment, version=state.get("version", 1), folder=artifacts_dir,
     )
+
+
+def item_freshness(artifacts_dir: str, item: dict, profile) -> dict:
+    """Spec 014: a tailored batch item's `stale` flag and message, from its saved review."""
+    from resume_tailorer.freshness import review_freshness
+    from resume_tailorer.review_store import load_review
+
+    if item.get("status") != "done":
+        return {"stale": None, "stale_message": ""}
+    fresh = review_freshness(load_review(artifacts_dir, item["job_id"]), profile)
+    return {"stale": fresh.stale, "stale_message": fresh.message}
