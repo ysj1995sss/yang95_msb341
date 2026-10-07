@@ -1,6 +1,6 @@
 # Spec 013: Add a company career board, and search that explains itself
 
-**Status:** Draft for the builder's review (2026-10-06). Nothing is built yet.
+**Status:** Implemented and locally verified on 2026-10-06; see decision 035 and `discovery/experiments/2026-10-spec-013-custom-boards.md`. Not pushed yet.
 **Builds on:** decisions 020 (real results only, goal filters) and 027 (sources, search speed,
 SmartRecruiters).
 
@@ -245,15 +245,16 @@ jobs that drop out of a search.
      roles would appear without that filter.
    - The counts come from re-running `get_available_jobs` over the same run, with no new
      network fetch. Filters that hide nothing aren't listed.
-   - Each line has a "Remove this filter" button that changes the form; the person searches
-     again.
+   - Each line has a "Search without this filter" button. It runs only when the person clicks
+     it, and the change is shown in the search summary. As built, the button searches at once
+     rather than only changing the form.
 4. **Broader titles.**
    - The rule is stated on the form: "Titles must contain every word you typed, in any order."
    - With fewer than 5 results, up to three broader titles are offered, each formed by dropping
      one word, seniority words first: senior, sr, junior, jr, lead, principal, staff, I, II,
      III.
-   - These are buttons that fill the title field. The query isn't changed until the person
-     searches. No counts are shown, since titles that didn't match aren't stored and guessing
+   - These are buttons ("Search 'Data Analyst'") that search when clicked; nothing changes by
+     itself. No counts are shown, since titles that didn't match aren't stored and guessing
      would be dishonest.
 5. **The paste path.** The empty-results state and every "not supported" link message include
    "Found this role somewhere else? Paste its description in Tailor."

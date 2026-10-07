@@ -15,6 +15,15 @@ decisions 001, 006, 009, 012, 014, 015, 016, or 017 unless new evidence forces i
 This section supersedes everything below it. The older sections are history; trust the code, the
 `specs/` and the `decisions/` over them.
 
+**Spec 013 update (2026-10-06, newest):** people can add public Greenhouse, Lever, Ashby and
+SmartRecruiters career boards (verified with the platform, saved per person in `custom_boards`,
+searched with the 75 curated boards, failures named per board). The sponsorship filter keeps
+unstated jobs, labeled. Shared search help (`ui/search_help.py`) names the filters that hide
+roles and offers broader titles. Read `specs/013`, decision 035 and
+`discovery/experiments/2026-10-spec-013-custom-boards.md`. Local verification: product 1,225
+passed (1 skipped); API 132; web lint and types clean; 21 Playwright cases passed with a clean
+exit. Committed locally and not pushed (the builder asked to push only on request).
+
 **Spec 012 update (later 2026-10-06):** Word profile sync now covers identifiable contact,
 summary, role title/date/location, skills/tools, education and certifications. Ambiguous
 contradictions stop the Word artifact. PDF/free-form summary and skills edits have independent
@@ -69,20 +78,23 @@ push must still be checked separately.
 Follow `AGENTS.md`: draft a spec in `specs/` before building, show the plan, and wait for the
 builder's approval. Then build in small verified commits, and record decisions in `decisions/`.
 
-1. **Spec 012 follow-up:** Test one additional anonymized Word template with unusual contact or
+1. **Spec 013 follow-ups:** support EU-hosted Greenhouse and Lever boards; clean up the repeated
+   `gh_jid` in Greenhouse links; consider Workday as the next source (no public JSON API, so it
+   needs its own spec); have a person add a real board through the web page.
+2. **Spec 012 follow-up:** Test one additional anonymized Word template with unusual contact or
    education layout, and investigate the Playwright shutdown hang. Do not loosen fail-closed
    matching without a reproduction.
-2. **Batch polish:**
+3. **Batch polish:**
    - resume a batch that a restart stopped (`batch_router._read_batch` marks it "stopped");
    - show a "the profile changed since this review" warning;
    - run the Streamlit batch without blocking the page.
-3. **Recognition:**
+4. **Recognition:**
    - add vocabulary for fields the builder targets (`analyzers/ats_keywords.py`, `GENERIC_TERMS`,
      `AMBIGUOUS_ACRONYMS` in `requirement_review.py`);
    - make confirmation per fact instead of per section (`profile_store.fact_paths`).
-4. **Deployment, Google sign-in and Gmail, and the Chrome Web Store.** These need the builder's
+5. **Deployment, Google sign-in and Gmail, and the Chrome Web Store.** These need the builder's
    accounts; ask first. The guides are spec 009 "Deploying", `extension/STORE.md` and decision 030.
-5. **Supervised user tests** with 2–3 people (Sprint 2). This is the biggest unknown.
+6. **Supervised user tests** with 2–3 people (Sprint 2). This is the biggest unknown.
 
 The builder also flagged a strategic question: two frontends double every feature. Raise "retire
 Streamlit after the web app is deployed" with them; don't decide it alone.

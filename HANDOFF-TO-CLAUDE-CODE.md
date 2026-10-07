@@ -9,7 +9,25 @@ Read this file first, then `CLAUDE.md`, then the decisions listed below. Do not 
 
 ---
 
-## Latest update (2026-10-05, latest) — spec 011 (decision 033)
+## Latest update (2026-10-06) — added company career boards (spec 013, decision 035)
+
+- **Add a board:** Jobs → Company boards. Paste a public Greenhouse, Lever, Ashby or
+  SmartRecruiters board or job link. The platform's API confirms the board before it's saved in
+  the person's profile record (`custom_boards`, up to 25; 30 checks a day). Later searches
+  include it, its jobs say "board you added", and failures are named per board.
+- **Code:** `job_search/board_links.py` (parse and verify; never fetches the pasted URL),
+  `job_search/custom_boards.py`, the scrapers' `extra_boards`, `/v2/boards` routes,
+  `ui/search_help.py` (shared wording, board counts, narrowing panel, broader titles), web
+  `app/jobs/boards.tsx` and `narrowing.tsx`, Streamlit `pages/2_Job_Search.py`.
+- **Behavior fixes:**
+  - "I need visa sponsorship" keeps unstated jobs, labeled; it used to hide every live job.
+  - Company filters ignore case.
+  - The board count follows the chosen sources.
+- **Supervised run:** `discovery/experiments/2026-10-spec-013-custom-boards.md` (real Elastic
+  and Watershed boards).
+- **Test baseline:** `product/` 1225 (1 skipped), `apps/api/` 132, 21 browser tests.
+
+## Update (2026-10-05) — spec 011 (decision 033)
 
 - **Tailoring from the Career Profile:** tailoring now uses the Career Profile. A Word resume is
   updated from it first (roles matched by employer and title, the file's bullet order kept), so
