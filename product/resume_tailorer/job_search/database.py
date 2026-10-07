@@ -246,22 +246,24 @@ class JobDatabase:
             )
             params.append(f"%{goals.remote_preference}%")
 
-        # Filter by sponsorship if required
+        # Sponsorship: hide only postings that state they don't sponsor. No live board states it,
+        # so "not stated" is kept and labeled rather than hiding every job (spec 013).
         if goals.sponsorship_required:
-            where_clauses.append("sponsorship_available = ?")
+            where_clauses.append("(sponsorship_available = ? OR sponsorship_available IS NULL)")
             params.append(True)
 
-        # Filter by target companies (if specified, include only these)
-        if goals.target_companies:
-            placeholders = ",".join("?" * len(goals.target_companies))
-            where_clauses.append(f"company IN ({placeholders})")
-            params.extend(goals.target_companies)
+        # Company names compare without regard to case or surrounding spaces (spec 013).
+        targets = [c.strip().lower() for c in goals.target_companies or [] if c.strip()]
+        if targets:
+            placeholders = ",".join("?" * len(targets))
+            where_clauses.append(f"LOWER(TRIM(company)) IN ({placeholders})")
+            params.extend(targets)
 
-        # Filter by excluded companies
-        if goals.exclude_companies:
-            placeholders = ",".join("?" * len(goals.exclude_companies))
-            where_clauses.append(f"company NOT IN ({placeholders})")
-            params.extend(goals.exclude_companies)
+        excluded = [c.strip().lower() for c in goals.exclude_companies or [] if c.strip()]
+        if excluded:
+            placeholders = ",".join("?" * len(excluded))
+            where_clauses.append(f"LOWER(TRIM(company)) NOT IN ({placeholders})")
+            params.extend(excluded)
 
         # Build the query
         query = "SELECT * FROM job_postings"

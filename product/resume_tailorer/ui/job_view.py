@@ -16,6 +16,7 @@ from resume_tailorer.job_search.job_attributes import employment_type_for, exper
 from resume_tailorer.job_search.job_quality import evaluate_job_quality, quality_label
 from resume_tailorer.job_search.models import FitResult, JobPosting, JobQualityStatus, TriageAction, canonicalize_triage_action
 
+SPONSORSHIP_NOT_STATED = "Sponsorship not stated — check the posting"
 LIVE_SOURCE_LABELS = {"greenhouse": "Greenhouse", "lever": "Lever", "ashby": "Ashby",
                       "smartrecruiters": "SmartRecruiters", "company_pages": "Pasted by you"}
 DEMO_SOURCES = {"linkedin", "indeed", "handshake"}
@@ -44,6 +45,10 @@ class JobRow:
     fit: str
     fit_tone: str
     status: str
+    # Spec 013: from a board this person added; a note when they need sponsorship and the
+    # posting doesn't say.
+    added_board: bool = False
+    sponsorship_note: str = ""
 
 
 @dataclass(frozen=True)
@@ -125,11 +130,21 @@ def _work_mode_text(value: Optional[str]) -> str:
     return {"onsite": "On-site", "on-site": "On-site"}.get(value, value.capitalize())
 
 
+def from_added_board(job: JobPosting, added_keys: Optional[set]) -> bool:
+    """True when the posting came from a board this person added (spec 013)."""
+    board = (job.raw_json or {}).get("board") if isinstance(job.raw_json, dict) else None
+    return bool(added_keys and board and (job.source.value, str(board).lower()) in added_keys)
+
+
 def build_row(job: JobPosting, fit: Optional[FitResult], action: Optional[str],
-              quality: Optional[JobQualityStatus] = None, now: Optional[datetime] = None) -> JobRow:
+              quality: Optional[JobQualityStatus] = None, now: Optional[datetime] = None,
+              added_keys: Optional[set] = None, sponsorship_needed: bool = False) -> JobRow:
     quality = quality or evaluate_job_quality(job)
     fit_label, tone = fit_text(fit)
     source, is_demo = source_text(job)
+    added = from_added_board(job, added_keys)
+    if added:
+        source = f"{source} · board you added"
     return JobRow(
         job_id=job_id_for(job),
         title=(job.title or "Untitled role").strip(),
@@ -145,6 +160,8 @@ def build_row(job: JobPosting, fit: Optional[FitResult], action: Optional[str],
         fit=fit_label,
         fit_tone=tone,
         status=ACTION_LABELS.get(canonicalize_triage_action(action), "New"),
+        added_board=added,
+        sponsorship_note=(SPONSORSHIP_NOT_STATED if sponsorship_needed and job.sponsorship_available is None else ""),
     )
 
 
