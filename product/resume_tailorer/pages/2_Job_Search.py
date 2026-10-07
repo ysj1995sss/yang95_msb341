@@ -355,7 +355,9 @@ def _job_review(job):
 
 def _render_detail(job, fit, action, quality) -> None:
     review = _job_review(job)
-    detail = build_detail(job, fit, action, _record().get("authorization"), quality, review=review)
+    boards = _custom_boards()
+    detail = build_detail(job, fit, action, _record().get("authorization"), quality, review=review,
+                          added_keys=added_board_keys(boards), industry_labels=industry_labels(boards))
     row = detail.row
     with st.container(key="jobdetail"):
         fresh = row.freshness[0].lower() + row.freshness[1:] if row.freshness.startswith("Posted") else row.freshness

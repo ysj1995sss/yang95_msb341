@@ -122,3 +122,16 @@ def test_narrowing_names_filters_that_hide_roles():
     assert found[0]["text"] == "Location “New York” is hiding 4 more roles."
     assert sh.narrowing(form, 5, count) == []  # enough results: nothing shown
     assert sh.cleared(form, "location")["location"] == "" and sh.cleared(form, "nope") == form
+
+
+def test_detail_labels_an_added_board_like_the_list():
+    from resume_tailorer.ui.job_view import build_detail
+
+    job = _job("1", company="Northwind Outdoor", raw={"board": "northwind"})
+    detail = build_detail(job, None, None, added_keys={("greenhouse", "northwind")},
+                          industry_labels={"northwind outdoor": "Retail"})
+    facts = dict(detail.facts)
+    assert detail.row.source == "Greenhouse · board you added" and facts["Source"] == detail.row.source
+    assert facts["Industry"] == "Retail"
+    plain = dict(build_detail(job, None, None).facts)
+    assert plain["Source"] == "Greenhouse" and plain["Industry"] == "Not specified"

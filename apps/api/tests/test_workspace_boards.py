@@ -104,6 +104,9 @@ def test_searches_include_added_boards_and_label_their_jobs(boards_client):
     assert rows["GitLab"]["added_board"] is False
     result = boards_client.get("/v2/jobs").json()
     assert result["boards_line"].startswith("Searched ") and result["failed_boards"] == []
+    detail = boards_client.get(f"/v2/jobs/{rows['Northwind Outdoor']['job_id']}").json()
+    assert detail["row"]["source"] == "Greenhouse · board you added"
+    assert dict(map(tuple, detail["facts"]))["Industry"] == "Not specified"
     (board,) = boards_client.get("/v2/boards").json()["custom_boards"]
     assert board["status"].startswith("1 matching role at the last search")
 

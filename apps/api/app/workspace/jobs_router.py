@@ -344,7 +344,11 @@ def job_detail(job_id: str, ws: Workspace = Depends(workspace)):
             review = build_review(JobAnalyzer().analyze(job.description), profile,
                                   provenance=ws.record.get("provenance"), posting=job.description)
             requirements = {"summary": review.summary, "rows": len(review.rows)}
-    detail = build_detail(job, fit, action, ws.record.get("authorization"), evaluate_job_quality(job), review=review)
+    from resume_tailorer.job_search.custom_boards import added_board_keys, industry_labels
+
+    boards = _custom_boards(ws)
+    detail = build_detail(job, fit, action, ws.record.get("authorization"), evaluate_job_quality(job), review=review,
+                          added_keys=added_board_keys(boards), industry_labels=industry_labels(boards))
     return {
         **jsonable(detail),
         "fit_measured": fit is not None and fit.overall_fit is not None,

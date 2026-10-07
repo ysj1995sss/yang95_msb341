@@ -183,11 +183,13 @@ def _readable_gap(gap: str) -> str:
 def build_detail(job: JobPosting, fit: Optional[FitResult], action: Optional[str],
                  authorization: Optional[Mapping[str, Any]] = None,
                  quality: Optional[JobQualityStatus] = None, now: Optional[datetime] = None,
-                 review=None) -> JobDetail:
+                 review=None, added_keys: Optional[set] = None,
+                 industry_labels: Optional[Mapping[str, str]] = None) -> JobDetail:
     """`review` (spec 011): the requirement review for this posting. When given, the strong,
     partial and missing lists come from it, so Jobs and Tailor never disagree; the Candidate Fit
-    percentages still come from `fit`."""
-    row = build_row(job, fit, action, quality, now)
+    percentages still come from `fit`. `added_keys` and `industry_labels` (spec 013): the boards
+    this person added, so the detail labels the source and industry the same way the list does."""
+    row = build_row(job, fit, action, quality, now, added_keys=added_keys)
     authorization = authorization or {}
     facts = (
         ("Salary", row.salary),
@@ -195,7 +197,7 @@ def build_detail(job: JobPosting, fit: Optional[FitResult], action: Optional[str
         ("Sponsorship", _sponsorship_text(job.sponsorship_available)),
         ("Level", experience_level_for(job)),
         ("Job type", employment_type_for(job)),
-        ("Industry", industry_for(job)),
+        ("Industry", industry_for(job, dict(industry_labels or {}))),
         ("Source", row.source),
         ("Posting", f"{row.quality} · {row.freshness}"),
     )
