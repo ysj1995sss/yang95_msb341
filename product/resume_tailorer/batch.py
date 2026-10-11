@@ -11,6 +11,10 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import Any, Callable, Optional
+import uuid
+from pathlib import Path
+from resume_tailorer.batch_artifacts import StagedReview, new_stage, mark_stage, publish_staged_review, cleanup_staging
+import time
 
 MAX_BATCH = 10
 
@@ -19,12 +23,11 @@ def private_session(artifacts_dir: str, owner_id: str = "local") -> dict:
     return {"owner_id": owner_id, "artifacts_dir": artifacts_dir}
 
 
-def tailor_job(job, *, artifacts_dir: str, original_bytes: bytes, filename: str, llm, fit_scorer=None,
+def _compute_job(job, *, artifacts_dir: str, original_bytes: bytes, filename: str, llm, fit_scorer=None,
                career_profile=None, provenance: Optional[dict] = None, target_length: str = "preserve",
                conservative: bool = False, progress: Callable[[str], None] = lambda m: None) -> dict:
     """Tailor one stored job in a private session and save its review. Returns the review state."""
     from resume_tailorer.job_search.job_service import build_tailor_snapshot
-    from resume_tailorer.review_store import save_review
     from resume_tailorer.tailoring_service import regenerate, run_tailoring
     from resume_tailorer.tailoring_session import ACTIVE_JOB_KEY
     from resume_tailorer.ui.tailoring_view import safe_default_dispositions
@@ -45,8 +48,25 @@ def tailor_job(job, *, artifacts_dir: str, original_bytes: bytes, filename: str,
         state["gap_blocks_applied"] = True
         regenerate(session, state)
         state["reviewed"] = False
-    save_review(artifacts_dir, job_id, state)
     return state
+
+
+def stage_tailor_job(job, *, artifacts_dir: str, execution: str, **kwargs) -> StagedReview:
+    job_id = f"{job.source.value}_{job.source_id}"
+    cleanup_staging(Path(artifacts_dir), now=time.time(), retention_seconds=24 * 60 * 60)
+    stage = new_stage(artifacts_dir, execution, job_id)
+    try:
+        state = _compute_job(job, artifacts_dir=str(stage), **kwargs)
+        return StagedReview(state, stage, Path(artifacts_dir))
+    finally:
+        mark_stage(stage, active=False)
+
+
+def tailor_job(job, *, artifacts_dir: str, **kwargs) -> dict:
+    """Immediate non-runner wrapper. Background hooks must use stage_tailor_job instead."""
+    result = stage_tailor_job(job, artifacts_dir=artifacts_dir, execution=uuid.uuid4().hex, **kwargs)
+    publish_staged_review(f"{job.source.value}_{job.source_id}", result)
+    return result.state
 
 
 def review_ready(state: Optional[dict]) -> tuple[bool, str]:

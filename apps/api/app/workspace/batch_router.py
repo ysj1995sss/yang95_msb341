@@ -58,21 +58,25 @@ class BatchRequest(RunRequest):
 
 def _hooks(owner, settings, request: RunRequest):
     """How the shared runner tailors one job here, counts the daily limit and reports progress."""
-    from resume_tailorer.batch import tailor_job
-    from resume_tailorer.batch_runner import Hooks, LimitReached
+    from resume_tailorer.batch import stage_tailor_job, publish_staged_review
+    from resume_tailorer.batch_runner import Hooks, LimitReached, when_current
     from resume_tailorer.llm.client import LLMClient
     from resume_tailorer.session_profile import get_career_profile
 
-    def tailor_one(job_id: str) -> None:
+    def tailor_one(claim):
+        job_id = claim.job_id
         ws = Workspace(owner)  # fresh each job, so a profile edit mid-batch is used from then on
         try:
             job = ws.service.db.get_job_posting(job_id)
             if job is None:
                 raise LookupError("That job is no longer stored.")
-            source = _resume_source(ws)
+            # A one-off upload changed mid-batch must not replace the batch's profile resume.
+            meta = ws.record.get('resume')
+            data = ws.store().resume_bytes(meta) if meta else None
+            source = (meta['filename'], data) if data else None
             if source is None:
                 raise LookupError("Import your resume in Career Profile first.")
-            tailor_job(job, artifacts_dir=ws.session["artifacts_dir"], original_bytes=source[1], filename=source[0],
+            return stage_tailor_job(job, execution=claim.execution, artifacts_dir=ws.session["artifacts_dir"], original_bytes=source[1], filename=source[0],
                        llm=LLMClient(settings), fit_scorer=ws.service.fit_scorer,
                        career_profile=get_career_profile(ws.session), provenance=ws.record.get("provenance"),
                        target_length=LENGTHS[request.length], conservative=request.conservative)
@@ -85,17 +89,22 @@ def _hooks(owner, settings, request: RunRequest):
         except HTTPException as exc:
             raise LimitReached(str(exc.detail)) from exc
 
-    def on_step(step: str, job_id: Optional[str]) -> None:
+    def on_step(claim, step: str) -> None:
         with _RUNS_LOCK:
-            _write_run(owner.owner_id, {**_read_run(owner.owner_id), "status": "running", "job_id": job_id,
-                                        "batch": True, "step": step, "boot": BOOT_ID})
+            if not _read_run(owner.owner_id).get('batch'):
+                return
+            when_current(claim, lambda: _write_run(owner.owner_id, {**_read_run(owner.owner_id), "status": "running", "job_id": claim.job_id,
+                                        "batch": True, "step": step, "boot": BOOT_ID}))
 
-    def on_finish() -> None:
+    def on_finish(claim) -> None:
         with _RUNS_LOCK:
-            _write_run(owner.owner_id, {**_read_run(owner.owner_id), "status": "done", "batch": True,
-                                        "step": "Batch finished", "finished": time.time()})
+            if not _read_run(owner.owner_id).get('batch'):
+                return
+            when_current(claim, lambda: _write_run(owner.owner_id, {**_read_run(owner.owner_id), "status": "done", "batch": True,
+                                        "step": "Batch finished", "finished": time.time()}))
 
-    return Hooks(tailor_one=tailor_one, use_limit=use_limit, on_step=on_step, on_finish=on_finish)
+    return Hooks(tailor_one=lambda job_id: None, tailor_claim=tailor_one, publish_result=publish_staged_review,
+                 use_limit=use_limit, on_claim_step=on_step, on_claim_finish=on_finish)
 
 
 def _check_can_run(ws: Workspace, body: RunRequest):
@@ -103,7 +112,7 @@ def _check_can_run(ws: Workspace, body: RunRequest):
     source = _resume_source(ws)
     if source is None:
         raise HTTPException(409, "Import your resume in Career Profile first.")
-    if source[2].startswith("One-off"):
+    if source[3]:
         raise HTTPException(409, "A batch uses your Career Profile resume. Remove the one-off file in Tailor first.")
     try:
         return _settings_for(body, ws)
@@ -116,7 +125,11 @@ def _begin(ws: Workspace, launch) -> dict:
     from resume_tailorer.batch_runner import BatchBusy
 
     with _RUNS_LOCK:
-        if _read_run(ws.owner_id).get("status") == "running":
+        run = _read_run(ws.owner_id)
+        # A recovered batch may still have a stale API callback status; token ownership wins.
+        from resume_tailorer.batch_runner import read_batch, _is_active
+        batch = read_batch(_user_dir(ws.owner_id)) if run.get('batch') else None
+        if run.get("status") == "running" and (not run.get('batch') or (batch and _is_active(batch))):
             raise HTTPException(409, "A tailoring run is already in progress. Wait for it to finish.")
         try:
             launch()

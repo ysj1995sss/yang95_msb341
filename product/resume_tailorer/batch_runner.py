@@ -47,11 +47,39 @@ class BatchBusy(Exception):
 
 @dataclass
 class Hooks:
-    tailor_one: Callable[[str], None]  # tailor and save one job's review; raises on failure
+    tailor_one: Callable[[str], object]  # legacy harmless hooks; real apps use tailor_claim
     use_limit: Callable[[], None] = lambda: None  # raises LimitReached
     on_step: Callable[[str, Optional[str]], None] = lambda step, job_id: None
     on_finish: Callable[[], None] = lambda: None
     clock: Callable[[], float] = field(default=time.time)
+    tailor_claim: Optional[Callable[[ExecutionClaim], object]] = None
+    publish_result: Callable[[str, object], None] = lambda job_id, result: None
+    on_claim_step: Optional[Callable[[ExecutionClaim, str], None]] = None
+    on_claim_finish: Optional[Callable[[ExecutionClaim], None]] = None
+
+
+@dataclass(frozen=True)
+class ExecutionClaim:
+    user_dir: Path
+    batch_id: str
+    execution: str
+    job_id: Optional[str] = None
+
+
+def owns_running_item(data, batch_id, execution, job_id) -> bool:
+    return bool(data and data.get('id') == batch_id and data.get('execution') == execution
+                and _is_active(data) and any(i['job_id'] == job_id and i['status'] == 'running' for i in data['items']))
+
+
+def when_current(claim: ExecutionClaim, action: Callable[[], None]) -> bool:
+    with _file_lock(claim.user_dir):
+        data = _read_batch_locked(claim.user_dir)
+        if not data or data.get('id') != claim.batch_id or data.get('execution') != claim.execution:
+            return False
+        if claim.job_id is not None and not owns_running_item(data, claim.batch_id, claim.execution, claim.job_id):
+            return False
+        action()
+        return True
 
 
 # --- the state file -------------------------------------------------------------------------
@@ -67,26 +95,41 @@ def _file_lock(user_dir: Path, wait: float = 5.0) -> Iterator[None]:
     """A short cross-process lock around read-check-write of the batch file."""
     lock = _path(user_dir).with_suffix(".lock")
     deadline = time.monotonic() + wait
-    while True:
-        try:
-            fd = os.open(lock, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
-            os.close(fd)
-            break
-        except FileExistsError:
-            try:
-                if time.time() - lock.stat().st_mtime > 30:  # left behind by a crash
-                    lock.unlink(missing_ok=True)
-                    continue
-            except OSError:
-                pass
-            if time.monotonic() > deadline:
-                raise BatchBusy("Another batch change is in progress. Try again in a moment.")
-            time.sleep(0.05)
+    # OS locks release on process exit. Never steal/unlink a live publisher's lock on age,
+    # and never race two crash-recovery unlinkers against a newly acquired lock.
+    fd = os.open(lock, os.O_CREAT | os.O_RDWR)
+    if os.fstat(fd).st_size == 0:
+        os.write(fd, b'0')
+    def acquire():
+        os.lseek(fd, 0, os.SEEK_SET)
+        if os.name == 'nt':
+            import msvcrt
+            msvcrt.locking(fd, msvcrt.LK_NBLCK, 1)
+        else:
+            import fcntl
+            fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    acquired = False
     try:
+        while not acquired:
+            try:
+                acquire()
+                acquired = True
+            except OSError:
+                if time.monotonic() > deadline:
+                    raise BatchBusy("Another batch change is in progress. Try again in a moment.")
+                time.sleep(0.05)
         with _LOCK:
             yield
     finally:
-        lock.unlink(missing_ok=True)
+        if acquired:
+            os.lseek(fd, 0, os.SEEK_SET)
+            if os.name == 'nt':
+                import msvcrt
+                msvcrt.locking(fd, msvcrt.LK_UNLCK, 1)
+            else:
+                import fcntl
+                fcntl.flock(fd, fcntl.LOCK_UN)
+        os.close(fd)
 
 
 def write_batch(user_dir: Path, data: dict) -> None:
@@ -343,14 +386,29 @@ def run(user_dir: Path, batch_id: str, hooks: Hooks, execution: str) -> None:
             if _update(user_dir, batch_id, execution, pick) is None or not picked:
                 return
             item = picked["item"]
-            hooks.on_step(f"Tailoring {item['title']} ({picked['index'] + 1} of {picked['total']})", item["job_id"])
+            claim = ExecutionClaim(Path(user_dir), batch_id, execution, item['job_id'])
+            step = f"Tailoring {item['title']} ({picked['index'] + 1} of {picked['total']})"
+            hooks.on_step(step, item['job_id'])
+            if hooks.on_claim_step:
+                hooks.on_claim_step(claim, step)  # outside batch lock; API acquires its lock first
             outcome = {"status": "done", "error": "", "resumable": False}
+            result = None
             try:
-                hooks.tailor_one(item["job_id"])
+                result = hooks.tailor_claim(claim) if hooks.tailor_claim else hooks.tailor_one(item["job_id"])
             except Exception as exc:  # one job failing never stops the rest
                 logger.exception("Batch job %s failed", item["job_id"])
                 outcome = {"status": "failed", "error": f"Tailoring didn't finish: {exc}", "resumable": True}
-            _update(user_dir, batch_id, execution, lambda d, n=picked["index"]: d["items"][n].update(outcome))
+            with _file_lock(user_dir, wait=30.0):
+                data = _read_batch_locked(user_dir)
+                if not owns_running_item(data, batch_id, execution, item['job_id']):
+                    return
+                if outcome['status'] == 'done':
+                    try:
+                        hooks.publish_result(item['job_id'], result)
+                    except Exception as exc:
+                        outcome = dict(status='failed', error=f'The review could not be saved: {exc}', resumable=True)
+                data['items'][picked['index']].update(outcome)
+                write_batch(user_dir, data)
     finally:
         stop.set()
         own = _update(user_dir, batch_id, execution,
@@ -358,5 +416,7 @@ def run(user_dir: Path, batch_id: str, hooks: Hooks, execution: str) -> None:
         try:
             if own is not None:
                 hooks.on_finish()
+                if hooks.on_claim_finish:
+                    hooks.on_claim_finish(ExecutionClaim(Path(user_dir), batch_id, execution))
         except Exception:  # progress reporting never breaks a batch
             logger.exception("Batch finish hook failed")

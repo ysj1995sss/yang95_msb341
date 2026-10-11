@@ -38,7 +38,7 @@ def _user_dir():
 def _hooks(options: dict):
     """Tailor one job in the background thread: no st.session_state there, so the person's
     record, profile and stored job are read fresh from their folder for each job."""
-    from resume_tailorer.batch import tailor_job
+    from resume_tailorer.batch import stage_tailor_job, publish_staged_review
     from resume_tailorer.batch_runner import Hooks
     from resume_tailorer.identity import applications_db_path, artifacts_dir, job_db_path
     from resume_tailorer.job_search.job_service import JobService
@@ -50,7 +50,8 @@ def _hooks(options: dict):
     owner = _owner()
     settings = resolve_settings(model=options.get("model"))  # raises ValueError when no model is set up
 
-    def tailor_one(job_id: str) -> None:
+    def tailor_one(claim):
+        job_id = claim.job_id
         session: dict = {}
         load_into_session(session, owner, force=True)
         record = session.get(RECORD_KEY) or {}
@@ -64,14 +65,14 @@ def _hooks(options: dict):
             job = service.db.get_job_posting(job_id)
             if job is None:
                 raise LookupError("That job is no longer stored.")
-            tailor_job(job, artifacts_dir=artifacts_dir(owner), original_bytes=data, filename=meta["filename"],
+            return stage_tailor_job(job, execution=claim.execution, artifacts_dir=artifacts_dir(owner), original_bytes=data, filename=meta["filename"],
                        llm=LLMClient(settings), fit_scorer=service.fit_scorer, career_profile=profile,
                        provenance=record.get("provenance"), target_length=options.get("length") or "preserve",
                        conservative=bool(options.get("conservative")))
         finally:
             service.close()
 
-    return Hooks(tailor_one=tailor_one)
+    return Hooks(tailor_one=lambda job_id: None, tailor_claim=tailor_one, publish_result=publish_staged_review)
 
 
 def _run(action) -> None:

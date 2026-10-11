@@ -300,7 +300,7 @@ def test_a_batch_runs_in_the_background_and_any_session_sees_it(app):
     _search(app)
     with patch("resume_tailorer.llm.settings.resolve_settings", lambda **kw: object()), \
          patch("resume_tailorer.llm.client.LLMClient", lambda settings: object()), \
-         patch("resume_tailorer.batch.tailor_job", fake_tailor_job):
+         patch("resume_tailorer.batch.stage_tailor_job", fake_tailor_job):
         app.multiselect(key="batch_pick").set_value(["greenhouse_1", "greenhouse_2"]).run()
         began = time.monotonic()
         _click(app, "Tailor selected (2)")
