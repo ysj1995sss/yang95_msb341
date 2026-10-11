@@ -64,6 +64,51 @@ def test_save_and_load_round_trip(tmp_path):
     assert ProfileStore(tmp_path).load()["preferences"] == {"job_title": "Analyst"}
 
 
+def test_save_retries_a_transient_windows_replace_denial(tmp_path, monkeypatch):
+    import os
+    import time
+
+    original_replace = os.replace
+    attempts = []
+
+    def replace_once_busy(source, destination):
+        attempts.append((source, destination))
+        if len(attempts) == 1:
+            raise PermissionError("Profile is briefly open in another request")
+        return original_replace(source, destination)
+
+    monkeypatch.setattr(os, "replace", replace_once_busy)
+    monkeypatch.setattr(time, "sleep", lambda _: None)
+    store = ProfileStore(tmp_path)
+    record = store.load()
+    record["preferences"] = {"job_title": "Analyst"}
+    saved = store.save(record)
+    assert len(attempts) == 2
+    assert saved == store.load()
+    assert list(tmp_path.glob("*.json")) == [store.path]
+
+
+def test_persistent_replace_denial_preserves_record_and_cleans_temp(tmp_path, monkeypatch):
+    import os
+    import time
+
+    store = ProfileStore(tmp_path)
+    store.save({"preferences": {"job_title": "Original"}})
+    attempts = []
+
+    def always_busy(source, destination):
+        attempts.append((source, destination))
+        raise PermissionError("Profile remains locked")
+
+    monkeypatch.setattr(os, "replace", always_busy)
+    monkeypatch.setattr(time, "sleep", lambda _: None)
+    with pytest.raises(PermissionError, match="remains locked"):
+        store.save({"preferences": {"job_title": "Changed"}})
+    assert len(attempts) == 20
+    assert store.load()["preferences"]["job_title"] == "Original"
+    assert list(tmp_path.glob("*.json")) == [store.path]
+
+
 def test_import_marks_facts_from_resume_and_keeps_goals(data_dir):
     store = store_for("local")
     record = store.load()

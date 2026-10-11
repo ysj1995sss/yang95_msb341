@@ -15,6 +15,7 @@ import hashlib
 import json
 import os
 import tempfile
+import time
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Optional
@@ -84,9 +85,22 @@ class ProfileStore:
         record["schema"] = SCHEMA_VERSION
         record["updated_at"] = datetime.now().isoformat(timespec="seconds")
         fd, tmp = tempfile.mkstemp(dir=self.folder, suffix=".json")
-        with os.fdopen(fd, "w", encoding="utf-8") as f:
-            json.dump(record, f, indent=1, ensure_ascii=False)
-        os.replace(tmp, self.path)
+        try:
+            with os.fdopen(fd, "w", encoding="utf-8") as f:
+                json.dump(record, f, indent=1, ensure_ascii=False)
+            for attempt in range(20):
+                try:
+                    os.replace(tmp, self.path)
+                    break
+                except PermissionError:  # Windows: another request may briefly be reading it.
+                    if attempt == 19:
+                        raise
+                    time.sleep(0.01)
+        finally:
+            try:
+                Path(tmp).unlink(missing_ok=True)
+            except OSError:
+                pass  # cleanup must not conceal the original write failure
         return record
 
     def mtime(self) -> float:
