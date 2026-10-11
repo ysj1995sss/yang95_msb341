@@ -49,6 +49,7 @@ VOCABULARY: dict[str, str] = {
     # Analytics and operations
     "data analysis": "Data analysis", "analytics": "Analytics", "dashboards": "Dashboards", "reporting": "Reporting",
     "sql": "SQL", "excel": "Excel", "tableau": "Tableau", "power bi": "Power BI", "looker": "Looker",
+    "qualtrics": "Qualtrics", "surveymonkey": "SurveyMonkey",
     "google analytics": "Google Analytics", "python": "Python", "r": "R", "statistics": "Statistics",
     "machine learning": "Machine learning", "operations": "Operations", "supply chain": "Supply chain",
     "process improvement": "Process improvement", "logistics": "Logistics", "vendor management": "Vendor management",

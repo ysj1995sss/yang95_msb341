@@ -154,6 +154,7 @@ class RequirementRow:
     # Spec 011: each named (specific) term's own status, e.g. (("SQL", "direct"), ("Tableau", "none")).
     # Empty for rows from before spec 011 and for rows named only in general words.
     term_status: tuple[tuple[str, str], ...] = ()
+    term_relation: str = "all"  # all | any | example | uncertain; default keeps old reviews compatible
 
     @property
     def label(self) -> str:
@@ -163,7 +164,11 @@ class RequirementRow:
     def shown_terms(self) -> tuple[str, ...]:
         """The named terms this row's evidence supports (all its terms when none are tracked)."""
         if self.term_status:
-            return tuple(t for t, st in self.term_status if st == DIRECT)
+            named = tuple(t for t, st in self.term_status if st == DIRECT)
+            if self.term_relation == "example" and self.supported:
+                named += tuple(t for t in self.terms if t in GENERIC_TERMS
+                               and any(_mentions_any(t, e.text) for e in self.evidence if e.confirmed))
+            return named
         return self.terms if self.supported else ()
 
     @property
@@ -269,11 +274,29 @@ def passages(profile: CareerTruthProfile, provenance: Optional[Mapping[str, str]
 _CONTEXT_KINDS = ("experience", "education", "certification")
 
 
+def explicit_platform_terms(text: str) -> tuple[str, ...]:
+    """Keep explicit product examples, even outside the vocabulary, out of generic fallback."""
+    found = [label for label in ("Qualtrics", "SurveyMonkey") if mentions(label, text)]
+    examples = re.search(r"\b(?:platforms?|tools?|software)\s+(?:such as|including|like|e\.g\.?)\s+([^.;\n]+)",
+                         text, re.IGNORECASE)
+    if examples:
+        for part in re.split(r",|\band\b|\bor\b", examples.group(1)):
+            name = part.strip().strip("() ")
+            if name and len(name.split()) <= 3 and not terms_in(name):
+                found.append(name)
+    # A proper/camel-case product after an explicit usage pattern is also not generic evidence.
+    usage = re.search(r"\b(?:experience with|proficiency in|using)\s+([A-Z][A-Za-z0-9+#.-]+)", text)
+    if usage and not terms_in(usage.group(1)):
+        found.append(usage.group(1))
+    return tuple(dict.fromkeys(found))
+
+
 def requirement_terms(requirement: str, job_analysis: Optional[JobAnalysis] = None,
                       profile: Optional[CareerTruthProfile] = None) -> tuple[str, ...]:
     """The searchable terms a requirement names: curated vocabulary, the posting's own skills and
     tools, and the person's listed skills and tools found in this sentence."""
     found = list(terms_in(requirement))
+    found.extend(t for t in explicit_platform_terms(requirement) if t not in found)
     # The posting's own skills and tools count only when they're real terms: a posting without
     # known tools falls back to frequent words ("active", "required"), which aren't skills.
     # Each is mapped to its vocabulary label ("launches" -> "Product launch"), so a spelling
@@ -342,8 +365,25 @@ def _row(rid: str, text: str, section: str, hard_gate: bool, job_analysis: Optio
         return row
     states = tuple((t, CHECK if row.status == CHECK and t.lower() in AMBIGUOUS_ACRONYMS else _term_state(t, all_passages))
                    for t in specific)
-    row = replace(row, term_status=states)
-    if row.status == DIRECT and any(st != DIRECT for _t, st in states) and any(st == DIRECT for _t, st in states):
+    example = bool(re.search(r"\bsuch as\b|\be\.g\.", text, re.I))
+    alternative = bool(re.search(r"\bor\b", text, re.I)) and len(specific) > 1
+    mixed = alternative and bool(re.search(r"\band\b", text, re.I))
+    relation = "uncertain" if mixed else "example" if example else "any" if alternative else "all"
+    row = replace(row, term_status=states, term_relation=relation)
+    known = {label.lower() for label in VOCABULARY.values()}
+    unknown = [t for t in explicit_platform_terms(text) if t.lower() not in known]
+    if unknown or mixed:
+        return replace(row, status=CHECK, reason="Check the named platform or alternative wording; generic "
+                       "experience does not verify it.")
+    if example and not any(st == DIRECT for _t, st in states):
+        generic = [t for t in row.terms if t in GENERIC_TERMS]
+        supported = [p for p in all_passages if p.confirmed and p.kind in _CONTEXT_KINDS
+                     and any(_mentions_any(t, p.text) for t in generic)]
+        if supported:
+            return replace(row, status=PARTIAL, evidence=tuple(p.ref() for p in supported[:3]),
+                           reason="General capability is shown, but the named platform example is not verified; "
+                                  "do not claim that product experience.")
+    if row.status == DIRECT and relation != "any" and any(st != DIRECT for _t, st in states) and any(st == DIRECT for _t, st in states):
         shown = ", ".join(t for t, st in states if st == DIRECT)
         missing = "; ".join(f"{t} ({STATUS_LABELS[st].lower()})" for t, st in states if st != DIRECT)
         years = _YEARS.search(text)
@@ -593,7 +633,7 @@ def format_for_prompt(review: RequirementReview, resume_text: Optional[str] = No
     for r in targets:
         state = " [already shown; keep it]" if r.shown_in_resume else ""
         lines.append(f"  - [{r.id}] {r.section.upper()}: {r.text}{state}")
-        if r.status == PARTIAL:
+        if r.status == PARTIAL or r.term_relation == "any":
             lines.append(f"    Only these named terms are supported: {', '.join(r.shown_terms)}. "
                          "Never add the others.")
         for e in r.evidence:
