@@ -25,6 +25,10 @@ Read this file first, then `CLAUDE.md`, then the decisions listed below. Do not 
   `discovery/experiments/2026-10-10-release-readiness.md` for exact evidence and push/CI status.
 - **Runtime:** Node is `D:/Yang/Software/cursor/NodeJs/node.exe`, not the old `_bak` path.
   Preserve `.claude/settings.local.json`; do not touch the unrelated home `.env` or real data.
+- **Release:** `bbe372f` pushed, all five CI jobs passed on 2026-10-11:
+  [run 38173714857](https://github.com/ysj1995sss/yang95_msb341/actions/runs/38173714857).
+  Linux counts: product 1265 passed, API 139 passed (274 warnings), browser 22 passed;
+  web production build and API container startup passed. This note follows with docs only.
 - **Outstanding:** hosting/accounts/remote model, real Google/Gmail, Chrome runtime/store,
   manual screen readers and 2–3 independent people. Checklists are in
   `docs/release-readiness-checklist.md`; agent walkthroughs are in

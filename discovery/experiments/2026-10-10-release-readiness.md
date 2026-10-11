@@ -26,7 +26,7 @@ Start: main at `73c22fc`, six commits ahead of the local origin/main reference. 
 | 8 Frontend decision | Recorded | Decision 037: Next.js primary; retain maintained Streamlit fallback. |
 | 9 Model evaluation | Limited evidence recorded | Existing local model retained for supervised testing; no paid provider selected/purchased, no claim that validation establishes every fact relationship. |
 | 10 Deployment preparation | Prepared | `docs/release-readiness-checklist.md`: hosting, secrets, durable data, backup/restore, two-account isolation and rollback. |
-| 11 Push/CI/deployment | Release pending; deployment blocked | GitHub access verified; remote has no divergent commits. No Vercel/Render deployment connector or linked local Vercel project, no public OAuth/remote-model configuration established. |
+| 11 Push/CI/deployment | Pushed; CI passed; deployment blocked | Main release `bbe372f` pushed; all five GitHub jobs passed. No Vercel/Render deployment connector or linked local Vercel project, no public OAuth/remote-model configuration established. |
 | 12 Accessibility/integrations | Partly passed | 22 browser cases, keyboard/phone/light-dark accessibility checks; helper package built. Real Google/Gmail, Chrome extension runtime/store and human screen reader remain untested. |
 | 13 Usability simulations/human protocol | Prepared/completed as agent work | Three labeled walkthroughs in `2026-10-11-agent-usability-walkthroughs.md`; P01–P03 protocol in checklist. Human participants: 0. |
 
@@ -96,5 +96,23 @@ Verified release commits:
 - `75c5302`: Windows profile replacement; committed focused check 13 passed (0.25s), exit 0.
 - `ee7f7e3`: reviewed section boundaries; committed adjacent check 34 passed (3.88s), exit 0.
 
-Authorized push and remote CI are the remaining release checks. No public
-deployment or account-dependent integration is claimed by these local results.
+Release pushed to `origin/main`: `8f32867..bbe372f`, including six previously local spec-014
+commits and six spec-015/release commits. Remote comparison immediately after push: **0 behind,
+0 ahead**. No unrelated setting was staged; `.claude/settings.local.json` remains intact.
+
+GitHub verification for `bbe372ffdb681f1b9b92a89748a18b452fb0a79a`:
+[run 38173714857](https://github.com/ysj1995sss/yang95_msb341/actions/runs/38173714857),
+completed **success** on 2026-10-11. All five jobs passed: product, API, web, web-e2e, api-image.
+Actual remote logs: **product 1265 passed** (39.98s; no skip on Linux); **API 139 passed,
+274 warnings** (28.97s); **browser 22 passed** (1.2m). Web lint/type/build and container
+build/startup checks passed. Non-failing runner notices concern Node-20 actions being forced
+to Node 24 and the upcoming ubuntu-latest image migration; no workflow/dependency change here.
+
+Cleanup verified: only experiment servers on 3300, 8300 and 8502 were stopped after matching
+their process command lines; listening ports were checked clear. Agent-created test tabs were
+closed. Synthetic evidence remains in ignored scratch files; the proof screenshot is outside
+git in the designated Codex visualization folder. No real data or unrelated server was changed.
+
+This final evidence update is a documentation-only follow-up to the verified release. No public
+Next.js deployment or account-dependent integration is claimed. The automatic Streamlit Cloud
+redeployment was not inspected and is not multi-user deployment evidence.

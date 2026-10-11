@@ -29,6 +29,11 @@ web lint/types clean; Playwright 22 passed, all exit 0**. Read decision 037 and
 `discovery/experiments/2026-10-10-release-readiness.md` for exact results and release/CI status.
 The builder authorized this release's commits and push; that is not standing permission to
 push future work. Earlier "not pushed" statements below describe older sessions.
+Release **`bbe372f` was pushed and all five CI jobs passed** on 2026-10-11:
+[GitHub run 38173714857](https://github.com/ysj1995sss/yang95_msb341/actions/runs/38173714857).
+Remote Linux counts: product **1265 passed**, API **139 passed** (274 warnings), browser
+**22 passed**; web production build and API image startup also passed. This handoff update
+is a documentation-only follow-up. See `git log` and the newest GitHub run for later revisions.
 
 Node now lives at `D:/Yang/Software/cursor/NodeJs/node.exe` (not `_bak/NodeJs`). Tests/live
 runs used only explicit ignored scratch directories and synthetic fixtures. Do not use the

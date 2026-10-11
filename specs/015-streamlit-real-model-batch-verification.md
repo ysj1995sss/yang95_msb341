@@ -1,6 +1,9 @@
 # Spec 015: Verify the release workflows with synthetic data
 
 Status: Authorized for execution by the builder's request to complete steps 1–13 without intermediate questions (2026-10-10). Results belong in `discovery/experiments/2026-10-10-release-readiness.md`.
+Local verification and authorized release completed 2026-10-11: `bbe372f`, all five CI
+jobs passed. Deployment, real account integrations, manual screen readers and independent
+participants remain pending as documented; agent simulations are not human research.
 
 ## Goal
 

@@ -32,6 +32,8 @@ a brand new session act like a colleague who already knows what you are working 
     are not independent user research (0 human participants). Deployment/integration/accessibility
     and participant checklists: `docs/release-readiness-checklist.md`. Account-dependent checks
     remain unverified; do not claim a public web deployment or manual screen-reader pass.
+    Release `bbe372f` is pushed; all five CI jobs passed (GitHub run 38173714857).
+    Linux verification: product 1265 passed, API 139 passed, browser 22 passed.
   - **Added company boards (2026-10-06, spec 013 / decision 035):** a person can paste a public
     Greenhouse, Lever, Ashby or SmartRecruiters board link; it's verified with the platform's API,
     saved in their profile record (`custom_boards`, up to 25), and searched with the curated
