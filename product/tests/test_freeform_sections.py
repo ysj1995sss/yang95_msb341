@@ -95,6 +95,49 @@ def test_section_span_mismatch_fails_instead_of_replacing_another_occurrence():
         apply_dispositions_to_text(baseline, [change])
 
 
+@pytest.mark.parametrize("section,heading,next_heading", [
+    ("summary", "SUMMARY", "EXPERIENCE"),
+    ("skills", "SKILLS", "EDUCATION"),
+])
+def test_trimmed_manual_section_keeps_the_next_heading_on_its_own_line(section, heading, next_heading):
+    proposed = f"{heading}\nSQL, Tableau\n\n"
+    baseline = proposed + f"{next_heading}\nExisting facts\n"
+    change = ResumeChange(
+        change_id=f"freeform:{section}:0", section=section, source_index=None,
+        original_text=proposed, proposed_text=proposed,
+        category=ChangeCategory.REPHRASED, reason="", job_requirement="",
+        evidence_source="career_profile", evidence_text="SQL, Tableau",
+        validation_status=ValidationStatus.PASS, disposition=ChangeDisposition.MANUALLY_EDITED,
+        manual_text=f"{heading}\nTableau, SQL",  # regenerate() trims the textarea input
+        baseline_span=(0, len(proposed)),
+    )
+    result = apply_dispositions_to_text(baseline, [change])
+    assert f"Tableau, SQL\n{next_heading}\nExisting facts\n" in result
+
+
+def test_trimmed_manual_insertion_keeps_the_following_heading_separate():
+    baseline = "EXPERIENCE\n- Built SQL reports\n"
+    change = ResumeChange(
+        change_id="freeform:summary:0", section="summary", source_index=None,
+        original_text="SUMMARY\nRetail analyst\n", proposed_text="",
+        category=ChangeCategory.REPHRASED, reason="", job_requirement="",
+        evidence_source="career_profile", evidence_text="Retail analyst",
+        validation_status=ValidationStatus.PASS, disposition=ChangeDisposition.MANUALLY_EDITED,
+        manual_text="SUMMARY\nRetail analyst", baseline_span=(0, 0),
+    )
+    assert apply_dispositions_to_text(baseline, [change]) == "SUMMARY\nRetail analyst\n" + baseline
+
+
+@pytest.mark.parametrize("disposition", [ChangeDisposition.REJECTED, ChangeDisposition.MANUALLY_EDITED])
+def test_restoring_a_missing_skills_section_at_eof_separates_the_previous_bullet(disposition):
+    baseline = "SUMMARY\nRetail analyst\nEXPERIENCE\n- Built SQL reports"  # no final newline
+    changes = build_freeform_changes(_profile(), baseline, GapReport([], ""))
+    skills = next(change for change in changes if change.section == "skills")
+    restored = replace(skills, disposition=disposition, manual_text="SKILLS\nTableau, SQL")
+    result = apply_dispositions_to_text(baseline, [restored])
+    assert result.startswith(baseline + "\nSKILLS\n")
+
+
 def test_manual_summary_cannot_introduce_unverified_credential():
     from resume_tailorer.analyzers.job_analyzer import JobAnalyzer
     from resume_tailorer.analyzers.requirement_review import build_review

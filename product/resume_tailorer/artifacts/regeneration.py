@@ -65,7 +65,16 @@ def apply_dispositions_to_text(
         previous_end = end
     for change in reversed(ordered):
         start, end = change.baseline_span
-        text = text[:start] + final_text_for_change(change) + text[end:]
+        final_text = final_text_for_change(change)
+        # Manual textarea values are trimmed by regenerate(). Keep a section boundary
+        # so its last word cannot absorb the following heading (or an inserted section).
+        if final_text and start == end and start > 0 and baseline_text[start - 1] not in "\r\n":
+            final_text = "\n" + final_text  # restoring a missing section at EOF without a terminal newline
+        if (final_text and end < len(baseline_text) and baseline_text[end] not in "\r\n"
+                and (start == end or baseline_text[start:end].endswith("\n"))
+                and not final_text.endswith(("\r", "\n"))):
+            final_text += "\n"
+        text = text[:start] + final_text + text[end:]
 
     for change in changes:
         if change.baseline_span is not None:
