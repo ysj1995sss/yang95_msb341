@@ -55,6 +55,7 @@ def build_freeform_changes(
 ) -> list[ResumeChange]:
     """Build deterministic, reviewable changes for the freeform/PDF path."""
     from resume_tailorer.analyzers.requirement_review import introduced_unsupported
+    from resume_tailorer.analyzers.claim_scope import introduced_unscoped_tools
 
     diff_generator = DiffGenerator()
     sections = find_sections(tailored_text)
@@ -84,7 +85,9 @@ def build_freeform_changes(
             else []
         )
         # Spec 010: a term the requirement review doesn't support blocks the change too.
-        unverified = [*unverified, *introduced_unsupported(change.original or "", change.tailored or "", review)]
+        scope_issues = introduced_unscoped_tools(change.original or "", change.tailored or "", profile, review=review)
+        unverified = [*unverified, *introduced_unsupported(change.original or "", change.tailored or "", review),
+                      *scope_issues]
         if unverified:
             # Left PENDING so the user decides; the content gate blocks the
             # artifact while this text is still in it.
@@ -115,6 +118,7 @@ def build_freeform_changes(
                 evidence_text=related.candidate_evidence if related else change.original,
                 validation_status=status,
                 disposition=disposition,
+                scope_issues=tuple(scope_issues),
             )
         )
     for name in ("summary", "skills"):
@@ -138,11 +142,13 @@ def build_freeform_changes(
         old_body = "\n".join(original.splitlines()[1:])
         new_body = "\n".join(proposed.splitlines()[1:])
         issues = []
+        scope_issues = introduced_unscoped_tools(old_body, new_body, profile, section=name, review=review)
         if new_body:
             if old_body:
                 issues.extend(diff_generator.check_semantic_drift(old_body, new_body))
             issues.extend(diff_generator.check_bullet_pair_fabrication_risk(old_body, new_body, profile))
             issues.extend(introduced_unsupported(old_body, new_body, review))
+            issues.extend(scope_issues)
         changes.append(ResumeChange(
             change_id=f"freeform:{name}:0", section=name, source_index=None,
             original_text=original, proposed_text=proposed,
@@ -151,5 +157,6 @@ def build_freeform_changes(
             job_requirement="", evidence_source="career_profile", evidence_text=old_body,
             validation_status=ValidationStatus.FAIL if issues else ValidationStatus.PASS,
             baseline_span=baseline_span,
+            scope_issues=tuple(scope_issues),
         ))
     return changes

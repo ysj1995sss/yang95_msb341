@@ -45,6 +45,15 @@ def validate_pdf_content(
 ) -> list[ValidationFinding]:
     findings: list[ValidationFinding] = []
     text = extracted_text or ""
+    from resume_tailorer.analyzers.claim_scope import introduced_unscoped_tools
+    from resume_tailorer.artifacts.regeneration import final_text_for_change
+    for change in accepted_changes:
+        effective = final_text_for_change(change)
+        if effective and _contains(text, effective):
+            scoped = introduced_unscoped_tools(change.original_text, effective, profile, section=change.section)
+            if scoped:
+                findings.append(_failure("UNSUPPORTED_TOOL_ATTRIBUTION", FindingCategory.TRUTH,
+                                         " ".join(scoped), change_id=change.change_id))
 
     contact_values = [
         str(value).strip()

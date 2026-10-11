@@ -592,6 +592,17 @@ Return the JSON array now:"""
                 )
                 continue
 
+            from resume_tailorer.analyzers.claim_scope import introduced_unscoped_tools
+            scoped = introduced_unscoped_tools(bullet.text, new_text, profile, section=bullet.section,
+                                               review=getattr(self, "_review", None))
+            if scoped:
+                warnings.append(f"Rejected a rewrite for paragraph {paragraph_index}: {scoped[0]}")
+                resolved[paragraph_index] = BulletEdit(
+                    paragraph_index, bullet.text, bullet.text, changed=False,
+                    rejected_reason=scoped[0], rejected_text=new_text,
+                )
+                continue
+
             resolved[paragraph_index] = BulletEdit(
                 paragraph_index, bullet.text, new_text, changed=new_text != bullet.text
             )

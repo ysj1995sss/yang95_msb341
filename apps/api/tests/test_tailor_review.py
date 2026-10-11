@@ -168,13 +168,10 @@ def test_manually_edited_then_regenerate_applies_the_manual_text(client):
     assert aws_change["proposed_text"] not in result["tailored_resume"]
 
 
-def test_review_validates_manual_edits_against_the_runs_profile_snapshot_not_the_live_profile(client):
-    """Regression test for a second bug found in the same review: review_changes
-    and regenerate used to re-fetch the user's CURRENT profile from the
-    database instead of the immutable snapshot captured when the run was
-    created. A PUT /profile edit made between preview and review must not
-    change what counts as a 'grounded' (non-fabricated) term for THIS run's
-    manual edits."""
+def test_a_tool_list_in_the_run_snapshot_does_not_prove_project_use(client):
+    """Spec 016 supersedes profile-wide permission to add Docker to this AWS project.
+    Keeping an immutable snapshot does not establish a relationship its source never claimed.
+    """
     headers = auth_headers(client)
     client.put("/profile", json=_PROFILE, headers=headers)  # has tools=["Docker", "AWS"]
     data = _preview(client, headers).json()
@@ -187,9 +184,7 @@ def test_review_validates_manual_edits_against_the_runs_profile_snapshot_not_the
     aws_change = next(
         c for c in data["resume_changes"] if "AWS infrastructure" in c["proposed_text"]
     )
-    # "Docker" is only grounded in the ORIGINAL snapshot's tools list -- if
-    # review_changes incorrectly checked the live (now Docker-less) profile,
-    # this would fail with a fabrication-risk 400.
+    # Docker was only listed even in the original snapshot, not used by this project.
     manual_text = "Deployed Docker services on AWS"
 
     patch = client.patch(
@@ -199,7 +194,20 @@ def test_review_validates_manual_edits_against_the_runs_profile_snapshot_not_the
             "change_id": aws_change["change_id"], "disposition": "MANUALLY_EDITED", "manual_text": manual_text,
         }]},
     )
-    assert patch.status_code == 200
+    assert patch.status_code == 400
+    assert "project" in str(patch.json()["detail"])
+
+
+def test_regeneration_validates_against_frozen_contacts_not_the_live_profile(client):
+    """A later profile edit must not change this run's contact validation context."""
+    headers = auth_headers(client)
+    client.put("/profile", json=_PROFILE, headers=headers)
+    run_id = _preview(client, headers).json()["run_id"]
+    changed = {**_PROFILE, "contact_info": {**_PROFILE["contact_info"], "name": "Changed Synthetic Candidate"}}
+    client.put("/profile", json=changed, headers=headers)
+    response = client.post(f"/tailor/runs/{run_id}/regenerate", headers=headers)
+    assert response.status_code == 200
+    assert not any(f["code"] == "CONTACT_MISSING" for f in response.json()["report"]["validation"]["findings"])
 
 
 def test_regenerate_rejects_unknown_change_id(client):

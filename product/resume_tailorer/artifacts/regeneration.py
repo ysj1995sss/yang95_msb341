@@ -202,7 +202,7 @@ def regenerate_freeform_artifact(
 
 
 def validate_manual_text(
-    original_text: str, manual_text: str, profile: CareerTruthProfile, review=None
+    original_text: str, manual_text: str, profile: CareerTruthProfile, review=None, *, section: str = "work_experience"
 ) -> list[str]:
     """Manual edits must pass the SAME semantic-drift/fabrication/length
     checks an AI-proposed rewrite would (spec 002 section 10) -- reuses
@@ -210,11 +210,13 @@ def validate_manual_text(
     weaker manual-text validator."""
     from resume_tailorer.diff_generator import DiffGenerator
     from resume_tailorer.analyzers.requirement_review import introduced_unsupported
+    from resume_tailorer.analyzers.claim_scope import introduced_unscoped_tools
     from resume_tailorer.utils.length_check import bullet_length_delta
 
     generator = DiffGenerator()
     issues = list(generator.check_semantic_drift(original_text, manual_text))
     issues.extend(generator.check_bullet_pair_fabrication_risk(original_text, manual_text, profile))
     issues.extend(introduced_unsupported(original_text, manual_text, review))
+    issues.extend(introduced_unscoped_tools(original_text, manual_text, profile, section=section, review=review))
     issues.extend(bullet_length_delta(original_text, manual_text))
     return issues

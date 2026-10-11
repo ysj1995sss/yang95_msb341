@@ -15,7 +15,9 @@ from resume_tailorer.tailorer.docx_bullet_tailorer import DocxBulletTailorer
 # avoids two hard-reject checks (length cap, semantic drift) fighting each
 # other in these fixtures purely because the base bullet was too short to
 # have room for both a realistic addition AND every original word intact.
-_BULLET_10_TEXT = "Did a thing that helped the business grow substantially over the past two fiscal years"
+# The parser fixtures must name SQL in the actual source activity; format handling is not
+# permission to invent a tool/project relationship (spec 016).
+_BULLET_10_TEXT = "Did a thing using SQL that helped the business grow substantially over the past two fiscal years"
 _BULLET_11_TEXT = "Did another thing that also helped the business quite a bit"
 
 

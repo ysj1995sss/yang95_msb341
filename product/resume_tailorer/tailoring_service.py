@@ -237,14 +237,21 @@ def regenerate(session: MutableMapping[str, Any], state: dict) -> None:
                     f"Your edit for '{change.original_text[:40]}…' is empty. Write the text or keep the original."
                 )
             issues = validate_manual_text(change.original_text, manual_text, state["profile"],
-                                          state.get("requirement_review"))
+                                          state.get("requirement_review"), section=change.section)
             if issues:
                 raise TailoringError(
                     f"Your edit for '{change.original_text[:40]}…' adds something we can't verify: " + "; ".join(issues)
                 )
         # proposed_text stays the model's untouched proposal so the freeform
         # path can still find it in the baseline text (ResumeChange.manual_text).
-        updated_changes.append(replace(change, disposition=disposition, manual_text=manual_text))
+        selected = replace(change, disposition=disposition, manual_text=manual_text)
+        from resume_tailorer.analyzers.claim_scope import introduced_unscoped_tools
+        from resume_tailorer.artifacts.regeneration import final_text_for_change
+        scoped = introduced_unscoped_tools(change.original_text, final_text_for_change(selected), state["profile"],
+                                           section=change.section, review=state.get("requirement_review"))
+        if scoped:
+            raise TailoringError("Your selected change adds something we can't verify: " + "; ".join(scoped))
+        updated_changes.append(selected)
 
     profile = state["profile"]
     gap_report = state["gap_report"]

@@ -117,6 +117,7 @@ class ResumeChange:
     # Exact character slice in the saved free-form baseline for a section edit.
     # None keeps format-2/legacy bullet reviews on their original behavior.
     baseline_span: tuple[int, int] | None = None
+    scope_issues: tuple[str, ...] = ()  # spec 016; additive for saved format-2 reviews
 
 
 @dataclass(frozen=True)

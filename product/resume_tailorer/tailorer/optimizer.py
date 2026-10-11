@@ -111,6 +111,10 @@ class ResumeTailoringOptimizer:
                 if introduced_unsupported(current, refined, review):
                     stop_reason = "A round added something you haven't shown evidence for, so it was discarded."
                     break
+                from resume_tailorer.artifacts.changes import build_freeform_changes
+                if any(c.scope_issues for c in build_freeform_changes(profile, refined, gap_report, review=review)):
+                    stop_reason = "A round added an unverified project/tool relationship, so it was discarded."
+                    break
                 if len(unshown_targets(review, refined)) >= len(targets):
                     stop_reason = "A round showed nothing new, so it was discarded."
                     break
