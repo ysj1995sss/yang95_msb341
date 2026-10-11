@@ -32,6 +32,13 @@ def test_listed_skill_does_not_become_project_tool_even_without_a_job_review():
     assert validate_manual_text(SQL, SQL + " using Tableau", candidate)
 
 
+def test_summary_skill_mention_cannot_be_promoted_to_project_use():
+    candidate = other_project_profile()
+    original = 'Analyst skilled in Tableau.'
+    proposed = 'Analyst skilled in Tableau who built reporting dashboards using Tableau at Example A.'
+    assert any("can't verify" in issue for issue in validate_manual_text(original, proposed, candidate, section='summary'))
+
+
 def test_a_tool_in_another_project_under_the_same_employer_is_not_local_evidence():
     candidate = profile()
     candidate.work_experience[0].responsibilities.append("Built Tableau inventory forecasts.")

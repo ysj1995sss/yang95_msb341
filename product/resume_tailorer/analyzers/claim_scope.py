@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import re
 
-from resume_tailorer.analyzers.requirement_review import GENERIC_TERMS, _mentions_any
+from resume_tailorer.analyzers.requirement_review import GENERIC_TERMS, _mentions_any, explicit_platform_terms
 from resume_tailorer.models import CareerTruthProfile
 
 # Reuse existing product/term spellings; generic capabilities are deliberately not products.
@@ -14,7 +14,7 @@ _TOOLS = {
     "Qualtrics", "SurveyMonkey", "SAP", "Oracle", "Workday", "QuickBooks", "Git",
     "PostgreSQL", "MySQL", "MongoDB", "Azure", "GCP", "SAS", "SPSS", "Stata",
 }
-_ACTION = re.compile(r"\b(?:built|used|using|implemented|developed|created|delivered|designed|automated)\b", re.I)
+_ACTION = re.compile(r"\b(?:built|used|using|implemented|developed|created|delivered|designed|automated|led|managed|owned|improved|reduced|analyzed|analysed|performed)\b", re.I)
 
 
 def introduced_unscoped_tools(original: str, proposed: str, profile: CareerTruthProfile, *,
@@ -33,13 +33,16 @@ def introduced_unscoped_tools(original: str, proposed: str, profile: CareerTruth
     if review:
         tools.update(t for row in review.rows for t in row.terms
                      if t in _TOOLS or re.search(r"[a-z][A-Z]", t))
+        tools.update(t for row in review.rows for t in explicit_platform_terms(row.text))
     list_section = section in {"skills", "tools", "competencies"} and not _ACTION.search(proposed)
     summary_list = section == "summary" and not _ACTION.search(proposed) and bool(
         re.search(r"\b(?:skills?|skilled|proficien(?:t|cy)|familiar)\b", proposed, re.I))
     listed_facts = "\n".join([*profile.skills, *profile.tools])
+    original_listing = section in {'summary', 'skills', 'tools', 'competencies'} and not _ACTION.search(original or '')
+    promoted_use = original_listing and bool(_ACTION.search(proposed))
     issues = []
     for tool in sorted(tools, key=str.casefold):
-        if not _mentions_any(tool, proposed) or _mentions_any(tool, original or ""):
+        if not _mentions_any(tool, proposed) or (_mentions_any(tool, original or "") and not promoted_use):
             continue
         if (list_section or summary_list) and _mentions_any(tool, listed_facts):
             continue
