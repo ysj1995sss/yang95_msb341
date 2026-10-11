@@ -1,6 +1,7 @@
 # Spec 018: Only the current batch execution may publish its artifacts
 
-**Status:** Draft for builder review; the reproduced overwrite is not fixed yet.
+**Status:** Approved by the builder on 2026-10-11; detailed implementation plan awaiting review. The reproduced overwrite is not fixed yet.
+**Plan:** `docs/superpowers/plans/2026-10-11-spec-018-batch-publication.md`.
 **Date:** 2026-10-11
 **Builds on:** specs 014–015, decision 037.
 **Evidence:** `discovery/experiments/2026-10-11-evidence-upload-and-worker-probes.md`.

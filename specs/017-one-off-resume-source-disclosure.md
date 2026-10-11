@@ -1,6 +1,7 @@
 # Spec 017: Explain which resume and facts a one-off run uses
 
-**Status:** Draft for builder review; no product change implemented.
+**Status:** Approved by the builder on 2026-10-11; detailed implementation plan awaiting review.
+**Plan:** `docs/superpowers/plans/2026-10-11-spec-017-upload-sources.md`.
 **Date:** 2026-10-11
 **Builds on:** specs 007, 011–012, 014–015 and decision 037.
 **Evidence:** `discovery/experiments/2026-10-11-evidence-upload-and-worker-probes.md`.

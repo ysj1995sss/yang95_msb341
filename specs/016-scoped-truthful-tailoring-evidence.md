@@ -1,6 +1,7 @@
 # Spec 016: Evidence must support the particular claim
 
-**Status:** Draft for builder review; implementation not authorized by this document.
+**Status:** Approved by the builder on 2026-10-11; detailed implementation plan awaiting review.
+**Plan:** `docs/superpowers/plans/2026-10-11-spec-016-truthful-evidence.md`.
 **Date:** 2026-10-11
 **Baseline:** main at `d577aae`; specs 010–012 and decision 037 remain in force.
 **Evidence:** `discovery/experiments/2026-10-11-evidence-upload-and-worker-probes.md`.
