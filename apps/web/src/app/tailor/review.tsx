@@ -6,6 +6,7 @@ import { Alert, Button, Card, Chip, DownloadLink, LinkButton, TextArea, cx, tone
 import { api } from "@/lib/api";
 import type { Change, Decision, Review } from "@/lib/types";
 import { KeywordReport, ReadabilityCheck, RequirementReview } from "./requirement-review";
+import { ResumeSource } from "./resume-source";
 
 const pct = (v: number | null) => (v === null || v === undefined ? "–" : `${Math.round(v * 100)}%`);
 
@@ -118,6 +119,7 @@ export function ReviewRoom({ review, onChange, onDiscard }: {
   return (
     <>
       <Steps review={review} />
+      <ResumeSource info={review.source_info} />
       {review.sync_summary && <div className="mb-4"><Alert tone="primary">{review.sync_summary}</Alert></div>}
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,1.15fr)_minmax(0,0.85fr)]">
         <div className="flex min-w-0 flex-col gap-5">

@@ -33,6 +33,7 @@ except Exception:
 from resume_tailorer.identity import artifacts_dir
 from resume_tailorer.profile_import import RECORD_KEY, store_for
 from resume_tailorer.session_profile import get_career_profile
+from resume_tailorer.resume_source import resolve_fact_context, source_details, source_disclosure
 from resume_tailorer.ui.auth_gate import OWNER_KEY, job_service_for, require_identity
 from resume_tailorer.freshness import review_freshness
 from resume_tailorer.ui.batch_panel import render_batch_switcher
@@ -219,6 +220,7 @@ def _render_review_room(pending: dict) -> None:
         st.rerun()
 
     _render_context(pending, state)
+    _render_source_info(state.get("source_info"))
     # Spec 014: this review came from an older Career Profile.
     fresh = review_freshness(state, get_career_profile(st.session_state))
     if fresh.stale:
@@ -429,11 +431,20 @@ def _render_settings() -> None:
 
 def _resume_line(owner_id: str, source) -> bool:
     if source:
-        st.markdown(f'<div class="jc-meta">Resume: {escape(source[2])}</div>', unsafe_allow_html=True)
+        _render_source_info(source_details(source[0], bool(st.session_state.get("tailor_one_off")),
+                                          resolve_fact_context(st.session_state)))
         return True
     st.warning("No resume yet. Import it once in Career Profile and it is reused for every job.")
     st.page_link("pages/1_Profile_Review.py", label="Import your resume →")
     return False
+
+
+def _render_source_info(info) -> None:
+    labels = source_disclosure(info)
+    st.text(f"Resume file: {labels['file_label']}")
+    st.text(f"Facts: {labels['facts_label']}")
+    if labels['note']:
+        st.caption(labels['note'])
 
 
 def _existing_handoff(pending: dict):
@@ -548,7 +559,8 @@ def _run_tailoring(source, pending: dict) -> None:
                 conservative=bool(st.session_state.get("tailor_conservative")),
                 progress=st.write,
                 provenance=None if label.startswith("One-off") else (st.session_state.get(RECORD_KEY) or {}).get("provenance"),
-                career_profile=None if label.startswith("One-off") else get_career_profile(st.session_state),
+                career_profile=None if st.session_state.get("tailor_one_off") else get_career_profile(st.session_state),
+                one_off=bool(st.session_state.get("tailor_one_off")),
             )
             status.update(label="Your tailored resume is ready to review", state="complete")
     except TailoringError as exc:

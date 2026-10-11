@@ -115,11 +115,11 @@ def _persist_handoff(ws: Workspace, review_complete: bool) -> None:
 def _resume_source(ws: Workspace):
     one_off = _one_off(ws.owner_id)
     if one_off:
-        return one_off[0], one_off[1], f"One-off file for this job: {one_off[0]}"
+        return one_off[0], one_off[1], f"One-off file for this job: {one_off[0]}", True
     meta = ws.record.get("resume")
     data = ws.store().resume_bytes(meta) if meta else None
     if data:
-        return meta["filename"], data, f"{meta['filename']} · version {meta['version']} from your Career Profile"
+        return meta["filename"], data, f"{meta['filename']} · version {meta['version']} from your Career Profile", False
     return None
 
 
@@ -167,6 +167,7 @@ def _review_view(ws: Workspace, state: dict, show_all: bool = False) -> dict:
 
     return {
         "version": state.get("version", 1),
+        "source_info": state.get("source_info"),
         "status": status.value,
         "status_text": artifact_status_text(status),
         "status_tone": artifact_tone(status),
@@ -221,6 +222,7 @@ def _stale_message(ws: Workspace, state) -> str:
 @router.get("/tailor")
 def tailor_page(show_all: bool = False, ws: Workspace = Depends(workspace)):
     from resume_tailorer.llm.settings import resolve_settings
+    from resume_tailorer.resume_source import resolve_fact_context, source_details
 
     _load_local_env()
     pending = _pending(ws)
@@ -241,7 +243,8 @@ def tailor_page(show_all: bool = False, ws: Workspace = Depends(workspace)):
     return {
         "job": {"job_id": pending.get("job_id"), "title": pending.get("title"), "company": pending.get("company"),
                 "fit": None if fit is None else round(fit)} if pending else None,
-        "resume": {"label": source[2], "one_off": _one_off(ws.owner_id) is not None} if source else None,
+        "resume": {"label": source[2], "one_off": source[3],
+                   "source_info": source_details(source[0], source[3], resolve_fact_context(ws.session))} if source else None,
         "model_ready": model_ready,
         "custom_api_base_allowed": not ws.owner.signed_in,
         "ats_explainer": ats_explainer.as_dict(),
@@ -304,8 +307,9 @@ def _run(ws: Workspace, job_id: str, pending: dict, source, request: RunRequest,
             ws.session, original_bytes=source[1], filename=source[0], job_description=pending.get("description") or "",
             pending=pending, llm=LLMClient(settings), target_length=LENGTHS[request.length],
             conservative=request.conservative, progress=step,
-            provenance=None if source[2].startswith("One-off") else ws.record.get("provenance"),
-            career_profile=None if source[2].startswith("One-off") else get_career_profile(ws.session),
+            provenance=None if source[3] else ws.record.get("provenance"),
+            career_profile=None if source[3] else get_career_profile(ws.session),
+            one_off=source[3],
         )
         # Same first step as the Streamlit review room: changes that claim a missing
         # requirement start rejected, and the resume is rebuilt without them.

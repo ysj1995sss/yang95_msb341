@@ -294,3 +294,42 @@ test("batch polish: out-of-date jobs, tailor again, and continuing a stopped bat
   await expect(strip.getByText(/1 of 1 tailored/)).toBeVisible({ timeout: 90_000 });
   await expect(strip.getByRole("button", { name: /Continue batch/ })).toHaveCount(0);
 });
+
+test("one-off sources are disclosed and unsupported project wording is refused", async ({ page }) => {
+  const fs = await import("node:fs");
+  const bytes = fs.readFileSync("e2e/fixtures/resume.docx");
+  await page.request.delete("/api/backend/tailor/review");
+  const upload = await page.request.post("/api/backend/tailor/one-off", {
+    multipart: { file: { name: "source-one.docx", mimeType: "application/octet-stream", buffer: bytes } },
+  });
+  expect(upload.ok()).toBeTruthy();
+  await page.goto("/tailor");
+  await expect(page.getByText("Resume file", { exact: true })).toBeVisible();
+  await expect(page.getByText("Facts", { exact: true })).toBeVisible();
+  await expect(page.getByText(/Uploading here does not update/)).toBeVisible();
+  await expect(page.getByText(/source-one.docx/)).toBeVisible();
+  await page.getByRole("button", { name: "Tailor my resume" }).click();
+  await expect(page.getByRole("heading", { name: "Proposed changes" })).toBeVisible({ timeout: 60_000 });
+  await page.getByRole("button", { name: "Edit manually" }).click();
+  await page.getByLabel("Your wording").fill("Built SQL and Tableau dashboards used by 40 managers across regional sales teams");
+  await page.getByRole("button", { name: "Save my wording" }).click();
+  await page.getByRole("button", { name: "Rebuild resume" }).click();
+  await expect(page.getByRole("alert").filter({ hasText: /this project/ })).toBeVisible();
+  await page.getByRole("button", { name: "Keep original" }).click();
+  await page.getByRole("button", { name: "Rebuild resume" }).click();
+  await expect(page.getByText("Your resume is ready for Apply.")).toBeVisible();
+  // Next selection cannot rewrite the source recorded by the review just built.
+  await page.request.post("/api/backend/tailor/one-off", {
+    multipart: { file: { name: "source-two.docx", mimeType: "application/octet-stream", buffer: bytes } },
+  });
+  await page.reload();
+  await expect(page.getByText(/source-one.docx/)).toBeVisible();
+  await expect(page.getByText(/source-two.docx/)).toHaveCount(0);
+  const profile = await (await page.request.get("/api/backend/profile")).json();
+  await page.request.put("/api/backend/profile/summary", { data: { summary: "A newer synthetic profile summary." } });
+  await page.reload();
+  await expect(page.getByText(/Career Profile changed after this was tailored/).last()).toBeVisible();
+  await expectAccessible(page, "tailor, source disclosure and rejected project attribution");
+  await page.request.put("/api/backend/profile/summary", { data: { summary: profile.profile.summary } });
+  await page.request.delete("/api/backend/tailor/one-off");
+});

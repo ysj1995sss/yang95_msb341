@@ -166,7 +166,14 @@ export type Readability = {
   note: string; items: Array<{ label: string; state: "ok" | "warn" | "fail" | "not_checked"; message: string }>;
 };
 
+export type ResumeSourceInfo = {
+  file_source: "career_profile" | "one_off"; filename: string; kind: string;
+  fact_source: "fact_vault" | "resume_upload"; profile_version: string | null;
+  file_label: string; facts_label: string; note: string;
+};
+
 export type Review = {
+  source_info?: ResumeSourceInfo | null;
   version: number; status: "PASS" | "WARNING" | "FAIL"; status_text: string; status_tone: string; findings: string[];
   fidelity: string; page_count: number | null; preview_pages: number; has_pdf: boolean; has_docx: boolean;
   tailored_text: string; alignment: { before: number | null; after: number | null }; overlap_note: string; sync_summary: string;
@@ -193,7 +200,7 @@ export type RunStatus = { status: "idle" | "running" | "done" | "failed"; step?:
 
 export type TailorPage = {
   job: { job_id: string; title: string; company: string; fit: number | null } | null;
-  resume: { label: string; one_off: boolean } | null;
+  resume: { label: string; one_off: boolean; source_info?: ResumeSourceInfo | null } | null;
   model_ready: boolean;
   custom_api_base_allowed: boolean;
   ats_explainer: AtsExplainerText;

@@ -150,7 +150,7 @@ def test_guided_journey_from_resume_to_tracker(app, tmp_path):
     _go(at, "pages/5_Tailor.py")
     assert at.session_state[ACTIVE_JOB_KEY] == "greenhouse_101"
     assert "analytics roadmap" in at.session_state["job_description_text"]
-    assert "alex_resume.docx" in _markdown(at)
+    assert any("alex_resume.docx" in element.value for element in at.text)
 
     profile = CareerTruthProfile.from_dict(PROFILE)
     pdf_path = PDFGenerator().generate(

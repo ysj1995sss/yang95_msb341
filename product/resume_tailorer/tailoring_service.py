@@ -22,7 +22,7 @@ from resume_tailorer.analyzers import GapAnalyzer, JobAnalyzer, ResumeBenchmarke
 from resume_tailorer.analyzers.gap_analyzer import find_unsupported_claims
 from resume_tailorer.analyzers.requirement_review import build_review, with_resume
 from resume_tailorer.artifacts.changes import build_freeform_changes
-from resume_tailorer.freshness import profile_version
+from resume_tailorer.resume_source import resolve_fact_context, source_details
 from resume_tailorer.artifacts.length_control import (
     build_freeform_artifact,
     correct_docx_length_once,
@@ -64,13 +64,12 @@ def run_tailoring(
     progress: Callable[[str], None] = lambda message: None,
     provenance: Optional[dict] = None,
     career_profile=None,
+    one_off: bool = False,
 ) -> dict:
     """Tailor one resume to one job. Returns the review state (and hands a passing
     artifact to Apply through `session`). Raises TailoringError with a plain message.
 
-    `provenance` is the Career Profile's per-fact confirmation state, passed when the resume is
-    the Career Profile's own; facts still only "from resume" are then never tailoring targets
-    (spec 010). A one-off file has none, and its facts count as the person's own.
+    Confirmation state follows the effective facts, including with a one-off file.
 
     `career_profile` (spec 011): the Career Profile, passed with the Career Profile's own resume.
     Tailoring then uses its facts, with every edit, instead of re-reading the file; a Word file is
@@ -87,9 +86,10 @@ def run_tailoring(
         parser = ResumeParser()
         sync_summary = ""
         if career_profile is None:
-            profile = set_career_profile(session, parser.parse(resume_path), RESUME_UPLOAD)
-            review_profile = profile
+            context = resolve_fact_context(session, parser.parse(resume_path), provenance=provenance)
+            profile = review_profile = context.profile
         elif is_docx:
+            context = resolve_fact_context(session, career_profile=career_profile, provenance=provenance)
             progress("Bringing your Career Profile into your Word file")
             sync = sync_docx_to_profile(original_bytes, career_profile)
             if sync.has_blockers:
@@ -104,6 +104,7 @@ def run_tailoring(
             profile = sync.aligned_profile  # the file's role order, for the bullet tailorer only
             review_profile = career_profile  # in the Career Profile's own order, so paths match provenance
         else:
+            context = resolve_fact_context(session, career_profile=career_profile, provenance=provenance)
             profile = set_career_profile(session, career_profile, FACT_VAULT)
             review_profile = career_profile
         try:
@@ -116,7 +117,7 @@ def run_tailoring(
         job_analysis = JobAnalyzer().analyze(job_description)
         benchmark = ResumeBenchmarker().benchmark(profile, job_analysis)
         gap_report = GapAnalyzer().analyze(profile, job_analysis, benchmark)
-        review = build_review(job_analysis, review_profile, provenance=provenance, posting=job_description)
+        review = build_review(job_analysis, review_profile, provenance=context.provenance, posting=job_description)
 
         progress("Writing and checking changes (about a minute)")
         baseline_text = ""
@@ -210,9 +211,8 @@ def run_tailoring(
         "candidate_name": profile.name,
         "reviewed": False,
         "version": 1,
-        # Spec 014: which Career Profile this was tailored from (None for a one-off file), so a
-        # later profile edit can be flagged.
-        "profile_version": profile_version(career_profile),
+        "profile_version": context.version,
+        "source_info": source_details(filename, one_off, context),
         "tailored_at": datetime.now().isoformat(timespec="seconds"),
     }
     publish_artifact_handoff(

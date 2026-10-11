@@ -8,6 +8,7 @@ import { AtsExplainer } from "@/components/ats-explainer";
 import { BatchStrip } from "@/components/batch";
 import type { Review, RunStatus, TailorPage } from "@/lib/types";
 import { ReviewRoom } from "./review";
+import { ResumeSource } from "./resume-source";
 
 const LENGTHS = [
   { value: "preserve", label: "Keep the original length" },
@@ -196,7 +197,7 @@ export default function TailorPageView() {
             <h2 className="text-[22px] font-semibold">Create your tailored resume</h2>
             {data.run.status === "failed" && <div className="mt-3"><Alert tone="blocked" role="alert" title="The last run didn't finish">{data.run.error}</Alert></div>}
             {data.resume ? (
-              <p className="mt-2">Using <span className="font-semibold">{data.resume.label}</span></p>
+              <ResumeSource info={data.resume.source_info} />
             ) : (
               <div className="mt-3"><Alert tone="review" title="No resume yet">Import your resume in <a className="font-semibold underline" href="/profile">Career Profile</a> first.</Alert></div>
             )}
