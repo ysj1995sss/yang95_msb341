@@ -1,6 +1,6 @@
 # Handoff to Codex — Job Copilot
 
-**Date:** 2026-10-06 (top section); older sections below are history
+**Date:** 2026-10-11 (release update); older sections below are history
 **From:** Claude Code (specs 009–011) and Codex (spec 012, decision 034)
 **Repo:** `ysj1995sss/yang95_msb341`
 **Audience:** A fresh Codex session continuing this product.
@@ -10,12 +10,39 @@ decisions 001, 006, 009, 012, 014, 015, 016, or 017 unless new evidence forces i
 
 ---
 
-## START HERE (2026-10-06) — handoff from Claude Code
+## START HERE (2026-10-11) — spec 015 release verification
 
 This section supersedes everything below it. The older sections are history; trust the code, the
 `specs/` and the `decisions/` over them.
 
-**Spec 014 update (2026-10-07, newest):** batches use one shared runner
+**Spec 015 / decision 037 (newest):** Next.js is primary; retain maintained Streamlit.
+Real `codex-cli` browser runs passed a three-job batch, Stop/Continue, actual test-server
+restart, profile-stale guards and single-job redo. Fixes protect draining batch ownership,
+cross-process recovery, execution state, Streamlit progress visibility/refresh, and Apply's
+actual PDF/profile freshness. Windows profile saves tolerate brief read contention. A seeded
+synthetic Summary/Skills review exposed a manual-edit newline bug; the fix preserves section
+boundaries, including missing sections at EOF, without changing decision 018's matcher.
+The real PDF model run proposed skills only: the seeded summary is not model evidence.
+
+Final local tests: **product 1264 passed, 1 skipped; API 139 passed (276 existing warnings);
+web lint/types clean; Playwright 22 passed, all exit 0**. Read decision 037 and
+`discovery/experiments/2026-10-10-release-readiness.md` for exact results and release/CI status.
+The builder authorized this release's commits and push; that is not standing permission to
+push future work. Earlier "not pushed" statements below describe older sessions.
+
+Node now lives at `D:/Yang/Software/cursor/NodeJs/node.exe` (not `_bak/NodeJs`). Tests/live
+runs used only explicit ignored scratch directories and synthetic fixtures. Do not use the
+builder's real data, touch the unrelated home `.env`, or stage `.claude/settings.local.json`.
+
+Next priorities: precise project/tool evidence and one-off-upload wording need their own
+spec/reproduction. All-profile invalidation and the three-minute PID/heartbeat fallback remain;
+execution IDs do not fence an obsolete model hook's artifact writes after false recovery.
+Use `docs/release-readiness-checklist.md` for deployment, backup/restore, real Google/Gmail,
+Chrome runtime/store, manual screen readers and P01–P03 sessions. No public web deployment,
+mailbox check, Chrome publishing, manual screen-reader pass or independent human test was
+performed. Three agent walkthroughs are labeled separately; actual human participants: **0**.
+
+**Spec 014 update (2026-10-07, historical baseline):** batches use one shared runner
 (`product/resume_tailorer/batch_runner.py`) in both apps. A batch stopped by a restart, a failure
 or "Stop" can be continued with its saved options (`POST /v2/batch/continue`). Reviews record the
 Career Profile version (`profile_version`); a later profile edit flags them ("Profile changed")

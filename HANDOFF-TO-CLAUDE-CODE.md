@@ -1,6 +1,6 @@
 # Handoff to Claude Code — Job Copilot
 
-**Date:** 2026-09-25  
+**Date:** 2026-10-11 (latest update; older sections are history)
 **From:** Cursor Cloud Agent (Steps 4–9 wrap-up)  
 **Repo:** `ysj1995sss/yang95_msb341`  
 **Audience:** A fresh Claude Code session continuing this product.
@@ -9,7 +9,33 @@ Read this file first, then `CLAUDE.md`, then the decisions listed below. Do not 
 
 ---
 
-## Latest update (2026-10-07) — batch polish (spec 014, decision 036)
+## Latest update (2026-10-11) — release safeguards (spec 015, decision 037)
+
+- **Primary frontend:** Next.js; keep Streamlit maintained. Retain the existing local model
+  for supervised testing; a signed-in deployment needs a supported remote provider/budget.
+- **Verified live:** real-model three-job Streamlit batch, Stop/Continue, process restart,
+  stale-profile blocking and single-job redo; Next.js profile/search/custom board/review/
+  download/Apply/Tracker journey. Synthetic data only, no employer submission.
+- **Fixes:** draining batch ownership and refresh, locked recovery and execution state,
+  saved progress before a fresh search, Apply's actual PDF/profile freshness, bounded Windows
+  profile-save retries, manual section newlines (including missing sections at EOF).
+  The two-section summary exercise used an explicit deterministic seed, not a model response.
+- **Final local tests:** product **1264 passed, 1 skipped**; API **139 passed, 276 existing
+  warnings**; lint/types clean; Playwright **22 passed**. Every process exited 0. See
+  `discovery/experiments/2026-10-10-release-readiness.md` for exact evidence and push/CI status.
+- **Runtime:** Node is `D:/Yang/Software/cursor/NodeJs/node.exe`, not the old `_bak` path.
+  Preserve `.claude/settings.local.json`; do not touch the unrelated home `.env` or real data.
+- **Outstanding:** hosting/accounts/remote model, real Google/Gmail, Chrome runtime/store,
+  manual screen readers and 2–3 independent people. Checklists are in
+  `docs/release-readiness-checklist.md`; agent walkthroughs are in
+  `discovery/experiments/2026-10-11-agent-usability-walkthroughs.md` (0 humans).
+  No deployment or human approval is claimed. Next product specs should address exact
+  project/tool attribution and one-off-upload wording. Conservative all-profile invalidation
+  and the heartbeat/PID fallback remain; execution fencing does not fence artifact writes.
+- **Release authority:** this request authorizes verified commits/push, not future pushes
+  by default. Older unpublished statements below are historical.
+
+## Update (2026-10-07) — batch polish (spec 014, decision 036)
 
 - **One runner:** `resume_tailorer/batch_runner.py` serves the API and Streamlit alike. State is
   in `tailor/batch.json`, with a heartbeat plus the process id for restart detection.

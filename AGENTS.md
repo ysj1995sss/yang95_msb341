@@ -13,8 +13,8 @@ a brand new session act like a colleague who already knows what you are working 
 
 ## Current state
 
-> **Newest state (2026-10-06):** read the "START HERE" section at the top of `HANDOFF-TO-CODEX.md`
-> first. It covers the new Next.js web app (`apps/web`), specs 009–014, decisions 028–036, how to
+> **Newest state (2026-10-11):** read the spec 015 release update at the top of `HANDOFF-TO-CODEX.md`
+> first. It covers the new Next.js web app (`apps/web`), specs 009–015, decisions 028–037, how to
 > run and test on the builder's PC, and the recommended next work. The notes below are older.
 
 - **Where we are:** Sprint 2 (Steps 3–9 job discovery) is in progress, and all 24 spec steps
@@ -22,6 +22,16 @@ a brand new session act like a colleague who already knows what you are working 
   `decisions/021`, task 6 in `decisions/022`, and task 5 in `decisions/023`.
   - **Discovery:** real Greenhouse, Lever, Ashby and SmartRecruiters results only (75 curated
     company boards, no placeholder jobs), with goal filters that actually filter (`decisions/020`).
+  - **Release safeguards (2026-10-11, spec 015 / decision 037):** real-model browser batches
+    passed Stop/Continue, restart and profile-change/single-job redo checks on synthetic data.
+    Stop drains the current job before allowing more work; execution IDs protect batch state.
+    Apply checks profile freshness and the handed-off PDF against the current review, including
+    direct download/Track actions. Windows profile saves retry brief file contention. Manual
+    section edits preserve heading boundaries. Next.js is primary; keep Streamlit maintained.
+    Evidence: `discovery/experiments/2026-10-10-release-readiness.md`. Three agent walkthroughs
+    are not independent user research (0 human participants). Deployment/integration/accessibility
+    and participant checklists: `docs/release-readiness-checklist.md`. Account-dependent checks
+    remain unverified; do not claim a public web deployment or manual screen-reader pass.
   - **Added company boards (2026-10-06, spec 013 / decision 035):** a person can paste a public
     Greenhouse, Lever, Ashby or SmartRecruiters board link; it's verified with the platform's API,
     saved in their profile record (`custom_boards`, up to 25), and searched with the curated
@@ -82,7 +92,8 @@ a brand new session act like a colleague who already knows what you are working 
 - **Stack:** Python (resume_tailorer package), Streamlit for UI, an LLM API for tailoring (see `product/resume_tailorer/llm/`), pytest for testing, reportlab for PDF generation, python-docx + docx2pdf for the DOCX splice pipeline, multiple job board scrapers (Greenhouse live; LinkedIn/Indeed/Handshake limited/demo).
 - **Two separate venvs:** `product/.venv` (core engine + Streamlit) and `apps/api/.venv` (FastAPI backend). Set `PYTHONPATH` to include `product/` when running Streamlit or product tests directly.
 - **How work ships:** push to `main` → Streamlit Community Cloud redeploys `product/resume_tailorer/app.py`. Multi-user deployment needs the `decisions/023` checklist first (Google OAuth secrets, durable `JOB_COPILOT_DATA_DIR`).
-- **Testing and style:** pytest; CI (`.github/workflows/tests.yml`) runs both suites on every push, on Python 3.14 with the pinned versions in `product/requirements.txt`. Run both before claiming anything is done: `product/` currently 1240 passed (1 skipped), `apps/api/` currently 134 passed; web has 22 Playwright cases (`npm run test:e2e`). On Windows the runner may linger after all cases report `ok`; distinguish that from a clean exit.
+- **Testing and style:** pytest; CI (`.github/workflows/tests.yml`) runs both suites on every push, on Python 3.14 with the pinned versions in `product/requirements.txt`. Final local spec-015 verification: `product/` 1264 passed (1 skipped), `apps/api/` 139 passed (276 existing warnings); web lint/types clean and all 22 Playwright cases passed with exit 0. Run fresh checks before claiming later changes are done. On Windows the runner may linger after all cases report `ok`; distinguish that from a clean exit.
+- **Builder runtime:** Node is now `D:/Yang/Software/cursor/NodeJs/node.exe`; the older `_bak/NodeJs` path is absent. Use synthetic scratch data for tests, never `job-copilot-local-data` or the default personal data folder. Preserve `.claude/settings.local.json`.
 
 ## Working with me
 
