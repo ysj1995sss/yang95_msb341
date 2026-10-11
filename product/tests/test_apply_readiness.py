@@ -1,5 +1,7 @@
 from resume_tailorer.applications.models import ATSCapability, ApplicationStatus
-from resume_tailorer.ui.apply_readiness import build_apply_view, mode_options, valid_employer_url
+import pytest
+
+from resume_tailorer.ui.apply_readiness import build_apply_view, handoff_freshness, mode_options, valid_employer_url
 
 UNPROVEN = ATSCapability(platform="greenhouse", manual_supported=True, assist_supported=True,
                          final_submission=False, notes="Real submission is not verified.")
@@ -67,3 +69,21 @@ def test_empty_apply_names_the_one_next_step():
     assert v.action_label == "Find a job" and [done for _, done in v.items] == [False, False, False]
     assert empty_apply_view(True, False).action_label == "Finish tailoring"
     assert empty_apply_view(True, True).action_label == "Review application readiness"
+
+
+def test_profile_change_blocks_tracking_but_keeps_employer_link_available():
+    v = view(stale_message="Your Career Profile changed. Tailor it again first.")
+    assert v.can_open and not v.can_track and v.stage == "not_ready"
+    assert any(i.state == "blocked" and "Tailor it again" in i.detail for i in v.checklist)
+
+
+@pytest.mark.parametrize("pdf_bytes", [None, b""])
+def test_a_known_missing_latest_pdf_does_not_make_an_older_handoff_usable(pdf_bytes):
+    fresh = handoff_freshness({**HANDOFF, "sha256": "old-artifact-hash"},
+                              {"pdf_bytes": pdf_bytes, "profile_version": None}, None)
+    assert fresh.stale is True and "Open Tailor" in fresh.message
+
+
+def test_a_legacy_review_without_pdf_bytes_keeps_unknown_freshness():
+    fresh = handoff_freshness({**HANDOFF, "sha256": "old-artifact-hash"}, {"changes": []}, None)
+    assert fresh.stale is None and fresh.message == ""

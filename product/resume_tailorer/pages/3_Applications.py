@@ -21,13 +21,15 @@ from resume_tailorer.applications.capabilities import get_capability
 from resume_tailorer.applications.models import ApplicationMode, ApplicationStatus, StatusSource
 from resume_tailorer.applications.status_tracker import StatusTracker
 from resume_tailorer.applications.streamlit_views import preview_token
+from resume_tailorer.identity import artifacts_dir
 from resume_tailorer.job_search.job_service import PENDING_TAILOR_JOB_KEY, JobService
-from resume_tailorer.profile_import import RECORD_KEY
+from resume_tailorer.profile_import import RECORD_KEY, load_into_session
+from resume_tailorer.review_store import load_review
 from resume_tailorer.session_profile import get_career_profile
 from resume_tailorer.tailoring_session import handoff_for_job
 from resume_tailorer.ui.batch_panel import render_batch_prepare
 from resume_tailorer.ui import chip, render_app_shell, render_page_header, render_progress
-from resume_tailorer.ui.apply_readiness import build_apply_view, empty_apply_view
+from resume_tailorer.ui.apply_readiness import build_apply_view, empty_apply_view, handoff_freshness
 from resume_tailorer.ui.shell import primary_action
 from resume_tailorer.ui.auth_gate import OWNER_KEY, job_service_for, require_identity
 from resume_tailorer.ui.design_system import ProgressStep
@@ -63,6 +65,13 @@ def _review_complete() -> bool:
     reviewable = group_changes(visible_changes(state["changes"]), report.true_gaps).reviewable
     progress = review_progress(reviewable, state.get("decided", set()), state.get("dirty", False), report.validation.status)
     return progress.can_continue
+
+
+def _freshness(job_id: str):
+    load_into_session(st.session_state, st.session_state[OWNER_KEY], force=True)
+    folder = st.session_state.get("artifacts_dir") or artifacts_dir(st.session_state[OWNER_KEY])
+    state = load_review(folder, job_id)
+    return handoff_freshness(handoff_for_job(st.session_state, job_id), state, get_career_profile(st.session_state))
 
 
 def _pick_staged(service: JobService) -> None:
@@ -212,9 +221,12 @@ def main():
         return
 
     job_id = job.get("job_id", "")
+    fresh = _freshness(job_id)
     handoff = handoff_for_job(st.session_state, job_id)
     if handoff and str(handoff.get("validation_status", "")).upper() == "FAIL":
         handoff = None  # a failed resume is never usable here
+    if fresh.stale:
+        handoff = None
     stored = service.db.get_job_posting(job_id) if job_id else None
     if not job.get("url") and stored is not None:
         job = {**job, "url": stored.url}
@@ -229,6 +241,7 @@ def main():
         approved_answers=len(service.applications_db.get_answers()),
         unanswered=tuple(st.session_state.get("apply_unanswered") or ()),
         status=status, capability=capability,
+        stale_message=fresh.message if fresh.stale else "",
     )
 
     render_progress(
@@ -259,9 +272,13 @@ def main():
             a.button("Open employer application", disabled=True, use_container_width=True)
         if b.button("Track this application", disabled=not view.can_track, use_container_width=True,
                     help="Adds it to Tracker as ready to apply. Doesn't submit anything."):
-            token_now = preview_token(job_id, handoff["pdf_path"], profile, ApplicationMode.MANUAL,
-                                      service.applications_db.get_answers())
             try:
+                current = _freshness(job_id)
+                if current.stale:
+                    raise ValueError(current.message)
+                profile = get_career_profile(st.session_state)
+                token_now = preview_token(job_id, handoff["pdf_path"], profile, ApplicationMode.MANUAL,
+                                          service.applications_db.get_answers())
                 # The dry run is the preview: nothing is saved by it.
                 service.apply_for_job(job_id=job_id, profile=profile, resume_pdf_path=handoff["pdf_path"],
                                       mode=ApplicationMode.MANUAL,
@@ -287,7 +304,8 @@ def main():
         elif view.stage == "tracked":
             st.caption("Opening the employer's page doesn't submit anything. Mark it as applied once you've finished there.")
         if not handoff:
-            st.page_link("pages/5_Tailor.py", label="Tailor your resume for this job →")
+            st.page_link("pages/5_Tailor.py", label=("Open Tailor to review the current resume →" if fresh.stale
+                                                   else "Tailor your resume for this job →"))
         if handoff and os.path.exists(handoff["pdf_path"]):
             with open(handoff["pdf_path"], "rb") as f:
                 st.download_button("Download the tailored resume to attach", f.read(),

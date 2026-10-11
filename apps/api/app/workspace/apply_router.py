@@ -21,12 +21,27 @@ def _pending(ws: Workspace) -> dict:
     return ws.session.get(PENDING_TAILOR_JOB_KEY) or {}
 
 
+def _freshness(ws: Workspace, job_id: str):
+    from resume_tailorer.profile_import import load_into_session
+    from resume_tailorer.review_store import load_review
+    from resume_tailorer.session_profile import get_career_profile
+    from resume_tailorer.tailoring_session import handoff_for_job
+    from resume_tailorer.ui.apply_readiness import handoff_freshness
+
+    # Re-read at the action, rather than trusting the profile used by a previously loaded page.
+    load_into_session(ws.session, ws.owner_id, force=True)
+    return handoff_freshness(handoff_for_job(ws.session, job_id), load_review(ws.session["artifacts_dir"], job_id),
+                             get_career_profile(ws.session))
+
+
 def _handoff(ws: Workspace, job_id: str) -> Optional[dict]:
     from resume_tailorer.tailoring_session import handoff_for_job
 
     handoff = handoff_for_job(ws.session, job_id)
     if handoff and str(handoff.get("validation_status", "")).upper() == "FAIL":
         return None  # a failed resume is never usable here
+    if handoff and _freshness(ws, job_id).stale:
+        return None
     return handoff
 
 
@@ -82,6 +97,7 @@ def apply_page(ws: Workspace = Depends(workspace)):
                 "staged": staged}
 
     job_id = job.get("job_id", "")
+    fresh = _freshness(ws, job_id)
     handoff = _handoff(ws, job_id)
     stored = ws.service.db.get_job_posting(job_id) if job_id else None
     if not job.get("url") and stored is not None:
@@ -96,6 +112,7 @@ def apply_page(ws: Workspace = Depends(workspace)):
         job=job, handoff=handoff, review_complete=_review_complete(ws, job_id, handoff),
         facts_confirmed=readiness.facts_confirmed, has_profile=profile is not None,
         approved_answers=len(answers), unanswered=(), status=status, capability=capability,
+        stale_message=fresh.message if fresh.stale else "",
     )
     kit = build_kit(record, handoff, answers)
     return {
@@ -148,6 +165,9 @@ def track(ws: Workspace = Depends(workspace)):
     from resume_tailorer.session_profile import get_career_profile
 
     job_id = _pending(ws).get("job_id", "")
+    fresh = _freshness(ws, job_id)
+    if fresh.stale:
+        raise HTTPException(409, fresh.message)
     handoff = _handoff(ws, job_id)
     profile = get_career_profile(ws.session)
     if not handoff or profile is None:
@@ -199,7 +219,11 @@ def check_questions(ws: Workspace = Depends(workspace)):
 
 @router.get("/apply/resume")
 def tailored_resume(ws: Workspace = Depends(workspace)):
-    handoff = _handoff(ws, _pending(ws).get("job_id", ""))
+    job_id = _pending(ws).get("job_id", "")
+    fresh = _freshness(ws, job_id)
+    if fresh.stale:
+        raise HTTPException(409, fresh.message)
+    handoff = _handoff(ws, job_id)
     if not handoff or not os.path.exists(handoff.get("pdf_path", "")):
         raise HTTPException(404, "There's no tailored resume file for this job.")
     with open(handoff["pdf_path"], "rb") as f:

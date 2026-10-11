@@ -4,11 +4,13 @@ really do. Pure. Opening the employer page is never treated as submitting.
 
 from __future__ import annotations
 
+import hashlib
 from dataclasses import dataclass
 from typing import Any, Mapping, Optional
 from urllib.parse import urlparse
 
 from resume_tailorer.applications.models import ApplicationStatus, ATSCapability
+from resume_tailorer.freshness import Freshness, review_freshness
 
 ASSIST_UNAVAILABLE = (
     "Not available yet. Most application forms are built in the browser, and Job Copilot "
@@ -47,6 +49,26 @@ class ApplyView:
     modes: tuple[ModeOption, ...]
 
 
+def handoff_freshness(handoff: Optional[Mapping[str, Any]], state: Optional[dict], profile) -> Freshness:
+    """Bind the resume handed to Apply to the saved review before checking its profile.
+
+    Another frontend can save a new review while this session still holds the old PDF.
+    A current review's profile hash must not make that older file look current. Reviews
+    without a PDF field, and legacy handoffs without a hash, keep their prior behavior.
+    An explicitly missing PDF means the latest review has no usable artifact.
+    """
+    reviewed_pdf = (state or {}).get("pdf_bytes")
+    handoff_hash = (handoff or {}).get("sha256")
+    if handoff and state is not None and "pdf_bytes" in state and not reviewed_pdf:
+        return Freshness(True, "The latest tailored resume has no usable PDF. Open Tailor to review and "
+                               "rebuild the current resume for this job.")
+    if isinstance(reviewed_pdf, (bytes, bytearray)) and reviewed_pdf and handoff_hash:
+        if hashlib.sha256(reviewed_pdf).hexdigest() != handoff_hash:
+            return Freshness(True, "This is an older tailored resume. Open Tailor to review and use the latest "
+                                   "resume for this job.")
+    return review_freshness(state, profile)
+
+
 def valid_employer_url(url: Optional[str]) -> bool:
     try:
         parsed = urlparse((url or "").strip())
@@ -79,6 +101,7 @@ def build_apply_view(
     unanswered: tuple[str, ...],
     status: Optional[ApplicationStatus],
     capability: ATSCapability,
+    stale_message: str = "",
 ) -> ApplyView:
     items = []
     if not job:
@@ -90,7 +113,9 @@ def build_apply_view(
         "Employer application link", "ok" if url_ok else "blocked",
         "Opens the employer's own posting" if url_ok else "No valid link for this job",
     ))
-    if handoff:
+    if stale_message:
+        items.append(CheckItem("Tailored resume", "blocked", stale_message))
+    elif handoff:
         validation = str(handoff.get("validation_status", "")).upper()
         state = "ok" if validation == "PASS" else "review"
         items.append(CheckItem(
@@ -118,7 +143,7 @@ def build_apply_view(
         ))
 
     can_open = bool(job) and url_ok
-    can_track = can_open and bool(handoff) and has_profile and status is None
+    can_track = can_open and bool(handoff) and has_profile and status is None and not stale_message
     if status == ApplicationStatus.READY_TO_APPLY:
         stage, headline = "tracked", "Tracked as ready to apply. Finish on the employer's site, then mark it as applied."
     elif status is not None and status not in (ApplicationStatus.DISCOVERED, ApplicationStatus.INTERESTED, ApplicationStatus.PREPARING):
