@@ -1,7 +1,11 @@
 """Spec 014: the shared batch runner — order, failures, stop, limits, restarts and continuing."""
 
 import json
+import socket
+import subprocess
+import sys
 import threading
+import time
 
 import pytest
 
@@ -96,6 +100,149 @@ def test_stop_after_the_current_job(tmp_path):
     assert done == ["a"] and data["status"] == "cancelled"
     assert data["items"][1]["status"] == "skipped" and data["items"][1]["error"] == br.CANCELLED
     assert br.view(data)["resumable_count"] == 1
+
+
+@pytest.mark.parametrize("action", ["start", "continue", "redo"])
+def test_stop_keeps_exclusive_ownership_until_current_job_finishes(tmp_path, action):
+    started, release, finished = threading.Event(), threading.Event(), threading.Event()
+    done = []
+
+    def tailor_one(job_id):
+        started.set()
+        assert release.wait(5)
+        done.append(job_id)
+
+    br.start(tmp_path, _items("a", "b"), {}, br.Hooks(tailor_one=tailor_one, on_finish=finished.set))
+    try:
+        assert started.wait(5)
+        br.cancel(tmp_path)
+        hooks, _, _ = _hooks()
+        with pytest.raises(br.BatchBusy):
+            if action == "start":
+                br.start(tmp_path, _items("c"), {}, hooks, background=False)
+            elif action == "continue":
+                br.continue_batch(tmp_path, hooks, background=False)
+            else:
+                br.redo(tmp_path, "a", hooks, background=False)
+        shown = br.view(br.read_batch(tmp_path))
+        assert shown["status"] == "running" and shown["resumable_count"] == 0
+    finally:
+        release.set()
+        assert finished.wait(5)
+    assert done == ["a"]
+    assert br.read_batch(tmp_path)["status"] == "cancelled"
+    resumed, resumed_done, _ = _hooks()
+    br.continue_batch(tmp_path, resumed, background=False)
+    assert resumed_done == ["b"]
+
+
+def test_cancelled_worker_keeps_heartbeat_until_current_job_finishes(tmp_path, monkeypatch):
+    monkeypatch.setattr(br, "HEARTBEAT_SECONDS", 0.02)
+    started, release, finished = threading.Event(), threading.Event(), threading.Event()
+
+    def tailor_one(job_id):
+        started.set()
+        assert release.wait(5)
+
+    br.start(tmp_path, _items("a", "b"), {}, br.Hooks(tailor_one=tailor_one, on_finish=finished.set))
+    try:
+        assert started.wait(5)
+        first = br.cancel(tmp_path)["heartbeat"]
+        for _ in range(100):
+            latest = br.read_batch(tmp_path)["heartbeat"]
+            if latest > first:
+                break
+            threading.Event().wait(0.02)
+        assert latest > first
+    finally:
+        release.set()
+        assert finished.wait(5)
+
+
+@pytest.mark.parametrize("exited", [True, False])
+def test_cancelled_worker_that_disappears_can_be_continued(tmp_path, exited):
+    gone = subprocess.Popen([sys.executable, "-c", "pass"])
+    gone.wait()
+    br.write_batch(tmp_path, {
+        "id": "cancelled1", "status": "cancelled", "heartbeat": time.time(), "boot": "gone",
+        "host": socket.gethostname() if exited else "another-computer", "pid": gone.pid,
+        "items": [{"job_id": "a", "title": "A", "company": "C", "status": "running", "error": "", "resumable": False},
+                  {"job_id": "b", "title": "B", "company": "C", "status": "skipped", "error": br.CANCELLED,
+                   "resumable": True}],
+    })
+    now = time.time() if exited else time.time() + br.STALE_SECONDS + 1
+    recovered = br.read_batch(tmp_path, now=now)
+    assert recovered["status"] == "stopped"
+    assert [i["status"] for i in recovered["items"]] == ["not_started", "skipped"]
+    hooks, done, _ = _hooks()
+    br.continue_batch(tmp_path, hooks, background=False)
+    assert done == ["a", "b"]
+
+
+def test_old_worker_cannot_finish_a_resumed_execution(tmp_path):
+    old_started, old_release = threading.Event(), threading.Event()
+    new_started, new_release = threading.Event(), threading.Event()
+    finished = []
+
+    def old_tailor(job_id):
+        old_started.set()
+        assert old_release.wait(5)
+
+    def new_tailor(job_id):
+        new_started.set()
+        assert new_release.wait(5)
+
+    old_worker = threading.Thread(target=lambda: br.start(
+        tmp_path, _items("a", "b"), {}, br.Hooks(tailor_one=old_tailor, on_finish=lambda: finished.append("old")),
+        background=False))
+    new_worker = threading.Thread(target=lambda: br.continue_batch(
+        tmp_path, br.Hooks(tailor_one=new_tailor, on_finish=lambda: finished.append("new")), background=False))
+    old_worker.start()
+    try:
+        assert old_started.wait(5)
+        state = br.read_batch(tmp_path)
+        br.read_batch(tmp_path, now=state["heartbeat"] + br.STALE_SECONDS + 1)
+        new_worker.start()
+        assert new_started.wait(5)
+        old_release.set()
+        old_worker.join(5)
+        assert not old_worker.is_alive()
+        current = br.read_batch(tmp_path)
+        assert current["status"] == "running"
+        assert [i["status"] for i in current["items"]] == ["running", "queued"]
+        assert finished == []  # an obsolete callback must not overwrite the API's new run status
+    finally:
+        old_release.set()
+        new_release.set()
+        old_worker.join(5)
+        if new_worker.ident is not None:
+            new_worker.join(5)
+        assert not old_worker.is_alive() and not new_worker.is_alive()
+
+
+def test_restart_recovery_rechecks_state_under_the_batch_change_lock(tmp_path):
+    stale = {"id": "stale1", "status": "running", "heartbeat": 1.0, "boot": "gone", "items": _items("a")}
+    br.write_batch(tmp_path, stale)
+    attempted, read_finished = threading.Event(), threading.Event()
+    read = []
+
+    def recover():
+        attempted.set()
+        read.append(br.read_batch(tmp_path))
+        read_finished.set()
+
+    reader = threading.Thread(target=recover)
+    with br._file_lock(tmp_path):
+        reader.start()
+        assert attempted.wait(5)
+        try:
+            assert not read_finished.wait(0.2)  # recovery must wait for a concurrent claim/write
+        finally:
+            br.write_batch(tmp_path, dict(stale, id="new1", heartbeat=time.time(), boot=br.PROCESS_ID))
+    reader.join(5)
+    assert not reader.is_alive()
+    assert read[0]["id"] == "new1" and read[0]["status"] == "running"
+    assert br.read_batch(tmp_path)["id"] == "new1"
 
 
 def test_one_batch_at_a_time(tmp_path):

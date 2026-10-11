@@ -111,10 +111,10 @@ def _progress_fragment() -> None:
 
 def render_batch_progress() -> None:
     """The person's batch, refreshing itself every 2 seconds while it runs (only this part reruns)."""
-    from resume_tailorer.batch_runner import read_batch
+    from resume_tailorer.batch_runner import read_batch, view
 
-    data = read_batch(_user_dir())
-    if data and data.get("status") == "running":
+    shown = view(read_batch(_user_dir()))
+    if shown and shown["status"] == "running":
         _progress_fragment()
     else:
         _render_batch(in_fragment=False)

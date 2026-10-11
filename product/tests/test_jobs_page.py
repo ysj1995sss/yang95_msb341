@@ -337,3 +337,69 @@ def test_a_stopped_batch_offers_to_continue(app):
     assert "stopped before it finished" in "\n".join(w.value for w in app.warning)
     assert any(b.label == "Continue batch (1 left)" for b in app.button), [b.label for b in app.button]
     assert "Not started" in text
+
+
+@pytest.mark.parametrize("searched", [False, True])
+def test_a_saved_batch_can_be_continued_without_search_results(app, searched):
+    from resume_tailorer import batch_runner
+    from resume_tailorer.identity import user_dir
+
+    batch_runner.write_batch(user_dir("local"), {
+        "id": "s1", "status": "running", "heartbeat": 1.0, "process": "gone", "created": 1.0, "note": "",
+        "options": dict(batch_runner.DEFAULT_OPTIONS),
+        "items": [{"job_id": "greenhouse_1", "title": "Product Manager, Growth", "company": "GitLab",
+                   "status": "running", "error": "", "resumable": False}]})
+    if searched:
+        with patch.object(GreenhouseScraper, "_fetch_board", lambda self, token: {"jobs": []}):
+            _click(app, "Find matching jobs")
+        shown = app
+    else:
+        shown = AppTest.from_file(APP, default_timeout=60)
+        shown.switch_page("pages/2_Job_Search.py")
+        shown.run()
+    assert not shown.exception, shown.exception
+    assert "stopped before it finished" in "\n".join(w.value for w in shown.warning)
+    assert any(b.label == "Continue batch (1 left)" for b in shown.button)
+    assert "Product Manager, Growth" in _text(shown)
+
+
+def test_stopping_batch_keeps_refreshing_until_continue_is_available(app):
+    import time
+
+    from streamlit.testing.v1.local_script_runner import LocalScriptRunner
+
+    from resume_tailorer import batch_runner
+    from resume_tailorer.identity import user_dir
+
+    data = {
+        "id": "stop1", "status": "cancelled", "heartbeat": time.time(), "boot": batch_runner.PROCESS_ID,
+        "options": dict(batch_runner.DEFAULT_OPTIONS),
+        "items": [{"job_id": "greenhouse_1", "title": "Product Manager, Growth", "company": "GitLab",
+                   "status": "running", "error": "", "resumable": False},
+                  {"job_id": "greenhouse_2", "title": "Senior Product Manager, Data", "company": "GitLab",
+                   "status": "skipped", "error": batch_runner.CANCELLED, "resumable": True}],
+    }
+    batch_runner.write_batch(user_dir("local"), data)
+    refreshes = []
+    forward_msgs = LocalScriptRunner.forward_msgs
+
+    def capture_messages(runner):
+        messages = forward_msgs(runner)
+        refreshes.extend((m.auto_rerun.interval, m.auto_rerun.fragment_id)
+                         for m in messages if m.WhichOneof("type") == "auto_rerun")
+        return messages
+
+    with patch.object(LocalScriptRunner, "forward_msgs", capture_messages):
+        app.run()  # a full rerun while the stopped job is still finishing
+        assert not app.exception, app.exception
+        assert any(interval == 2 and fragment_id for interval, fragment_id in refreshes)
+        assert any("Stopping after the current job finishes" in w.value for w in app.warning)
+        assert not any(b.label.startswith("Continue batch") for b in app.button)
+
+        data["items"][0]["status"] = "done"
+        batch_runner.write_batch(user_dir("local"), data)
+        refreshes.clear()
+        app.run()
+        assert not app.exception, app.exception
+        assert any(b.label == "Continue batch (1 left)" for b in app.button)
+        assert refreshes == []

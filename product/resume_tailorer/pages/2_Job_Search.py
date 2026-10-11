@@ -22,7 +22,7 @@ from resume_tailorer.analyzers.job_analyzer import JobAnalyzer
 from resume_tailorer.analyzers.requirement_review import build_review
 from resume_tailorer.ui import ats_explainer
 from resume_tailorer.ui.ats_panel import render_ats_explainer
-from resume_tailorer.ui.batch_panel import render_batch_runner
+from resume_tailorer.ui.batch_panel import render_batch_progress, render_batch_runner
 from resume_tailorer.job_search.job_attributes import (
     EMPLOYMENT_TYPE_OPTIONS,
     EXPERIENCE_LEVEL_OPTIONS,
@@ -651,6 +651,7 @@ def _render_results(status_slot, has_goals: bool, searched: bool) -> None:
                 if st.button("Edit search", type="primary", key="jobs_edit_empty"):
                     st.session_state[EDITING_KEY] = True
                     st.rerun()
+        render_batch_progress()
         return
 
     list_col, detail_col = st.columns([1, 1.45], gap="medium")
@@ -694,6 +695,8 @@ def main():
         _render_setup_card()
     elif not editing and entry.state is JobsState.READY_TO_SEARCH:
         _render_ready_card()
+    if not searched and view_choice != SAVED_VIEW:
+        render_batch_progress()  # persisted work remains reachable in a fresh session without another search
     _run_pending_search(status_slot)
 
 

@@ -128,8 +128,14 @@ def _pid_alive(pid: int) -> bool:
     return True
 
 
+def _is_active(data: dict) -> bool:
+    """A stopped batch still owns its current job until that job returns."""
+    return data.get("status") == "running" or (
+        data.get("status") == "cancelled" and any(i.get("status") == "running" for i in data["items"]))
+
+
 def _is_stale(data: dict, now: float) -> bool:
-    if data.get("status") != "running":
+    if not _is_active(data):
         return False
     # Run by another process on this computer that has exited (a restart): stopped right away.
     pid = data.get("pid")
@@ -141,13 +147,20 @@ def _is_stale(data: dict, now: float) -> bool:
     return now - float(beat) > STALE_SECONDS
 
 
-def read_batch(user_dir: Path, now: Optional[float] = None) -> Optional[dict]:
-    """The person's last batch; a running batch whose heartbeat stopped is marked stopped (and saved)."""
+def _read_batch_file(user_dir: Path) -> Optional[dict]:
     try:
         data = json.loads(_path(user_dir).read_text(encoding="utf-8"))
     except (OSError, ValueError):
         return None
     if not isinstance(data, dict) or not isinstance(data.get("items"), list):
+        return None
+    return data
+
+
+def _read_batch_locked(user_dir: Path, now: Optional[float] = None) -> Optional[dict]:
+    """Read/recover while the caller owns the cross-process change lock."""
+    data = _read_batch_file(user_dir)
+    if data is None:
         return None
     if _is_stale(data, time.time() if now is None else now):
         data["status"] = "stopped"
@@ -156,8 +169,16 @@ def read_batch(user_dir: Path, now: Optional[float] = None) -> Optional[dict]:
             if item.get("status") in ("queued", "running"):
                 item["status"] = "not_started"
                 item["resumable"] = True
-        with _LOCK:
-            write_batch(user_dir, data)
+        write_batch(user_dir, data)
+    return data
+
+
+def read_batch(user_dir: Path, now: Optional[float] = None) -> Optional[dict]:
+    """The person's last batch; recover disappeared workers under the same lock as a new claim."""
+    data = _read_batch_file(user_dir)
+    if data and _is_stale(data, time.time() if now is None else now):
+        with _file_lock(user_dir):
+            return _read_batch_locked(user_dir, now)  # another process may have continued it while we waited
     return data
 
 
@@ -173,7 +194,10 @@ def view(data: Optional[dict]) -> Optional[dict]:
     """The batch as shown: a summary line and how many jobs can be continued."""
     if not data:
         return None
-    shown = {k: v for k, v in data.items() if k not in ("boot", "heartbeat", "process", "host", "pid")}
+    shown = {k: v for k, v in data.items() if k not in ("boot", "heartbeat", "process", "host", "pid", "execution")}
+    if data.get("status") == "cancelled" and _is_active(data):
+        shown["status"] = "running"  # both apps keep polling and hide Continue until the current job returns
+        shown["note"] = "Stopping after the current job finishes."
     items = shown["items"]
     counts = {s: sum(1 for i in items if i["status"] == s) for s in ("done", "failed", "skipped")}
     shown["summary"] = (f"{counts['done']} of {len(items)} tailored"
@@ -193,11 +217,11 @@ def new_item(job_id: str, title: str, company: str, description: str) -> dict:
 # --- running --------------------------------------------------------------------------------
 
 def _claim(user_dir: Path, data: dict, now: float) -> None:
-    current = read_batch(user_dir, now)
-    if current and current.get("status") == "running":
+    current = _read_batch_locked(user_dir, now)
+    if current and _is_active(current):
         raise BatchBusy("A batch is already running. Wait for it to finish or stop it.")
     data.update(status="running", process=PROCESS_ID, boot=PROCESS_ID, heartbeat=now,
-                host=socket.gethostname(), pid=os.getpid())
+                host=socket.gethostname(), pid=os.getpid(), execution=uuid.uuid4().hex)
     write_batch(user_dir, data)
 
 
@@ -208,7 +232,7 @@ def start(user_dir: Path, items: list[dict], options: dict, hooks: Hooks, *, bac
             "options": {**DEFAULT_OPTIONS, **{k: options.get(k) for k in DEFAULT_OPTIONS if k in options}}}
     with _file_lock(user_dir):
         _claim(user_dir, data, now)
-    _launch(user_dir, data["id"], hooks, background)
+    _launch(user_dir, data["id"], data["execution"], hooks, background)
     return data
 
 
@@ -216,10 +240,10 @@ def continue_batch(user_dir: Path, hooks: Hooks, *, background: bool = True) -> 
     """Re-queue the jobs that didn't finish and run them with the batch's own options."""
     now = hooks.clock()
     with _file_lock(user_dir):
-        data = read_batch(user_dir, now)
+        data = _read_batch_locked(user_dir, now)
         if not data:
             raise LookupError("There's no batch to continue.")
-        if data.get("status") == "running":
+        if _is_active(data):
             raise BatchBusy("This batch is still running.")
         again = [i for i in data["items"] if is_resumable(i)]
         if not again:
@@ -229,7 +253,7 @@ def continue_batch(user_dir: Path, hooks: Hooks, *, background: bool = True) -> 
         data["note"] = ""
         data.setdefault("options", dict(DEFAULT_OPTIONS))
         _claim(user_dir, data, now)
-    _launch(user_dir, data["id"], hooks, background)
+    _launch(user_dir, data["id"], data["execution"], hooks, background)
     return data
 
 
@@ -238,10 +262,10 @@ def redo(user_dir: Path, job_id: str, hooks: Hooks, *, background: bool = True) 
     it is. None when the job isn't in the batch (the caller starts a one-job batch instead)."""
     now = hooks.clock()
     with _file_lock(user_dir):
-        data = read_batch(user_dir, now)
+        data = _read_batch_locked(user_dir, now)
         if not data or not any(i["job_id"] == job_id for i in data["items"]):
             return None
-        if data.get("status") == "running":
+        if _is_active(data):
             raise BatchBusy("This batch is still running.")
         for item in data["items"]:
             if item["job_id"] == job_id:
@@ -249,14 +273,14 @@ def redo(user_dir: Path, job_id: str, hooks: Hooks, *, background: bool = True) 
         data["note"] = ""
         data.setdefault("options", dict(DEFAULT_OPTIONS))
         _claim(user_dir, data, now)
-    _launch(user_dir, data["id"], hooks, background)
+    _launch(user_dir, data["id"], data["execution"], hooks, background)
     return data
 
 
 def cancel(user_dir: Path) -> Optional[dict]:
     """Stop after the job that's running now; jobs not started can be continued later."""
     with _file_lock(user_dir):
-        data = read_batch(user_dir)
+        data = _read_batch_locked(user_dir)
         if data and data.get("status") == "running":
             data["status"] = "cancelled"
             for item in data["items"]:
@@ -266,31 +290,32 @@ def cancel(user_dir: Path) -> Optional[dict]:
     return data
 
 
-def _launch(user_dir: Path, batch_id: str, hooks: Hooks, background: bool) -> None:
+def _launch(user_dir: Path, batch_id: str, execution: str, hooks: Hooks, background: bool) -> None:
     if background:
-        threading.Thread(target=run, args=(user_dir, batch_id, hooks),
+        threading.Thread(target=run, args=(user_dir, batch_id, hooks, execution),
                          name=f"batch-{batch_id}", daemon=True).start()
     else:
-        run(user_dir, batch_id, hooks)
+        run(user_dir, batch_id, hooks, execution)
 
 
-def _update(user_dir: Path, batch_id: str, change: Callable[[dict], None]) -> Optional[dict]:
+def _update(user_dir: Path, batch_id: str, execution: str, change: Callable[[dict], None]) -> Optional[dict]:
     with _file_lock(user_dir, wait=30.0):
-        data = read_batch(user_dir)
-        if not data or data.get("id") != batch_id:
+        data = _read_batch_locked(user_dir)
+        if not data or data.get("id") != batch_id or data.get("execution") != execution:
             return None
         change(data)
         write_batch(user_dir, data)
         return data
 
 
-def run(user_dir: Path, batch_id: str, hooks: Hooks) -> None:
+def run(user_dir: Path, batch_id: str, hooks: Hooks, execution: str) -> None:
     """Tailor each queued job in order. One job failing never stops the rest."""
     stop = threading.Event()
 
     def beat() -> None:
         while not stop.wait(HEARTBEAT_SECONDS):
-            _update(user_dir, batch_id, lambda d: d.update(heartbeat=hooks.clock()) if d.get("status") == "running" else None)
+            _update(user_dir, batch_id, execution,
+                    lambda d: d.update(heartbeat=hooks.clock()) if _is_active(d) else None)
 
     threading.Thread(target=beat, name=f"batch-beat-{batch_id}", daemon=True).start()
     try:
@@ -315,7 +340,7 @@ def run(user_dir: Path, batch_id: str, hooks: Hooks) -> None:
                         picked.update(item=dict(item), index=n, total=total)
                         return
 
-            if _update(user_dir, batch_id, pick) is None or not picked:
+            if _update(user_dir, batch_id, execution, pick) is None or not picked:
                 return
             item = picked["item"]
             hooks.on_step(f"Tailoring {item['title']} ({picked['index'] + 1} of {picked['total']})", item["job_id"])
@@ -325,11 +350,13 @@ def run(user_dir: Path, batch_id: str, hooks: Hooks) -> None:
             except Exception as exc:  # one job failing never stops the rest
                 logger.exception("Batch job %s failed", item["job_id"])
                 outcome = {"status": "failed", "error": f"Tailoring didn't finish: {exc}", "resumable": True}
-            _update(user_dir, batch_id, lambda d, n=picked["index"]: d["items"][n].update(outcome))
+            _update(user_dir, batch_id, execution, lambda d, n=picked["index"]: d["items"][n].update(outcome))
     finally:
         stop.set()
-        _update(user_dir, batch_id, lambda d: d.update(status="done") if d.get("status") == "running" else None)
+        own = _update(user_dir, batch_id, execution,
+                      lambda d: d.update(status="done") if d.get("status") == "running" else None)
         try:
-            hooks.on_finish()
+            if own is not None:
+                hooks.on_finish()
         except Exception:  # progress reporting never breaks a batch
             logger.exception("Batch finish hook failed")
