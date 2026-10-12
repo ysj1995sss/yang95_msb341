@@ -15,17 +15,20 @@ a brand new session act like a colleague who already knows what you are working 
 
 > **Newest state (2026-10-11):** read the specs 016–018 local-fixes update at the top of `HANDOFF-TO-CODEX.md`
 > first. The fixes are on `codex/truthful-tailoring-sources-publication`, not merged or pushed.
-> It covers the Next.js web app (`apps/web`), specs 009–018, decisions 028–040, how to
+> It covers the Next.js web app (`apps/web`), specs 009–018, decisions 028–041, how to
 > run and test on the builder's PC, and the recommended next work. The notes below are older.
 
 - **Latest fixes:** exact-source project/tool guards across artifact/manual/refinement/final
   paths, named-platform evidence, frozen effective facts/provenance with file-versus-facts
   disclosure, and execution-owned staged batch publication in both apps. Read decisions
   038–040 and `discovery/experiments/2026-10-11-specs-016-018-fixes.md` before changing these.
-- **Release gates:** independent final review stopped at the owner spending cap after reporting
-  three reproduced/fixed gaps. Live-model Stop drained one passing PDF; Continue's next call
-  returned no answer and remains resumable. New live Streamlit/restart checks and actual human
-  sessions remain open. Human participants: 0. No push/deployment/new account authorized.
+- **Review/live update:** independent code review approved after additional reproduced/fixed
+  gaps. The original no-answer batch recovered with Continue; its root cause is unproven.
+  Real-model Streamlit background/Stop/Continue/process restart reached 2/2 after retries.
+  **Open release risk:** two real Word conversions left `tailored.docx` locked during temporary
+  cleanup; successful retries do not fix it. Before conversion work, read decision 041 and
+  `discovery/experiments/2026-10-11-independent-review-and-live-streamlit.md`.
+  Human participants: 0. No merge/push/deployment/new account authorized.
 - **Lock rollout:** restart both frontends together. Persistent OS locks replace exclusive-create
   locks; old executable versions must not share the data folder. PID/heartbeat detection remains.
 
@@ -106,7 +109,7 @@ a brand new session act like a colleague who already knows what you are working 
 - **Stack:** Python (resume_tailorer package), Streamlit for UI, an LLM API for tailoring (see `product/resume_tailorer/llm/`), pytest for testing, reportlab for PDF generation, python-docx + docx2pdf for the DOCX splice pipeline, multiple job board scrapers (Greenhouse live; LinkedIn/Indeed/Handshake limited/demo).
 - **Two separate venvs:** `product/.venv` (core engine + Streamlit) and `apps/api/.venv` (FastAPI backend). Set `PYTHONPATH` to include `product/` when running Streamlit or product tests directly.
 - **How work ships:** push to `main` → Streamlit Community Cloud redeploys `product/resume_tailorer/app.py`. Multi-user deployment needs the `decisions/023` checklist first (Google OAuth secrets, durable `JOB_COPILOT_DATA_DIR`).
-- **Testing and style:** pytest; CI (`.github/workflows/tests.yml`) runs both suites on every push, on Python 3.14 with the pinned versions in `product/requirements.txt`. Final local specs-016–018 verification: `product/` 1311 passed (1 skipped), `apps/api/` 148 passed (282 warnings); web lint/types clean and all 23 Playwright cases passed with exit 0. No new remote/Linux CI is claimed for this unpushed branch. Run fresh checks before claiming later changes are done. On Windows the runner may linger after all cases report `ok`; distinguish that from a clean exit.
+- **Testing and style:** pytest; CI (`.github/workflows/tests.yml`) runs both suites on every push, on Python 3.14 with the pinned versions in `product/requirements.txt`. Final local specs-016–018/review verification: `product/` 1329 passed (1 skipped), `apps/api/` 148 passed (282 warnings); web lint/types clean and all 23 Playwright cases passed with exit 0. No new remote/Linux CI is claimed for this unpushed branch. Run fresh checks before claiming later changes are done. On Windows the runner may linger after all cases report `ok`; distinguish that from a clean exit.
 - **Builder runtime:** Node is now `D:/Yang/Software/cursor/NodeJs/node.exe`; the older `_bak/NodeJs` path is absent. Use synthetic scratch data for tests, never `job-copilot-local-data` or the default personal data folder. Preserve `.claude/settings.local.json`.
 
 ## Working with me

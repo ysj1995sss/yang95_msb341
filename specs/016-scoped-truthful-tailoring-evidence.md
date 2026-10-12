@@ -1,6 +1,6 @@
 # Spec 016: Evidence must support the particular claim
 
-**Status:** Approved and implemented locally on 2026-10-11. Full suites passed; independent final sign-off remains open after the reviewer spending-cap error. See decision 038 and the specs-016–018 experiment.
+**Status:** Approved and implemented locally on 2026-10-11; full suites and independent code review passed after follow-ups. See decisions 038/041 and the independent-review/live-Streamlit experiment. Live Word cleanup reliability remains a separate release risk.
 **Plan:** `docs/superpowers/plans/2026-10-11-spec-016-truthful-evidence.md`.
 **Date:** 2026-10-11
 **Baseline:** main at `d577aae`; specs 010–012 and decision 037 remain in force.

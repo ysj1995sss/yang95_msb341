@@ -8,7 +8,7 @@
 
 **Tech Stack:** Existing Python threads/files/atomic replace, pytest, FastAPI, Streamlit and browser tests; no queue service or new dependency.
 **Spec:** `specs/018-batch-artifact-publication-ownership.md` (approved 2026-10-11).
-**Status:** Builder approved; implementation, full suites and deterministic cross-process/frontend checks completed. Real-model Continue returned no answer and independent final sign-off remains open; see decision 040 and the specs-016–018 experiment.
+**Status:** Builder approved; implementation, full suites, independent code review and real-model recovery checks completed. Both batches reached 2/2 after retries; two actual Word cleanup failures remain an unresolved release risk. See decisions 040/041 and the independent-review/live-Streamlit experiment.
 
 ## Global Constraints
 

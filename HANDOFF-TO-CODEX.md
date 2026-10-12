@@ -14,8 +14,9 @@ decisions 001, 006, 009, 012, 014, 015, 016, or 017 unless new evidence forces i
 
 This section supersedes older state below. Branch is `codex/truthful-tailoring-sources-publication`,
 forked from main `a993491`. **Not merged or pushed.** Preserve `.claude/settings.local.json`.
-Read specs 016–018, decisions 038–040 and
-`discovery/experiments/2026-10-11-specs-016-018-fixes.md` before changing these paths.
+Read specs 016–018, decisions 038–041 and both
+`discovery/experiments/2026-10-11-specs-016-018-fixes.md` and
+`discovery/experiments/2026-10-11-independent-review-and-live-streamlit.md` before changing these paths.
 
 - Exact original activity guards new tool-use claims across Word/free-form, refinement,
   manual edits, Accept/rebuild and final PDF checks. Generic analytics does not establish
@@ -31,19 +32,27 @@ Read specs 016–018, decisions 038–040 and
   its owned job; failed saves remain resumable. API callbacks respect lock order and cannot
   overwrite a new batch or single run. Actual frontend and two-process races/junction safety pass.
 
-Final local checks: **product 1311 passed, 1 skipped; API 148 passed, 282 warnings;
+Final local checks: **product 1329 passed, 1 skipped; API 148 passed, 282 warnings;
 lint/types clean; Playwright 23 passed**. All exit 0; no new Linux/remote CI is claimed.
-Latest code commits: `6ddef84`, `b044535`, `4a7d591`, `352407b`, `9f114ff`, `bcb90cd`,
+Latest code commits: `e92d9e6`, `6ddef84`, `b044535`, `4a7d591`, `352407b`, `9f114ff`, `bcb90cd`,
 `2be3189`. HEAD may be a documentation-only follow-up.
 
-**Open release checks:** the one independent reviewer reported three gaps, reproduced/fixed,
-then hit the owner spending cap before a final verdict. Final sign-off is still open. A live
-synthetic Word/browser run produced a passing one-page PDF but no meaningful proposals. Stop
-drained the first real-model batch job; Continue's second call returned no answer, leaving
-**1 done / 1 failed and resumable**, not a completed batch. New real-model Streamlit and live
-restart checks remain open. Human participants: **0**, separate from agent/automated tests.
-Next: finish independent review, retry those live checks when the model responds, then P01–P03
-sessions and the release checklist. All-profile invalidation/PID-reuse heartbeat fallback remain.
+**Review completed:** the same read-only reviewer resumed, found additional summary/list,
+Rust/lowercase-platform and Streamlit one-off-source gaps; RED/GREEN follow-ups fixed them.
+It approved the final code with no remaining critical/important findings. Supplemental tests
+preserve products after determiners without inventing `any`/`unless` as platforms.
+
+**Live checks completed with retries:** the original API no-answer job recovered through Continue
+and reached 2/2. Its original cause is unproven; the model bridge was not speculatively changed.
+Real Streamlit background, Stop/current drain, Continue, actual process interruption/restart
+detection and preserved completed review were exercised; its batch also reached 2/2. All four
+saved PDFs passed and read back as one page. No meaningful model edits were proposed by this fixture.
+
+**Open release risk:** two real Streamlit attempts failed while cleaning a Word-locked temporary
+`tailored.docx`; retries recovered but the converter/document lifetime bug remains unresolved.
+Next: spec/reproduce exception-safe Word conversion/cleanup, then P01–P03 and the release checklist.
+Do not kill the user's Word processes or hide cleanup exceptions. Human participants: **0**.
+All-profile invalidation/PID-reuse heartbeat fallback remain. No merge/push/deployment authorized.
 
 **Rollout:** restart both frontends together. Persistent `msvcrt`/`fcntl` OS locks replace
 exclusive-create locks; old executable versions must not share this data folder. Existing

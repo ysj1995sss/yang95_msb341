@@ -15,25 +15,31 @@ Current branch: `codex/truthful-tailoring-sources-publication`, forked from main
 **Not merged or pushed.** Integration/push needs the builder's explicit request. Preserve
 `.claude/settings.local.json` and both frontends.
 
-Read specs 016–018, decisions 038–040 and
-`discovery/experiments/2026-10-11-specs-016-018-fixes.md`. Fixes cover exact-source project/tool
+Read specs 016–018, decisions 038–041 and
+`discovery/experiments/2026-10-11-specs-016-018-fixes.md`, then
+`discovery/experiments/2026-10-11-independent-review-and-live-streamlit.md`. Fixes cover exact-source project/tool
 attribution across artifact/manual/refinement/final gates, named-platform evidence, effective
 profile provenance/freshness with one-off files, both UIs' file-versus-facts disclosure, and
 obsolete batch workers publishing artifacts/status. Actual frontend hook races, Windows-spawn
 processes, save failures, Stop/drain and a real junction are covered. Decision 018's matcher stays.
 
-Final local checks: **1311 product passed, 1 skipped; 148 API passed, 282 warnings;
+Final local checks: **1329 product passed, 1 skipped; 148 API passed, 282 warnings;
 lint/types clean; 23 Playwright passed**. All exit 0; no new remote/Linux CI claimed.
-Latest code commits: `6ddef84`, `b044535`, `4a7d591`, `352407b`, `9f114ff`, `bcb90cd`,
+Latest code commits: `e92d9e6`, `6ddef84`, `b044535`, `4a7d591`, `352407b`, `9f114ff`, `bcb90cd`,
 `2be3189`; HEAD may be a documentation-only follow-up.
 
-Final independent sign-off remains open: the reviewer reported three reproduced/fixed gaps,
-then stopped at the owner spending cap before its verdict. A real-model browser run produced
-a passing one-page PDF but no meaningful proposals. A live batch drained its first PDF safely;
-Continue's next call returned no answer, leaving **1 done / 1 failed and resumable**, not a
-completed batch. New live Streamlit and real-model restart checks are still open. Human
-participants: **0**, separate from agent/automated walkthroughs. No deployment/accounts/store
-publishing performed. Next: independent review, remaining live checks, P01–P03 and release checklist.
+The existing independent reviewer resumed and approved after further summary/list, Rust,
+lowercase-platform/determiner and Streamlit one-off-batch guard corrections (RED/GREEN).
+No critical/important findings remain in its code review; live conversion reliability is excluded.
+The original API no-answer batch recovered through Continue, 2/2 complete. Original cause is
+unproven; model bridge/settings were not changed. Real-model Streamlit background, Stop/drain,
+Continue and actual process restart recovered to 2/2 while preserving the completed review.
+Four readable one-page PDFs passed. This small fixture proposed no meaningful model changes.
+
+Two live attempts failed at Word-locked temporary `tailored.docx` cleanup; later retries succeeded,
+but **the conversion reliability defect remains open**. Next: a bounded conversion/cleanup spec
+and reproduction, then P01–P03/release checklist. Do not kill the user's Word processes or ignore
+cleanup exceptions. Human participants: **0**. No merge/push/deployment/accounts/store publishing.
 
 Restart both frontends together on rollout: persistent `msvcrt`/`fcntl` OS locks replace
 exclusive-create locks; old executables must not share the folder. Existing batch/review JSON
