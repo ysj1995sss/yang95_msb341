@@ -223,3 +223,77 @@ def test_failed_save_preserves_previous_review(tmp_path, monkeypatch):
         review.mutate_saved_review(str(folder), "job-1", 0, [("paragraph:1", "REJECTED")], "person")
     saved = load_review(str(folder), "job-1")
     assert saved["decided"] == set() and saved.get("review_revision", 0) == 0
+
+
+def test_streamlit_shows_review_mode_before_start(tmp_path, monkeypatch):
+    at = _open_tailor(monkeypatch, tmp_path)
+    choice = next(item for item in at.radio if item.label == "Who reviews proposed changes?")
+    assert choice.value == "I'll review changes"
+    assert "AI-assisted review" in choice.options
+
+
+def test_streamlit_full_review_and_selected_only_batch_choice(tmp_path, monkeypatch):
+    monkeypatch.setenv("JOB_COPILOT_DATA_DIR", str(tmp_path / "data"))
+    folder = artifacts_dir("local")
+    assert save_review(folder, JOB["job_id"], _two_change_state())
+    at = _open_tailor(monkeypatch, tmp_path)
+    queue = next(item for item in at.selectbox if item.label == "Review queue")
+    assert "Built SQL dashboards" in queue.options[0]
+    assert "Led customer surveys" in queue.options[1]
+    shown = "\n".join(item.value for item in at.text)
+    assert "Built weekly SQL dashboards" in shown and "Led customer survey analysis" in shown
+    selected = next(item for item in at.multiselect if item.label == "Select changes to decide together")
+    selected.set_value(["paragraph:2"]).run()
+    at.button(key="tailor_batch_reject").click().run()
+    assert not at.exception, at.exception
+    saved = load_review(folder, JOB["job_id"])
+    assert saved["decided"] == {"paragraph:2"}
+    assert saved["dispositions"]["paragraph:2"] == "REJECTED"
+    assert saved["review_revision"] == 1
+    assert saved["decision_origins"]["paragraph:2"]["by"] == "person"
+
+
+def test_streamlit_stale_batch_choice_never_overwrites_newer_review(tmp_path, monkeypatch):
+    monkeypatch.setenv("JOB_COPILOT_DATA_DIR", str(tmp_path / "data"))
+    folder = artifacts_dir("local")
+    assert save_review(folder, JOB["job_id"], _two_change_state())
+    at = _open_tailor(monkeypatch, tmp_path)
+    next_item = _decision_module().mutate_saved_review(
+        folder, JOB["job_id"], 0, [("paragraph:1", "REJECTED")], "person")
+    assert next_item["review_revision"] == 1
+    selected = next(item for item in at.multiselect if item.label == "Select changes to decide together")
+    selected.set_value(["paragraph:2"]).run()
+    at.button(key="tailor_batch_accept").click().run()
+    assert not at.exception, at.exception
+    saved = load_review(folder, JOB["job_id"])
+    assert saved["decided"] == {"paragraph:1"}
+    assert saved["review_revision"] == 1
+
+
+def test_streamlit_unsaved_local_edit_does_not_replace_newer_disk_review(tmp_path, monkeypatch):
+    monkeypatch.setenv("JOB_COPILOT_DATA_DIR", str(tmp_path / "data"))
+    folder = artifacts_dir("local")
+    assert save_review(folder, JOB["job_id"], _two_change_state())
+    at = _open_tailor(monkeypatch, tmp_path)
+    _decision_module().mutate_saved_review(
+        folder, JOB["job_id"], 0, [("paragraph:1", "REJECTED")], "person")
+    at.session_state["artifact_run_state"]["manual_texts"]["paragraph:2"] = "Unsaved local wording"
+    at.run()
+    assert not at.exception, at.exception
+    saved = load_review(folder, JOB["job_id"])
+    assert saved["decided"] == {"paragraph:1"}
+    assert saved["review_revision"] == 1
+    assert "paragraph:2" not in saved["manual_texts"]
+
+
+def test_streamlit_legacy_decision_does_not_invent_an_origin(tmp_path, monkeypatch):
+    monkeypatch.setenv("JOB_COPILOT_DATA_DIR", str(tmp_path / "data"))
+    folder = artifacts_dir("local")
+    state = _two_change_state()
+    state["dispositions"]["paragraph:1"] = "REJECTED"
+    state["decided"].add("paragraph:1")
+    assert save_review(folder, JOB["job_id"], state)
+    at = _open_tailor(monkeypatch, tmp_path)
+    text = "\n".join(item.value for item in [*at.markdown, *at.caption])
+    assert "Origin not recorded" in text
+    assert "Chosen by you" not in text

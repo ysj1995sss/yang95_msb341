@@ -46,6 +46,9 @@ from resume_tailorer.job_search.job_service import PENDING_TAILOR_JOB_KEY
 from resume_tailorer.analyzers.term_match import displayable_gaps, short_requirement
 from resume_tailorer.ui.shell import md_literal
 from resume_tailorer.review_store import discard_review, load_review, save_review, signature
+from resume_tailorer.batch_runner import _file_lock
+from resume_tailorer.review_decisions import ReviewConflict, ReviewSelectionError, ReviewStorageError, mutate_saved_review
+from resume_tailorer.ui.assisted_review import apply_assisted_review
 from resume_tailorer.artifacts.models import FidelityMode, ValidationStatus
 from resume_tailorer.ui.artifact_review import visible_changes
 from resume_tailorer.ui import ats_explainer, chip, render_app_shell, render_page_header, render_progress
@@ -64,10 +67,10 @@ from resume_tailorer.ui.tailor_progress import (
     artifact_status_text,
     artifact_tone,
     change_section_label,
+    change_title,
     empty_queue_message,
     rejected_by_checks,
     next_undecided,
-    readable_requirement,
     review_progress,
     supporting_fact,
     validation_word,
@@ -80,6 +83,8 @@ st.set_page_config(page_title="Tailor · Job Copilot", page_icon="\U0001F4C4", l
 _JD_SESSION_KEY = "job_description_text"
 _STATE_KEY = "artifact_run_state"
 _FOCUS_KEY = "tailor_focus_change"
+_SELECTION_KEY = "tailor_batch_selection"
+_CONFLICT_KEY = "tailor_review_conflict"
 
 
 def _percent(value) -> str:
@@ -89,6 +94,11 @@ def _percent(value) -> str:
 def _fit_label(pending: dict) -> str:
     overall = (pending.get("candidate_fit") or {}).get("overall_fit")
     return f"{round(overall)}%" if isinstance(overall, (int, float)) else "Not assessed"
+
+
+def _origin_label(origin: dict) -> str:
+    return {"person": "Chosen by you", "AI-assisted": "Chosen by AI assistance"}.get(
+        origin.get("by"), "Origin not recorded")
 
 
 _SAVED_SIGNATURE_KEY = "tailor_review_saved_signature"
@@ -102,8 +112,29 @@ def _save_review_if_changed(job_id) -> None:
     current = signature(state)
     if st.session_state.get(_SAVED_SIGNATURE_KEY) == (job_id, current):
         return
-    if save_review(st.session_state.get("artifacts_dir"), job_id, state):
-        st.session_state[_SAVED_SIGNATURE_KEY] = (job_id, current)
+    folder = st.session_state.get("artifacts_dir")
+    if not folder:
+        return
+    with _file_lock(Path(folder).resolve().parent):
+        latest = load_review(folder, job_id)
+        baseline = st.session_state.get(_SAVED_SIGNATURE_KEY)
+        if latest is not None and baseline != (job_id, signature(latest)):
+            st.session_state[_STATE_KEY] = latest
+            st.session_state[_SAVED_SIGNATURE_KEY] = (job_id, signature(latest))
+            st.session_state.pop(_SELECTION_KEY, None)
+            st.session_state[_CONFLICT_KEY] = "This review changed elsewhere. The latest decisions are loaded; select changes again."
+            st.rerun()
+            return
+        if latest is None and baseline is not None and baseline[0] == job_id:
+            _reset_review_state()
+            st.session_state.pop(_SAVED_SIGNATURE_KEY, None)
+            st.session_state[_CONFLICT_KEY] = "This review was removed elsewhere. Tailor again to start a new review."
+            st.rerun()
+            return
+        if save_review(folder, job_id, state):
+            st.session_state[_SAVED_SIGNATURE_KEY] = (job_id, current)
+        else:
+            st.error("This review could not be saved. Please retry before leaving Tailor.")
 
 
 def _restore_review(job_id) -> None:
@@ -118,6 +149,8 @@ def _restore_review(job_id) -> None:
 def _reset_review_state() -> None:
     st.session_state.pop(_STATE_KEY, None)
     st.session_state.pop(_FOCUS_KEY, None)
+    st.session_state.pop(_SELECTION_KEY, None)
+    st.session_state.pop(_SAVED_SIGNATURE_KEY, None)
 
 
 def _regenerate_from_current_dispositions() -> bool:
@@ -131,12 +164,39 @@ def _regenerate_from_current_dispositions() -> bool:
     return True
 
 
-def _decide(change_id: str, choice: str) -> None:
+def _decide(change_id: str, choice: str) -> bool:
+    return _decide_selected([change_id], choice)
+
+
+def _decide_selected(change_ids: list[str], choice: str) -> bool:
+    """Persist the exact selection in one cross-process transaction."""
     state = st.session_state[_STATE_KEY]
-    if state["dispositions"].get(change_id) != choice or change_id not in state["decided"]:
-        state["dirty"] = True
-    state["dispositions"][change_id] = choice
-    state["decided"].add(change_id)
+    pending = st.session_state.get(PENDING_TAILOR_JOB_KEY) or {}
+    job_id = pending.get("job_id")
+    try:
+        updated = mutate_saved_review(
+            st.session_state["artifacts_dir"], job_id, int(state.get("review_revision", 0)),
+            [(change_id, choice) for change_id in change_ids], "person",
+            manual_texts={change_id: state["manual_texts"].get(change_id, "") for change_id in change_ids}
+            if choice == "MANUALLY_EDITED" else None,
+            allow_blank_manual=choice == "MANUALLY_EDITED" and len(change_ids) == 1,
+        )
+    except ReviewConflict:
+        latest = load_review(st.session_state["artifacts_dir"], job_id)
+        if latest is not None:
+            st.session_state[_STATE_KEY] = latest
+            st.session_state[_SAVED_SIGNATURE_KEY] = (job_id, signature(latest))
+        st.session_state.pop(_SELECTION_KEY, None)
+        st.session_state[_CONFLICT_KEY] = "This review changed elsewhere. The latest decisions are loaded; select changes again."
+        st.rerun()
+        return False
+    except (ReviewSelectionError, ReviewStorageError) as exc:
+        st.error(str(exc))
+        return False
+    st.session_state[_STATE_KEY] = updated
+    st.session_state[_SAVED_SIGNATURE_KEY] = (job_id, signature(updated))
+    st.session_state.pop(_SELECTION_KEY, None)
+    return True
 
 
 def _render_context(pending: dict, state: dict | None) -> None:
@@ -167,20 +227,26 @@ def _render_change_focus(state: dict, change, profile) -> None:
             f'<div class="jc-eyebrow">{escape(change_section_label(change))} · Review this change · {escape(status_text)}</div>',
             unsafe_allow_html=True,
         )
+        st.text(change_title(change, 1))
         st.markdown(
             '<div class="jc-chain">'
-            f'<div><small>Job requirement</small>{escape(readable_requirement(change))}</div><div class="jc-arrow">→</div>'
+            f'<div><small>Job requirement</small>{escape(change.job_requirement or "General fit with the posting")}</div><div class="jc-arrow">→</div>'
             f'<div><small>Supporting fact</small>{escape(supporting_fact(change, profile))}</div><div class="jc-arrow">→</div>'
             f'<div><small>Resume change</small>{escape(change.reason or "Reworded to match the posting")}</div>'
             "</div>",
             unsafe_allow_html=True,
         )
-        st.markdown(f"**Original**  \n{change.original_text or '(new line)'}")
-        st.markdown(f"**Proposed**  \n{change.proposed_text}")
+        st.markdown("**Original**")
+        st.text(change.original_text or "(new line)")
+        st.markdown("**Proposed**")
+        st.text(change.proposed_text)
         st.markdown(
             f'<span class="jc-meta">Check: {escape(validation_word(change.validation_status))}</span>',
             unsafe_allow_html=True,
         )
+        if decided:
+            origin = (state.get("decision_origins") or {}).get(change.change_id) or {}
+            st.caption(f"{_origin_label(origin)} · {origin.get('reason', '')}".rstrip(" ·"))
         if current == "MANUALLY_EDITED" and decided:
             state["manual_texts"][change.change_id] = st.text_area(
                 "Your wording",
@@ -192,10 +258,11 @@ def _render_change_focus(state: dict, change, profile) -> None:
         for col, choice in zip(cols, ("ACCEPTED", "MANUALLY_EDITED", "REJECTED")):
             kind = "primary" if choice == "ACCEPTED" else "secondary"
             if col.button(VERBS[choice], key=f"decide_{choice}_{change.change_id}", type=kind, use_container_width=True):
-                _decide(change.change_id, choice)
+                if not _decide(change.change_id, choice):
+                    return
                 if choice != "MANUALLY_EDITED":
                     st.session_state[_FOCUS_KEY] = next_undecided(
-                        _reviewable(state), state["decided"], after=change.change_id
+                        _reviewable(st.session_state[_STATE_KEY]), st.session_state[_STATE_KEY]["decided"], after=change.change_id
                     ) or change.change_id
                     st.toast(f"{DECISION_DONE[choice]}.")
                 st.rerun()
@@ -221,6 +288,8 @@ def _render_review_room(pending: dict) -> None:
 
     _render_context(pending, state)
     _render_source_info(state.get("source_info"))
+    if st.session_state.get(_CONFLICT_KEY):
+        st.warning(st.session_state.pop(_CONFLICT_KEY))
     # Spec 014: this review came from an older Career Profile.
     fresh = review_freshness(state, get_career_profile(st.session_state))
     if fresh.stale:
@@ -246,6 +315,9 @@ def _render_review_room(pending: dict) -> None:
     review, preview = st.columns([1.15, 0.85], gap="large")
     with review:
         st.markdown("### Proposed changes")
+        st.caption("AI assistance made only conservative decisions; uncertain changes still need you."
+                   if state.get("review_mode", "manual") == "assisted" else
+                   "Review each change yourself, or select several to decide together.")
         if groups.reviewable:
             focus = st.session_state.get(_FOCUS_KEY)
             ids = [c.change_id for c in groups.reviewable]
@@ -254,16 +326,53 @@ def _render_review_room(pending: dict) -> None:
             labels = {
                 c.change_id: (
                     f"{'✓' if c.change_id in state['decided'] else '○'} "
-                    f"{i}. {(c.job_requirement or c.original_text or 'Change')[:60]}"
+                    f"{change_title(c, i)}"
                 )
                 for i, c in enumerate(groups.reviewable, start=1)
             }
+            selected = st.multiselect(
+                "Select changes to decide together", ids, format_func=labels.get, key=_SELECTION_KEY,
+                help="Only the checked changes are affected. A failed truth check cannot be batch accepted.",
+            )
+            st.caption(f"{len(selected)} selected")
+            controls = st.columns(4)
+            if controls[0].button("Select all unreviewed", key="tailor_select_all"):
+                st.session_state[_SELECTION_KEY] = [c.change_id for c in groups.reviewable
+                                                    if c.change_id not in state["decided"]]
+                st.rerun()
+            if controls[1].button("Clear selection", key="tailor_clear_selection", disabled=not selected):
+                st.session_state[_SELECTION_KEY] = []
+                st.rerun()
+            if controls[2].button("Accept selected", key="tailor_batch_accept", disabled=not selected):
+                if _decide_selected(selected, "ACCEPTED"):
+                    st.toast(f"Accepted {len(selected)} selected changes.")
+                    st.rerun()
+            if controls[3].button("Keep original for selected", key="tailor_batch_reject", disabled=not selected):
+                if _decide_selected(selected, "REJECTED"):
+                    st.toast(f"Kept the original for {len(selected)} selected changes.")
+                    st.rerun()
             chosen = st.selectbox(
                 "Review queue", ids, index=ids.index(focus), format_func=labels.get, key="tailor_queue"
             )
             st.session_state[_FOCUS_KEY] = chosen
             change = next(c for c in groups.reviewable if c.change_id == chosen)
             _render_change_focus(state, change, state["profile"])
+            with st.expander(f"Show all changes ({len(groups.reviewable)})"):
+                for i, item in enumerate(groups.reviewable, start=1):
+                    st.markdown(f"**{md_literal(change_title(item, i))}**")
+                    st.caption(f"{change_section_label(item)} · {item.category.value} · "
+                               f"{DECISION_DONE.get(state['dispositions'].get(item.change_id), 'Not reviewed yet') if item.change_id in state['decided'] else 'Not reviewed yet'}")
+                    st.markdown("Job requirement")
+                    st.text(item.job_requirement or "General fit with the posting")
+                    st.markdown("Original")
+                    st.text(item.original_text or "(new line)")
+                    st.markdown("Proposed")
+                    st.text(item.proposed_text)
+                    origin = (state.get("decision_origins") or {}).get(item.change_id) or {}
+                    if item.change_id in state["decided"]:
+                        st.caption(_origin_label(origin))
+                        if origin.get("reason"):
+                            st.caption(origin["reason"])
         else:
             st.info(empty_queue_message(state["changes"]))
 
@@ -498,9 +607,14 @@ def _render_setup(owner_id: str, pending: dict) -> None:
         with main:
             with st.container(border=True):
                 st.markdown('<h2 class="jc-card-title">Create your tailored resume</h2>'
-                            '<p class="jc-meta">Job Copilot proposes only changes your verified facts support. '
-                            "You review each one before anything is used.</p>", unsafe_allow_html=True)
+                            '<p class="jc-meta">Job Copilot proposes wording from your verified facts. '
+                            "Review every change yourself or let conservative AI assistance decide clear cases first.</p>", unsafe_allow_html=True)
                 ready = _resume_line(owner_id, source)
+                st.radio(
+                    "Who reviews proposed changes?", ["I'll review changes", "AI-assisted review"],
+                    key="tailor_review_mode", horizontal=True,
+                    help="Manual is the default. AI assistance accepts only clearly supported wording and keeps clear failures out; uncertain changes still need you.",
+                )
                 if st.button("Create tailored resume", type="primary", disabled=not ready, key="tailor_create"):
                     _run_tailoring(source, pending)
                 _render_settings()
@@ -566,6 +680,21 @@ def _run_tailoring(source, pending: dict) -> None:
     except TailoringError as exc:
         st.error(str(exc))
         return
+    state["review_mode"] = "assisted" if st.session_state.get("tailor_review_mode") == "AI-assisted review" else "manual"
+    state["review_revision"] = 0
+    if state["review_mode"] == "assisted":
+        safe_defaults = safe_default_dispositions(state["changes"], state["report"].true_gaps)
+        if safe_defaults:
+            state["dispositions"].update(safe_defaults)
+            state["gap_blocks_applied"] = True
+        state = apply_assisted_review(state)
+        if state["decided"] or safe_defaults:
+            try:
+                regenerate(st.session_state, state)
+            except TailoringError as exc:
+                st.error(f"Automatic decisions could not be rebuilt: {exc}")
+                return
+    discard_review(st.session_state.get("artifacts_dir"), pending.get("job_id"))
     st.session_state[_STATE_KEY] = state
     st.session_state.pop("tailor_redo", None)
     st.rerun()
@@ -577,7 +706,7 @@ def main():
     render_app_shell("Tailor")
     render_page_header(
         "Tailor",
-        "Review each proposed change against your verified facts. Nothing is used until you decide.",
+        "Review every proposed change against your verified facts, yourself or with conservative AI assistance.",
     )
 
     render_batch_switcher(job_service_for(st.session_state[OWNER_KEY]))  # spec 011

@@ -54,7 +54,7 @@ function ChangeCard({ change, review, onDecide }: {
         <div className="min-w-0"><p className="text-[13px] font-semibold text-muted uppercase">Proposed</p><p className="mt-1 whitespace-pre-wrap break-words rounded-[var(--radius-control)] bg-primary-soft p-2">{change.proposed}</p></div>
       </div>
       <p className="mt-2 text-[14px] text-muted">Check: {change.check}</p>
-      {change.decision && <p className="mt-1 text-[14px] text-muted"><span>{change.decision_origin === "AI-assisted" ? "Chosen by AI assistance" : "Chosen by you"}</span>{change.decision_reason && <span> · {change.decision_reason}</span>}</p>}
+      {change.decision && <p className="mt-1 text-[14px] text-muted"><span>{change.decision_origin === "AI-assisted" ? "Chosen by AI assistance" : change.decision_origin === "person" ? "Chosen by you" : "Origin not recorded"}</span>{change.decision_reason && <span> · {change.decision_reason}</span>}</p>}
       {editing && (
         <div className="mt-4 flex flex-col gap-2">
           <TextArea label="Your wording" help="Only facts already in your Career Profile are allowed." rows={3}

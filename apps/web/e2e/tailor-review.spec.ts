@@ -117,3 +117,11 @@ test("a stale batch decision reloads rather than reporting success", async ({ pa
   await expect(page.getByText("0 selected", { exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: /Built weekly reports → Built weekly SQL dashboards — Original kept/ })).toBeVisible();
 });
+
+test("legacy decisions do not claim a known decision-maker", async ({ page }) => {
+  const oldReview = { ...review, changes: [{ ...first, decision: "REJECTED", decision_label: "Original kept" }, second] };
+  await page.route("**/api/backend/tailor", (route) => route.fulfill({ json: pageData(oldReview as typeof review) }));
+  await page.goto("/tailor");
+  await expect(page.getByText("Origin not recorded", { exact: true })).toBeVisible();
+  await expect(page.getByText("Chosen by you", { exact: true })).toHaveCount(0);
+});
