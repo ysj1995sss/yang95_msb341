@@ -68,6 +68,14 @@ scratch folder outside `.venv` when restarting it. The old local test user folde
 and a delete through the web proxy returned 200, removed its user folder, and left no resume.
 This is local synthetic data only; the fix has not been pushed.
 
+**Local Jobs search follow-up (2026-10-12):** a sandboxed API process could not open outbound
+connections (`WinError 10013`), so all 75 public boards reported unavailable in ~0.1 s.
+The same Greenhouse endpoint returned HTTP 200 with approved network access. The local API
+was restarted with that access and the same `.codex-pytest-live-data` folder; the saved
+Manager search then reached all 75 boards and displayed 2,629 roles in the web UI. When
+relaunching locally, give the API outbound access to the public board hosts. No search code
+change or push was needed.
+
 ## Historical update — spec 015 release verification
 
 This section supersedes everything below it. The older sections are history; trust the code, the
