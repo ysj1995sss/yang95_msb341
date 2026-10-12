@@ -60,6 +60,14 @@ batch IDs/options and format-2 reviews remain compatible. Windows locks were exe
 awaits CI. Node is `D:/Yang/Software/cursor/NodeJs/node.exe`. Use explicit synthetic scratch data,
 existing separate venvs and `LITELLM_MODE=PRODUCTION`; personal data/home `.env` stay out of scope.
 
+**Local deletion follow-up (2026-10-12):** commit `1fa2399` fixes Windows account deletion of
+deep batch-staging paths. The first live retry then hit sandbox access denied inside
+`product/.venv/tmp-codex`, not a file lock. The local API now uses the ignored, writable
+`.codex-pytest-live-data` at the repository root as `JOB_COPILOT_DATA_DIR`; use a writable
+scratch folder outside `.venv` when restarting it. The old local test user folder was removed,
+and a delete through the web proxy returned 200, removed its user folder, and left no resume.
+This is local synthetic data only; the fix has not been pushed.
+
 ## Historical update — spec 015 release verification
 
 This section supersedes everything below it. The older sections are history; trust the code, the
