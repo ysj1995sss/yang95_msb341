@@ -18,6 +18,27 @@ def change_section_label(change: ResumeChange) -> str:
     return {"summary": "Summary", "skills": "Skills"}.get(change.section, "Work experience")
 
 
+def change_title(change: ResumeChange, ordinal: int) -> str:
+    """A review-row label about the edit itself, not its reusable job requirement."""
+    def excerpt(value: str, fallback: str) -> str:
+        words = " ".join((value or "").split()) or fallback
+        return words if len(words) <= 64 else words[:61].rstrip() + "…"
+
+    return (f"{ordinal}. {change_section_label(change)} · "
+            f"{excerpt(change.original_text, '(new line)')} → "
+            f"{excerpt(change.proposed_text, '(removed)')}")
+
+
+def duplicate_key(change: ResumeChange) -> tuple | None:
+    """Only a real source occurrence can establish an exact duplicate edit."""
+    anchor = change.baseline_span if change.baseline_span is not None else (
+        change.source_index if not change.change_id.startswith("freeform:") else None
+    )
+    if anchor is None:
+        return None
+    return change.section, anchor, change.original_text, change.proposed_text
+
+
 @dataclass(frozen=True)
 class ReviewProgress:
     reviewed: int

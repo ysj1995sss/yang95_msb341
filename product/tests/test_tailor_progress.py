@@ -93,3 +93,38 @@ def test_long_requirements_are_shortened():
 def test_a_placeholder_evidence_string_is_not_shown_as_a_fact():
     c = change("a", original="Wrote positioning", proposed="Wrote positioning copy", requirement="x", evidence="None")
     assert supporting_fact(c, PROFILE).startswith("Your original bullet:")
+
+
+def test_queue_titles_distinguish_edits_with_the_same_requirement():
+    from resume_tailorer.ui import tailor_progress
+
+    title = getattr(tailor_progress, "change_title", None)
+    assert callable(title), "change_title must make each review row identifiable"
+    first = change("a", original="Built sales reports", proposed="Built SQL reports", requirement="SQL")
+    second = change("b", original="Led customer surveys", proposed="Led survey analysis", requirement="SQL")
+    assert title(first, 1) != title(second, 2)
+    assert "Built sales reports" in title(first, 1)
+    assert "Built SQL reports" in title(first, 1)
+
+
+def test_duplicate_identity_never_merges_different_source_occurrences():
+    from dataclasses import replace
+
+    from resume_tailorer.ui import tailor_progress
+
+    key = getattr(tailor_progress, "duplicate_key", None)
+    assert callable(key), "duplicate_key must use a real source anchor"
+    first = replace(change("a"), source_index=1)
+    second = replace(change("b"), source_index=2)
+    assert key(first) != key(second)
+    assert key(first) is not None
+
+
+def test_freeform_diff_ordinal_is_not_treated_as_a_source_anchor():
+    from dataclasses import replace
+
+    from resume_tailorer.ui import tailor_progress
+
+    key = getattr(tailor_progress, "duplicate_key", None)
+    assert callable(key)
+    assert key(replace(change("freeform:0"), source_index=0)) is None
