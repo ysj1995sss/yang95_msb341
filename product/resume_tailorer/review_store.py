@@ -115,6 +115,10 @@ def signature(state: dict) -> tuple:
         tuple(sorted((state.get("dispositions") or {}).items())),
         tuple(sorted(state.get("decided") or ())),
         tuple(sorted((state.get("manual_texts") or {}).items())),
+        tuple(sorted((key, value.get("by"), value.get("reason"))
+                     for key, value in (state.get("decision_origins") or {}).items())),
+        state.get("review_revision", 0),
+        state.get("review_mode", "manual"),
         state.get("version"),
         state.get("reviewed"),
         state.get("dirty"),

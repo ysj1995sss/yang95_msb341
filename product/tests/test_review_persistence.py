@@ -1,12 +1,15 @@
 """Tailor reviews survive a new session (decision 027). Synthetic data only."""
 
 from pathlib import Path
+from dataclasses import replace
+
+import pytest
 
 from streamlit.testing.v1 import AppTest
 
 from resume_tailorer.analyzers.gap_analyzer import GapCategory, GapItem, GapReport
 from resume_tailorer.artifacts.changes import build_freeform_changes
-from resume_tailorer.artifacts.models import ArtifactValidation, FidelityMode, ValidationStatus
+from resume_tailorer.artifacts.models import ArtifactValidation, ChangeCategory, FidelityMode, ValidationStatus
 from resume_tailorer.artifacts.report import build_final_report
 from resume_tailorer.identity import artifacts_dir
 from resume_tailorer.job_search.job_service import PENDING_TAILOR_JOB_KEY
@@ -133,3 +136,90 @@ def test_an_old_pickle_review_is_removed_not_loaded(tmp_path):
     old.write_bytes(pickle.dumps({"format": 1, "job_id": "job-1", "state": {"changes": []}}))
     assert load_review(str(tmp_path), "job-1") is None
     assert not old.exists()
+
+
+def _decision_module():
+    import importlib.util
+
+    assert importlib.util.find_spec("resume_tailorer.review_decisions") is not None, "shared decision transaction is missing"
+    from resume_tailorer import review_decisions
+
+    return review_decisions
+
+
+def _two_change_state():
+    state = _state()
+    source = state["changes"][0]
+    first = replace(source, change_id="paragraph:1", section="work_experience", source_index=1,
+                    original_text="Built SQL dashboards", proposed_text="Built weekly SQL dashboards",
+                    validation_status=ValidationStatus.PASS, category=ChangeCategory.REPHRASED)
+    second = replace(first, change_id="paragraph:2", source_index=2,
+                     original_text="Led customer surveys", proposed_text="Led customer survey analysis")
+    state["changes"] = [first, second]
+    return state
+
+
+def test_two_selected_decisions_change_once_without_mutating_the_loaded_state():
+    review = _decision_module()
+    before = _two_change_state()
+    after = review.apply_decisions(before, [("paragraph:1", "ACCEPTED"), ("paragraph:2", "REJECTED")],
+                                   origin="person", expected_revision=0)
+    assert after["decided"] == {"paragraph:1", "paragraph:2"}
+    assert after["dispositions"] == {"paragraph:1": "ACCEPTED", "paragraph:2": "REJECTED"}
+    assert after["review_revision"] == 1 and before["decided"] == set()
+    assert after["decision_origins"]["paragraph:1"]["by"] == "person"
+
+
+def test_stale_review_and_invalid_selection_change_nothing():
+    review = _decision_module()
+    before = _two_change_state()
+    with pytest.raises(review.ReviewConflict):
+        review.apply_decisions(before, [("paragraph:1", "ACCEPTED")], origin="person", expected_revision=9)
+    for entries in ([('unknown', 'ACCEPTED')], [('paragraph:1', 'ACCEPTED'), ('unknown', 'REJECTED')],
+                    [('paragraph:1', 'ACCEPTED'), ('paragraph:1', 'REJECTED')]):
+        with pytest.raises(review.ReviewSelectionError):
+            review.apply_decisions(before, entries, origin="person", expected_revision=0)
+    assert before["decided"] == set() and before["dispositions"] == {}
+
+
+def test_hidden_and_blocked_changes_cannot_be_batch_accepted():
+    review = _decision_module()
+    state = _two_change_state()
+    state["changes"][1] = replace(state["changes"][1],
+                                  proposed_text="Strong experience with Kubernetes administration, ideally at scale.")
+    from resume_tailorer.ui.tailoring_view import group_changes
+
+    assert group_changes(state["changes"], state["report"].true_gaps).blocked
+    with pytest.raises(review.ReviewSelectionError):
+        review.apply_decisions(state, [("paragraph:2", "ACCEPTED")], origin="person", expected_revision=0)
+    state["changes"][1] = replace(state["changes"][1], proposed_text="Led customer survey analysis",
+                                  category=ChangeCategory.UNCHANGED)
+    with pytest.raises(review.ReviewSelectionError):
+        review.apply_decisions(state, [("paragraph:2", "ACCEPTED")], origin="person", expected_revision=0)
+    state["changes"][0] = replace(state["changes"][0], validation_status=ValidationStatus.FAIL)
+    with pytest.raises(review.ReviewSelectionError):
+        review.apply_decisions(state, [("paragraph:1", "ACCEPTED")], origin="person", expected_revision=0)
+
+
+def test_retry_is_idempotent_and_legacy_review_defaults_remain_available(tmp_path):
+    review = _decision_module()
+    folder = tmp_path / "artifacts"
+    legacy = _two_change_state()
+    assert save_review(str(folder), "job-1", legacy)
+    loaded = load_review(str(folder), "job-1")
+    assert "review_revision" not in loaded and "review_mode" not in loaded
+    first = review.mutate_saved_review(str(folder), "job-1", 0, [("paragraph:1", "REJECTED")], "person")
+    again = review.mutate_saved_review(str(folder), "job-1", 1, [("paragraph:1", "REJECTED")], "person")
+    assert first["review_revision"] == again["review_revision"] == 1
+    assert load_review(str(folder), "job-1")["decided"] == {"paragraph:1"}
+
+
+def test_failed_save_preserves_previous_review(tmp_path, monkeypatch):
+    review = _decision_module()
+    folder = tmp_path / "artifacts"
+    assert save_review(str(folder), "job-1", _two_change_state())
+    monkeypatch.setattr(review, "save_review", lambda *args: False)
+    with pytest.raises(review.ReviewStorageError):
+        review.mutate_saved_review(str(folder), "job-1", 0, [("paragraph:1", "REJECTED")], "person")
+    saved = load_review(str(folder), "job-1")
+    assert saved["decided"] == set() and saved.get("review_revision", 0) == 0
