@@ -6,6 +6,7 @@ The lock is the same per-user OS lock that fences batch publication.
 
 from __future__ import annotations
 
+import time
 from pathlib import Path
 from typing import Mapping
 
@@ -26,6 +27,17 @@ class ReviewSelectionError(ValueError):
 
 class ReviewStorageError(OSError):
     """The saved review could not be read or replaced."""
+
+
+def new_review_revision() -> int:
+    """The starting revision of a newly tailored review.
+
+    Change IDs are positional (``paragraph:3``), so a fresh run must never start at a
+    revision an older tab could still hold, or that tab's choices would land on a
+    different proposal at the same position. Milliseconds since the epoch are unique
+    per run and stay exact in JavaScript numbers.
+    """
+    return time.time_ns() // 1_000_000
 
 
 def apply_decisions(
@@ -69,7 +81,11 @@ def apply_decisions(
     origins = dict(state.get("decision_origins") or {})
     changed = False
     for change_id, decision in entries:
-        manual = (manual_texts or {}).get(change_id, "").strip() if decision == "MANUALLY_EDITED" else None
+        manual = None
+        if decision == "MANUALLY_EDITED":
+            given = (manual_texts or {}).get(change_id)
+            # No text sent means "edit manually" again: keep the wording already saved.
+            manual = (given if given is not None else edited.get(change_id, "")).strip()
         reason = (reasons or {}).get(change_id) or ("Chosen by you" if origin == "person" else "Supported by verified facts")
         was_changed = (change_id not in decided or dispositions.get(change_id) != decision or
                        (decision == "MANUALLY_EDITED" and edited.get(change_id) != manual) or

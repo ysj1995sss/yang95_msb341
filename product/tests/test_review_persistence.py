@@ -297,3 +297,12 @@ def test_streamlit_legacy_decision_does_not_invent_an_origin(tmp_path, monkeypat
     text = "\n".join(item.value for item in [*at.markdown, *at.caption])
     assert "Origin not recorded" in text
     assert "Chosen by you" not in text
+
+
+def test_a_new_review_never_starts_at_a_revision_an_old_tab_holds():
+    # Change ids are positional, so a re-tailored review must not reuse revision 0 (or
+    # any earlier run's number) that a stale tab could still send with its selection.
+    from resume_tailorer.review_decisions import new_review_revision
+
+    first = new_review_revision()
+    assert first > 1_000_000_000_000 and new_review_revision() >= first

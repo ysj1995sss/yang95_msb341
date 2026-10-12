@@ -47,7 +47,7 @@ from resume_tailorer.analyzers.term_match import displayable_gaps, short_require
 from resume_tailorer.ui.shell import md_literal
 from resume_tailorer.review_store import discard_review, load_review, save_review, signature
 from resume_tailorer.batch_runner import _file_lock
-from resume_tailorer.review_decisions import ReviewConflict, ReviewSelectionError, ReviewStorageError, mutate_saved_review
+from resume_tailorer.review_decisions import ReviewConflict, ReviewSelectionError, ReviewStorageError, mutate_saved_review, new_review_revision
 from resume_tailorer.ui.assisted_review import apply_assisted_review
 from resume_tailorer.artifacts.models import FidelityMode, ValidationStatus
 from resume_tailorer.ui.artifact_review import visible_changes
@@ -681,7 +681,7 @@ def _run_tailoring(source, pending: dict) -> None:
         st.error(str(exc))
         return
     state["review_mode"] = "assisted" if st.session_state.get("tailor_review_mode") == "AI-assisted review" else "manual"
-    state["review_revision"] = 0
+    state["review_revision"] = new_review_revision()
     if state["review_mode"] == "assisted":
         safe_defaults = safe_default_dispositions(state["changes"], state["report"].true_gaps)
         if safe_defaults:

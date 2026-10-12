@@ -104,7 +104,7 @@ def test_review_payload_explains_each_full_change_and_defaults_to_manual(tailor_
     _ready(tailor_client)
     assert _run(tailor_client)["status"] == "done"
     review = tailor_client.get("/v2/tailor").json()["review"]
-    assert review["review_mode"] == "manual" and review["review_revision"] == 0
+    assert review["review_mode"] == "manual" and review["review_revision"] > 0
     change = next(c for c in review["changes"] if "reporting dashboards" in c["proposed"])
     assert change["original"][:25] in change["title"]
     assert change["proposed"][:25] in change["title"]
@@ -117,26 +117,27 @@ def test_batch_decisions_are_atomic_and_stale_tabs_cannot_overwrite(tailor_clien
     _ready(tailor_client)
     assert _run(tailor_client)["status"] == "done"
     original = tailor_client.get("/v2/tailor").json()["review"]
+    start = original["review_revision"]
     change_id = original["changes"][0]["id"]
     invalid = tailor_client.post("/v2/tailor/decisions/batch", json={
-        "expected_revision": 0, "decisions": [
+        "expected_revision": start, "decisions": [
             {"change_id": change_id, "decision": "REJECTED"},
             {"change_id": "not-in-review", "decision": "ACCEPTED"},
         ],
     })
     assert invalid.status_code == 400
-    assert tailor_client.get("/v2/tailor").json()["review"]["review_revision"] == 0
+    assert tailor_client.get("/v2/tailor").json()["review"]["review_revision"] == start
     saved = tailor_client.post("/v2/tailor/decisions/batch", json={
-        "expected_revision": 0, "decisions": [{"change_id": change_id, "decision": "REJECTED"}],
+        "expected_revision": start, "decisions": [{"change_id": change_id, "decision": "REJECTED"}],
     })
-    assert saved.status_code == 200 and saved.json()["review_revision"] == 1
+    assert saved.status_code == 200 and saved.json()["review_revision"] == start + 1
     assert next(c for c in saved.json()["changes"] if c["id"] == change_id)["decision_origin"] == "person"
     stale = tailor_client.post("/v2/tailor/decisions/batch", json={
-        "expected_revision": 0, "decisions": [{"change_id": change_id, "decision": "ACCEPTED"}],
+        "expected_revision": start, "decisions": [{"change_id": change_id, "decision": "ACCEPTED"}],
     })
     assert stale.status_code == 409
     reloaded = tailor_client.get("/v2/tailor").json()["review"]
-    assert reloaded["review_revision"] == 1
+    assert reloaded["review_revision"] == start + 1
     assert next(c for c in reloaded["changes"] if c["id"] == change_id)["decision"] == "REJECTED"
 
 
@@ -312,3 +313,49 @@ def test_codex_cli_model_only_on_your_own_computer():
     with pytest.raises(HTTPException) as refused:
         _settings_for(RunRequest(model="codex-cli"), FakeWorkspace(True))
     assert refused.value.status_code == 400 and "your own computer" in refused.value.detail
+
+
+def test_a_new_run_never_reuses_an_old_tabs_revision(tailor_client):
+    # Change ids are positional ("paragraph:3"), so an old tab's selection must not
+    # apply to a re-tailored review's different proposal at the same position.
+    _ready(tailor_client)
+    assert _run(tailor_client)["status"] == "done"
+    old = tailor_client.get("/v2/tailor").json()["review"]
+    assert _run(tailor_client)["status"] == "done"
+    new = tailor_client.get("/v2/tailor").json()["review"]
+    assert new["review_revision"] != old["review_revision"]
+    stale = tailor_client.post("/v2/tailor/decisions/batch", json={
+        "expected_revision": old["review_revision"],
+        "decisions": [{"change_id": old["changes"][0]["id"], "decision": "ACCEPTED"}],
+    })
+    assert stale.status_code == 409
+    assert all(c["decision"] is None for c in tailor_client.get("/v2/tailor").json()["review"]["changes"])
+
+
+def test_single_decision_from_an_old_tab_is_refused(tailor_client):
+    _ready(tailor_client)
+    assert _run(tailor_client)["status"] == "done"
+    review = tailor_client.get("/v2/tailor").json()["review"]
+    change_id = review["changes"][0]["id"]
+    first = tailor_client.post("/v2/tailor/decisions", json={
+        "change_id": change_id, "decision": "REJECTED", "expected_revision": review["review_revision"]})
+    assert first.status_code == 200
+    stale = tailor_client.post("/v2/tailor/decisions", json={
+        "change_id": change_id, "decision": "ACCEPTED", "expected_revision": review["review_revision"]})
+    assert stale.status_code == 409
+    # Older clients that send no revision keep working.
+    legacy = tailor_client.post("/v2/tailor/decisions", json={"change_id": change_id, "decision": "ACCEPTED"})
+    assert legacy.status_code == 200
+
+
+def test_manual_choice_without_text_keeps_the_saved_wording(tailor_client):
+    _ready(tailor_client)
+    assert _run(tailor_client)["status"] == "done"
+    change = next(c for c in tailor_client.get("/v2/tailor").json()["review"]["changes"]
+                  if "reporting dashboards" in c["proposed"])
+    wording = "Built SQL dashboards used by 40 managers"
+    tailor_client.post("/v2/tailor/decisions", json={"change_id": change["id"], "decision": "MANUALLY_EDITED",
+                                                      "manual_text": wording})
+    again = tailor_client.post("/v2/tailor/decisions", json={"change_id": change["id"], "decision": "MANUALLY_EDITED"})
+    assert again.status_code == 200
+    assert next(c for c in again.json()["changes"] if c["id"] == change["id"])["manual_text"] == wording

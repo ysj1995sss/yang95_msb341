@@ -124,7 +124,7 @@ export function ReviewRoom({ review, onChange, onReload, onDiscard }: {
   async function decide(change: Change, decision: Decision, manual?: string) {
     setError(null);
     try {
-      const next = await api<Review>("/tailor/decisions", { method: "POST", json: { change_id: change.id, decision, manual_text: manual ?? null } });
+      const next = await api<Review>("/tailor/decisions", { method: "POST", json: { change_id: change.id, decision, manual_text: manual ?? null, expected_revision: review.review_revision } });
       onChange(next);
       if (decision !== "MANUALLY_EDITED" || manual !== undefined) {
         const label = { ACCEPTED: "Accepted", MANUALLY_EDITED: "Edit saved", REJECTED: "Original kept" }[decision];

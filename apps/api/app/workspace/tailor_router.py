@@ -308,6 +308,7 @@ def _run(ws: Workspace, job_id: str, pending: dict, source, request: RunRequest,
     from resume_tailorer.tailoring_service import TailoringError, regenerate, run_tailoring
     from resume_tailorer.ui.tailoring_view import safe_default_dispositions
     from resume_tailorer.ui.assisted_review import apply_assisted_review
+    from resume_tailorer.review_decisions import new_review_revision
 
     def step(message: str) -> None:
         with _RUNS_LOCK:
@@ -323,7 +324,7 @@ def _run(ws: Workspace, job_id: str, pending: dict, source, request: RunRequest,
             one_off=source[3],
         )
         state["review_mode"] = request.review_mode
-        state["review_revision"] = 0
+        state["review_revision"] = new_review_revision()
         # Same first step as the Streamlit review room: changes that claim a missing
         # requirement start rejected, and the resume is rebuilt without them.
         safe = safe_default_dispositions(state["changes"], state["report"].true_gaps)
@@ -399,6 +400,8 @@ class Decision(BaseModel):
     change_id: str
     decision: Literal["ACCEPTED", "MANUALLY_EDITED", "REJECTED"]
     manual_text: Optional[str] = None
+    # The review revision the page showed; older clients omit it.
+    expected_revision: Optional[int] = None
 
 
 class BatchDecision(BaseModel):
@@ -446,7 +449,7 @@ def decide(body: Decision, ws: Workspace = Depends(workspace)):
     if body.change_id not in {c.change_id for c in state["changes"]}:
         raise HTTPException(404, "That change isn't in this review.")
     texts = {body.change_id: body.manual_text} if body.decision == "MANUALLY_EDITED" and body.manual_text is not None else None
-    state = _mutate_review(ws, job_id, [(body.change_id, body.decision)], None, texts,
+    state = _mutate_review(ws, job_id, [(body.change_id, body.decision)], body.expected_revision, texts,
                            allow_blank_manual=body.decision == "MANUALLY_EDITED")
     return _review_view(ws, state)
 
