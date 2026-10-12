@@ -119,6 +119,7 @@ def signature(state: dict) -> tuple:
                      for key, value in (state.get("decision_origins") or {}).items())),
         state.get("review_revision", 0),
         state.get("review_mode", "manual"),
+        state.get("assisted_review_applied", False),
         state.get("version"),
         state.get("reviewed"),
         state.get("dirty"),
