@@ -96,7 +96,8 @@ def _review(ws: Workspace, job_id: Optional[str]) -> Optional[dict]:
 def _save_review(ws: Workspace, job_id: str, state: dict) -> None:
     from resume_tailorer.review_store import save_review
 
-    save_review(ws.session["artifacts_dir"], job_id, state)
+    if not save_review(ws.session["artifacts_dir"], job_id, state):
+        raise OSError("The tailored review could not be saved. Try again.")
 
 
 def _persist_handoff(ws: Workspace, review_complete: bool) -> None:
@@ -137,7 +138,7 @@ def _review_view(ws: Workspace, state: dict, show_all: bool = False) -> dict:
     from resume_tailorer.ui.tailor_progress import (
         DECISION_DONE, VERBS, artifact_status_text, artifact_tone, empty_queue_message, next_undecided,
         readable_requirement, rejected_by_checks, review_progress, supporting_fact, validation_word,
-        change_section_label,
+        change_section_label, change_title,
     )
 
     report = state["report"]
@@ -148,13 +149,17 @@ def _review_view(ws: Workspace, state: dict, show_all: bool = False) -> dict:
     status = report.validation.status
     pages = len(pdf_page_images(state.get("pdf_bytes") or b"")) if status.value != "FAIL" else 0
 
-    def change_view(change) -> dict:
+    def change_view(change, ordinal: int) -> dict:
         current = state["dispositions"].get(change.change_id)
         is_decided = change.change_id in decided
+        origin = (state.get("decision_origins") or {}).get(change.change_id) or {}
         return {
             "id": change.change_id,
+            "title": change_title(change, ordinal),
+            "category": change.category.value,
             "section_label": change_section_label(change),
             "requirement": readable_requirement(change),
+            "full_requirement": change.job_requirement or "General fit with the posting",
             "fact": supporting_fact(change, state["profile"]),
             "reason": change.reason or "Reworded to match the posting",
             "original": change.original_text or "",
@@ -162,11 +167,15 @@ def _review_view(ws: Workspace, state: dict, show_all: bool = False) -> dict:
             "check": validation_word(change.validation_status),
             "decision": current if is_decided else None,
             "decision_label": DECISION_DONE.get(current, "Not reviewed yet") if is_decided else "Not reviewed yet",
+            "decision_origin": origin.get("by") if is_decided else None,
+            "decision_reason": origin.get("reason") if is_decided else "",
             "manual_text": state["manual_texts"].get(change.change_id, change.proposed_text or ""),
         }
 
     return {
         "version": state.get("version", 1),
+        "review_revision": int(state.get("review_revision", 0)),
+        "review_mode": state.get("review_mode", "manual"),
         "source_info": state.get("source_info"),
         "status": status.value,
         "status_text": artifact_status_text(status),
@@ -189,7 +198,7 @@ def _review_view(ws: Workspace, state: dict, show_all: bool = False) -> dict:
         "unsupported_claims": list(report.unsupported_claims or ()),
         "progress": {**jsonable(progress), "label": progress.label},
         "next_undecided": next_undecided(groups.reviewable, decided),
-        "changes": [change_view(c) for c in groups.reviewable],
+        "changes": [change_view(c, i) for i, c in enumerate(groups.reviewable, 1)],
         "empty_message": empty_queue_message(state["changes"]),
         "turned_down": [{"original": c.original_text, "reason": c.reason or "did not pass the checks"}
                         for c in rejected_by_checks(state["changes"])],
@@ -261,6 +270,7 @@ def tailor_page(show_all: bool = False, ws: Workspace = Depends(workspace)):
 class RunRequest(BaseModel):
     length: Literal["preserve", "1_page", "2_page"] = "preserve"
     conservative: bool = False
+    review_mode: Literal["manual", "assisted"] = "manual"
     # Optional model for this run only (never stored or logged), like the Streamlit sidebar.
     model: Optional[str] = None
     api_key: Optional[str] = None
@@ -297,6 +307,7 @@ def _run(ws: Workspace, job_id: str, pending: dict, source, request: RunRequest,
     from resume_tailorer.session_profile import get_career_profile
     from resume_tailorer.tailoring_service import TailoringError, regenerate, run_tailoring
     from resume_tailorer.ui.tailoring_view import safe_default_dispositions
+    from resume_tailorer.ui.assisted_review import apply_assisted_review
 
     def step(message: str) -> None:
         with _RUNS_LOCK:
@@ -311,6 +322,8 @@ def _run(ws: Workspace, job_id: str, pending: dict, source, request: RunRequest,
             career_profile=None if source[3] else get_career_profile(ws.session),
             one_off=source[3],
         )
+        state["review_mode"] = request.review_mode
+        state["review_revision"] = 0
         # Same first step as the Streamlit review room: changes that claim a missing
         # requirement start rejected, and the resume is rebuilt without them.
         safe = safe_default_dispositions(state["changes"], state["report"].true_gaps)
@@ -319,6 +332,11 @@ def _run(ws: Workspace, job_id: str, pending: dict, source, request: RunRequest,
             state["gap_blocks_applied"] = True
             regenerate(ws.session, state)
             state["reviewed"] = False
+        if request.review_mode == "assisted":
+            state = apply_assisted_review(state)
+            if state.get("dirty"):
+                regenerate(ws.session, state)
+                state["reviewed"] = False
         _save_review(ws, job_id, state)
         _persist_handoff(ws, False)
         outcome = {"status": "done"}
@@ -383,34 +401,79 @@ class Decision(BaseModel):
     manual_text: Optional[str] = None
 
 
+class BatchDecision(BaseModel):
+    change_id: str
+    decision: Literal["ACCEPTED", "REJECTED"]
+
+
+class BatchDecisions(BaseModel):
+    expected_revision: int
+    decisions: list[BatchDecision]
+
+
+def _mutate_review(ws: Workspace, job_id: str, entries: list[tuple[str, str]],
+                   expected_revision: int | None, manual_texts: dict[str, str] | None = None,
+                   allow_blank_manual: bool = False) -> dict:
+    from resume_tailorer.review_decisions import (
+        ReviewConflict, ReviewSelectionError, ReviewStorageError, mutate_saved_review,
+    )
+
+    try:
+        return mutate_saved_review(ws.session["artifacts_dir"], job_id, expected_revision,
+                                   entries, "person", manual_texts=manual_texts,
+                                   allow_blank_manual=allow_blank_manual)
+    except ReviewConflict as exc:
+        raise HTTPException(409, str(exc)) from exc
+    except ReviewSelectionError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    except ReviewStorageError as exc:
+        raise HTTPException(500, str(exc)) from exc
+
+
+@router.post("/tailor/decisions/batch")
+def decide_batch(body: BatchDecisions, ws: Workspace = Depends(workspace)):
+    job_id, _state = _state_or_404(ws)
+    if not 1 <= len(body.decisions) <= 100:
+        raise HTTPException(400, "Select between 1 and 100 changes.")
+    state = _mutate_review(ws, job_id, [(item.change_id, item.decision) for item in body.decisions],
+                           body.expected_revision)
+    return _review_view(ws, state)
+
+
 @router.post("/tailor/decisions")
 def decide(body: Decision, ws: Workspace = Depends(workspace)):
     job_id, state = _state_or_404(ws)
     if body.change_id not in {c.change_id for c in state["changes"]}:
         raise HTTPException(404, "That change isn't in this review.")
-    state.setdefault("decided", set())
-    if state["dispositions"].get(body.change_id) != body.decision or body.change_id not in state["decided"]:
-        state["dirty"] = True
-    state["dispositions"][body.change_id] = body.decision
-    state["decided"].add(body.change_id)
-    if body.decision == "MANUALLY_EDITED" and body.manual_text is not None:
-        state["manual_texts"][body.change_id] = body.manual_text
-        state["dirty"] = True
-    _save_review(ws, job_id, state)
+    texts = {body.change_id: body.manual_text} if body.decision == "MANUALLY_EDITED" and body.manual_text is not None else None
+    state = _mutate_review(ws, job_id, [(body.change_id, body.decision)], None, texts,
+                           allow_blank_manual=body.decision == "MANUALLY_EDITED")
     return _review_view(ws, state)
 
 
 @router.post("/tailor/rebuild")
 def rebuild(ws: Workspace = Depends(workspace)):
+    from resume_tailorer.batch_runner import _file_lock
+    from resume_tailorer.identity import user_dir
+    from resume_tailorer.review_store import load_review, save_review
     from resume_tailorer.tailoring_service import TailoringError, regenerate
     from resume_tailorer.ui.tailor_progress import review_progress
 
     job_id, state = _state_or_404(ws)
+    revision = int(state.get("review_revision", 0))
     try:
         regenerate(ws.session, state)
     except TailoringError as exc:
         raise HTTPException(400, str(exc)) from exc
-    _save_review(ws, job_id, state)
+    # Conversion happens outside the short lock. A second tab may decide while it
+    # runs, so compare the exact review revision before publishing this rebuild.
+    with _file_lock(user_dir(ws.owner_id), wait=30.0):
+        current = load_review(ws.session["artifacts_dir"], job_id)
+        if current is None or int(current.get("review_revision", 0)) != revision:
+            raise HTTPException(409, "This review changed while rebuilding. Reload it and rebuild again.")
+        state["review_revision"] = revision + 1
+        if not save_review(ws.session["artifacts_dir"], job_id, state):
+            raise HTTPException(500, "The rebuilt review could not be saved. Try again.")
     groups = _groups(state)
     progress = review_progress(groups.reviewable, state.get("decided") or set(), state["dirty"],
                                state["report"].validation.status)

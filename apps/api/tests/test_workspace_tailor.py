@@ -100,6 +100,89 @@ def test_run_review_decide_rebuild_download(tailor_client):
     assert tailor_client.get("/v2/tailor/download/pdf").status_code == 404
 
 
+def test_review_payload_explains_each_full_change_and_defaults_to_manual(tailor_client):
+    _ready(tailor_client)
+    assert _run(tailor_client)["status"] == "done"
+    review = tailor_client.get("/v2/tailor").json()["review"]
+    assert review["review_mode"] == "manual" and review["review_revision"] == 0
+    change = next(c for c in review["changes"] if "reporting dashboards" in c["proposed"])
+    assert change["original"][:25] in change["title"]
+    assert change["proposed"][:25] in change["title"]
+    assert change["category"] == "REPHRASED"
+    assert change["decision_origin"] is None
+    assert "full_requirement" in change
+
+
+def test_batch_decisions_are_atomic_and_stale_tabs_cannot_overwrite(tailor_client):
+    _ready(tailor_client)
+    assert _run(tailor_client)["status"] == "done"
+    original = tailor_client.get("/v2/tailor").json()["review"]
+    change_id = original["changes"][0]["id"]
+    invalid = tailor_client.post("/v2/tailor/decisions/batch", json={
+        "expected_revision": 0, "decisions": [
+            {"change_id": change_id, "decision": "REJECTED"},
+            {"change_id": "not-in-review", "decision": "ACCEPTED"},
+        ],
+    })
+    assert invalid.status_code == 400
+    assert tailor_client.get("/v2/tailor").json()["review"]["review_revision"] == 0
+    saved = tailor_client.post("/v2/tailor/decisions/batch", json={
+        "expected_revision": 0, "decisions": [{"change_id": change_id, "decision": "REJECTED"}],
+    })
+    assert saved.status_code == 200 and saved.json()["review_revision"] == 1
+    assert next(c for c in saved.json()["changes"] if c["id"] == change_id)["decision_origin"] == "person"
+    stale = tailor_client.post("/v2/tailor/decisions/batch", json={
+        "expected_revision": 0, "decisions": [{"change_id": change_id, "decision": "ACCEPTED"}],
+    })
+    assert stale.status_code == 409
+    reloaded = tailor_client.get("/v2/tailor").json()["review"]
+    assert reloaded["review_revision"] == 1
+    assert next(c for c in reloaded["changes"] if c["id"] == change_id)["decision"] == "REJECTED"
+
+
+def test_assisted_mode_makes_conservative_decisions_before_review(tailor_client):
+    _ready(tailor_client)
+    started = tailor_client.post("/v2/tailor/run", json={"review_mode": "assisted"})
+    assert started.status_code == 200
+    for _ in range(200):
+        status = tailor_client.get("/v2/tailor/run").json()
+        if status["status"] != "running":
+            break
+        time.sleep(0.05)
+    assert status["status"] == "done", status
+    review = tailor_client.get("/v2/tailor").json()["review"]
+    assert review["review_mode"] == "assisted"
+    assert any(c["decision_origin"] == "AI-assisted" for c in review["changes"])
+    assert all(c["decision"] != "ACCEPTED" for c in review["changes"] if c["check"] != "Verified")
+
+
+def test_rebuild_advances_review_revision_so_an_old_tab_cannot_save(tailor_client):
+    _ready(tailor_client)
+    assert _run(tailor_client)["status"] == "done"
+    review = tailor_client.get("/v2/tailor").json()["review"]
+    change_id = review["changes"][0]["id"]
+    selected = tailor_client.post("/v2/tailor/decisions/batch", json={
+        "expected_revision": review["review_revision"],
+        "decisions": [{"change_id": change_id, "decision": "REJECTED"}],
+    }).json()
+    rebuilt = tailor_client.post("/v2/tailor/rebuild")
+    assert rebuilt.status_code == 200
+    assert rebuilt.json()["review_revision"] == selected["review_revision"] + 1
+    stale = tailor_client.post("/v2/tailor/decisions/batch", json={
+        "expected_revision": selected["review_revision"],
+        "decisions": [{"change_id": change_id, "decision": "ACCEPTED"}],
+    })
+    assert stale.status_code == 409
+
+
+def test_a_failed_initial_review_save_is_not_reported_as_a_finished_run(tailor_client, monkeypatch):
+    _ready(tailor_client)
+    monkeypatch.setattr("resume_tailorer.review_store.save_review", lambda *args: False)
+    result = _run(tailor_client)
+    assert result["status"] == "failed"
+    assert tailor_client.get("/v2/tailor").json()["review"] is None
+
+
 def test_an_unverifiable_manual_edit_is_refused(tailor_client):
     _ready(tailor_client)
     _run(tailor_client)

@@ -36,6 +36,7 @@ def apply_decisions(
     expected_revision: int,
     manual_texts: Mapping[str, str] | None = None,
     reasons: Mapping[str, str] | None = None,
+    allow_blank_manual: bool = False,
 ) -> dict:
     """Validate every selected ID, then return a copy with one revision change."""
     revision = int(state.get("review_revision", 0))
@@ -59,7 +60,7 @@ def apply_decisions(
             raise ReviewSelectionError("Choose Accept, Keep original, or Edit manually.")
         if decision == "ACCEPTED" and change.validation_status is ValidationStatus.FAIL:
             raise ReviewSelectionError("A change that failed its truth check cannot be batch accepted.")
-        if decision == "MANUALLY_EDITED" and not (manual_texts or {}).get(change_id, "").strip():
+        if decision == "MANUALLY_EDITED" and not allow_blank_manual and not (manual_texts or {}).get(change_id, "").strip():
             raise ReviewSelectionError("Write the manual wording before saving it.")
 
     dispositions = dict(state.get("dispositions") or {})
@@ -98,6 +99,7 @@ def mutate_saved_review(
     *,
     manual_texts: Mapping[str, str] | None = None,
     reasons: Mapping[str, str] | None = None,
+    allow_blank_manual: bool = False,
 ) -> dict:
     """One cross-process read/check/write; no partial decision is published."""
     artifacts = Path(folder).resolve()
@@ -109,7 +111,8 @@ def mutate_saved_review(
             raise ReviewStorageError("This review is no longer available. Reload Tailor.")
         revision = int(state.get("review_revision", 0)) if expected_revision is None else expected_revision
         updated = apply_decisions(state, entries, origin=origin, expected_revision=revision,
-                                  manual_texts=manual_texts, reasons=reasons)
+                                  manual_texts=manual_texts, reasons=reasons,
+                                  allow_blank_manual=allow_blank_manual)
         if updated["review_revision"] == int(state.get("review_revision", 0)):
             return state
         if not save_review(str(artifacts), job_id, updated):
