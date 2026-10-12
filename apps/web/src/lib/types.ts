@@ -143,8 +143,10 @@ export type JobDetail = {
 export type Decision = "ACCEPTED" | "MANUALLY_EDITED" | "REJECTED";
 
 export type Change = {
-  id: string; section_label: string; requirement: string; fact: string; reason: string; original: string; proposed: string;
-  check: string; decision: Decision | null; decision_label: string; manual_text: string;
+    id: string; section_label: string; requirement: string; fact: string; reason: string; original: string; proposed: string;
+    title: string; category: string; full_requirement: string;
+    check: string; decision: Decision | null; decision_label: string; manual_text: string;
+    decision_origin: "person" | "AI-assisted" | null; decision_reason: string;
 };
 
 export type RequirementRowView = {
@@ -173,7 +175,8 @@ export type ResumeSourceInfo = {
 };
 
 export type Review = {
-  source_info?: ResumeSourceInfo | null;
+    source_info?: ResumeSourceInfo | null;
+    review_revision: number; review_mode: "manual" | "assisted";
   version: number; status: "PASS" | "WARNING" | "FAIL"; status_text: string; status_tone: string; findings: string[];
   fidelity: string; page_count: number | null; preview_pages: number; has_pdf: boolean; has_docx: boolean;
   tailored_text: string; alignment: { before: number | null; after: number | null }; overlap_note: string; sync_summary: string;

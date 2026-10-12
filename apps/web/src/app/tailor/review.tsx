@@ -2,8 +2,8 @@
 
 import { ArrowRight, Check, Circle, Download, Pencil, RotateCcw } from "lucide-react";
 import { useState } from "react";
-import { Alert, Button, Card, Chip, DownloadLink, LinkButton, TextArea, cx, toneOf, useToast } from "@/components/ui";
-import { api } from "@/lib/api";
+import { Alert, Button, Card, Checkbox, Chip, DownloadLink, LinkButton, TextArea, cx, toneOf, useToast } from "@/components/ui";
+import { ApiError, api } from "@/lib/api";
 import type { Change, Decision, Review } from "@/lib/types";
 import { KeywordReport, ReadabilityCheck, RequirementReview } from "./requirement-review";
 import { ResumeSource } from "./resume-source";
@@ -37,22 +37,24 @@ function ChangeCard({ change, review, onDecide }: {
   const [editing, setEditing] = useState(change.decision === "MANUALLY_EDITED");
   const [text, setText] = useState(change.manual_text);
   const [busy, setBusy] = useState<Decision | null>(null);
-  const run = async (d: Decision, manual?: string) => { setBusy(d); await onDecide(d, manual); setBusy(null); };
+  const run = async (d: Decision, manual?: string) => { setBusy(d); try { await onDecide(d, manual); } finally { setBusy(null); } };
   return (
     <Card aria-labelledby={`change-${change.id}`}>
-      <p id={`change-${change.id}`} className="text-[14px] font-semibold tracking-wide text-primary uppercase">
-        {change.section_label} · Review this change · {change.decision_label}
+      <p id={`change-${change.id}`} className="break-words text-[15px] font-semibold text-primary">
+        {change.title || change.section_label} · {change.decision_label}
       </p>
+      <p className="mt-1 text-[14px] text-muted">{change.category.replaceAll("_", " ")} · {change.section_label}</p>
       <ol className="mt-3 grid gap-2 text-[15px] md:grid-cols-3">
-        <li className="rounded-[var(--radius-control)] bg-canvas p-3"><span className="block text-[13px] text-muted">Job requirement</span>{change.requirement}</li>
-        <li className="rounded-[var(--radius-control)] bg-canvas p-3"><span className="block text-[13px] text-muted">Supporting fact</span>{change.fact}</li>
-        <li className="rounded-[var(--radius-control)] bg-canvas p-3"><span className="block text-[13px] text-muted">Resume change</span>{change.reason}</li>
+        <li className="min-w-0 whitespace-pre-wrap break-words rounded-[var(--radius-control)] bg-canvas p-3"><span className="block text-[13px] text-muted">Job requirement</span><span>{change.full_requirement || change.requirement}</span></li>
+        <li className="min-w-0 whitespace-pre-wrap break-words rounded-[var(--radius-control)] bg-canvas p-3"><span className="block text-[13px] text-muted">Supporting fact</span>{change.fact}</li>
+        <li className="min-w-0 whitespace-pre-wrap break-words rounded-[var(--radius-control)] bg-canvas p-3"><span className="block text-[13px] text-muted">Resume change</span>{change.reason}</li>
       </ol>
       <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-2">
-        <div><p className="text-[13px] font-semibold text-muted uppercase">Original</p><p className="mt-1">{change.original || "(new line)"}</p></div>
-        <div><p className="text-[13px] font-semibold text-muted uppercase">Proposed</p><p className="mt-1 rounded-[var(--radius-control)] bg-primary-soft p-2">{change.proposed}</p></div>
+        <div className="min-w-0"><p className="text-[13px] font-semibold text-muted uppercase">Original</p><p className="mt-1 whitespace-pre-wrap break-words">{change.original || "(new line)"}</p></div>
+        <div className="min-w-0"><p className="text-[13px] font-semibold text-muted uppercase">Proposed</p><p className="mt-1 whitespace-pre-wrap break-words rounded-[var(--radius-control)] bg-primary-soft p-2">{change.proposed}</p></div>
       </div>
       <p className="mt-2 text-[14px] text-muted">Check: {change.check}</p>
+      {change.decision && <p className="mt-1 text-[14px] text-muted"><span>{change.decision_origin === "AI-assisted" ? "Chosen by AI assistance" : "Chosen by you"}</span>{change.decision_reason && <span> · {change.decision_reason}</span>}</p>}
       {editing && (
         <div className="mt-4 flex flex-col gap-2">
           <TextArea label="Your wording" help="Only facts already in your Career Profile are allowed." rows={3}
@@ -76,15 +78,48 @@ function ChangeCard({ change, review, onDecide }: {
   );
 }
 
-export function ReviewRoom({ review, onChange, onDiscard }: {
-  review: Review; onChange: (r: Review) => void; onDiscard: () => void;
+export function ReviewRoom({ review, onChange, onReload, onDiscard }: {
+  review: Review; onChange: (r: Review) => void; onReload: () => void; onDiscard: () => void;
 }) {
   const toast = useToast();
   const [focus, setFocus] = useState<string | null>(null);
   const [rebuilding, setRebuilding] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [showAll, setShowAll] = useState(false);
+  const [selected, setSelected] = useState<string[]>([]);
+  const [batchBusy, setBatchBusy] = useState(false);
   const current = review.changes.find((c) => c.id === focus) ?? review.changes.find((c) => c.id === review.next_undecided) ?? review.changes[0];
   const p = review.progress;
+  const selectedIds = selected.filter((id) => review.changes.some((change) => change.id === id));
+
+  function handleError(cause: unknown) {
+    if (cause instanceof ApiError && cause.status === 409) {
+      setSelected([]);
+      onReload();
+      setError("This review changed elsewhere. The latest decisions are loading; select changes again.");
+    } else {
+      setError((cause as Error).message);
+    }
+  }
+
+  async function decideSelected(decision: "ACCEPTED" | "REJECTED") {
+    if (!selectedIds.length) return;
+    setBatchBusy(true);
+    setError(null);
+    try {
+      const next = await api<Review>("/tailor/decisions/batch", { method: "POST", json: {
+        expected_revision: review.review_revision,
+        decisions: selectedIds.map((change_id) => ({ change_id, decision })),
+      } });
+      onChange(next);
+      setSelected([]);
+      toast(`${selectedIds.length} ${selectedIds.length === 1 ? "change" : "changes"} ${decision === "ACCEPTED" ? "accepted" : "kept original"}.`);
+    } catch (cause) {
+      handleError(cause);
+    } finally {
+      setBatchBusy(false);
+    }
+  }
 
   async function decide(change: Change, decision: Decision, manual?: string) {
     setError(null);
@@ -99,7 +134,7 @@ export function ReviewRoom({ review, onChange, onDiscard }: {
         setFocus(nextOpen?.id ?? change.id);
       }
     } catch (e) {
-      setError((e as Error).message);
+      handleError(e);
     }
   }
 
@@ -110,7 +145,7 @@ export function ReviewRoom({ review, onChange, onDiscard }: {
       onChange(await api<Review>("/tailor/rebuild", { method: "POST" }));
       toast("Resume rebuilt with your decisions.");
     } catch (e) {
-      setError((e as Error).message);
+      handleError(e);
     } finally {
       setRebuilding(false);
     }
@@ -124,24 +159,41 @@ export function ReviewRoom({ review, onChange, onDiscard }: {
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,1.15fr)_minmax(0,0.85fr)]">
         <div className="flex min-w-0 flex-col gap-5">
           <h2 className="text-[22px] font-semibold">Proposed changes</h2>
+          <p className="text-[14px] text-muted">{review.review_mode === "assisted" ? "AI assistance made only conservative decisions; review them and decide any remaining changes." : "Review each change yourself."} Select several changes to decide them together, or open one to edit its wording.</p>
           {review.changes.length > 0 ? (
             <>
+              <div className="flex flex-wrap items-center gap-2">
+                <Button onClick={() => setShowAll((value) => !value)}>{showAll ? "Show one change" : "Show all changes"}</Button>
+                <Button onClick={() => setSelected(review.changes.filter((change) => !change.decision).map((change) => change.id))}>Select all unreviewed</Button>
+                <Button onClick={() => setSelected([])} disabled={!selectedIds.length}>Clear selection</Button>
+                <span role="status" className="text-[14px] font-semibold">{selectedIds.length} selected</span>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <Button variant="primary" busy={batchBusy} disabled={!selectedIds.length || batchBusy} onClick={() => void decideSelected("ACCEPTED")}>Accept selected</Button>
+                <Button busy={batchBusy} disabled={!selectedIds.length || batchBusy} onClick={() => void decideSelected("REJECTED")}>Keep original for selected</Button>
+              </div>
               <nav aria-label="Review queue">
                 <ol className="flex flex-col gap-1">
                   {review.changes.map((c, i) => (
-                    <li key={c.id}>
+                    <li key={c.id} className="flex min-w-0 items-start gap-2">
+                      <Checkbox label={`Select change ${i + 1}`} checked={selectedIds.includes(c.id)}
+                        onChange={(checked) => setSelected((ids) => checked ? [...ids, c.id] : ids.filter((id) => id !== c.id))} />
                       <button type="button" aria-current={c.id === current?.id ? "step" : undefined} onClick={() => setFocus(c.id)}
-                        className={cx("flex min-h-11 w-full items-center gap-2 rounded-[var(--radius-control)] px-3 text-left text-[15px] transition-colors duration-150 cursor-pointer",
+                        className={cx("flex min-h-11 min-w-0 flex-1 items-start gap-2 rounded-[var(--radius-control)] px-3 py-2 text-left text-[15px] transition-colors duration-150 cursor-pointer",
                           c.id === current?.id ? "bg-primary-soft font-semibold text-primary" : "hover:bg-paper")}>
                         {c.decision ? <Check aria-hidden className="size-4 shrink-0 text-verified" /> : <Circle aria-hidden className="size-4 shrink-0 text-line-strong" />}
-                        <span className="min-w-0 truncate">{i + 1}. {c.requirement || c.original || "Change"}</span>
+                        <span className="min-w-0 whitespace-normal break-words">{c.title || `${i + 1}. ${c.section_label}: ${c.original || "(new line)"} → ${c.proposed}`}</span>
                         <span className="sr-only">{c.decision ? ` — ${c.decision_label}` : " — not reviewed"}</span>
                       </button>
                     </li>
                   ))}
                 </ol>
               </nav>
-              {current && <ChangeCard key={current.id} change={current} review={review} onDecide={(d, m) => decide(current, d, m)} />}
+              {showAll ? (
+                <div className="flex flex-col gap-4">{review.changes.map((change) => (
+                  <ChangeCard key={change.id} change={change} review={review} onDecide={(d, m) => decide(change, d, m)} />
+                ))}</div>
+              ) : current && <ChangeCard key={current.id} change={current} review={review} onDecide={(d, m) => decide(current, d, m)} />}
             </>
           ) : <Alert tone="primary">{review.empty_message}</Alert>}
 

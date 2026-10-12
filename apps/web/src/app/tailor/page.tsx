@@ -66,6 +66,7 @@ export default function TailorPageView() {
   const { data, error, loading, reload, set } = useResource<TailorPage>("/tailor");
   const [length, setLength] = useState<(typeof LENGTHS)[number]["value"]>("preserve");
   const [lightTouch, setLightTouch] = useState(false);
+  const [reviewMode, setReviewMode] = useState<"manual" | "assisted">("manual");
   const [starting, setStarting] = useState(false);
   const [startError, setStartError] = useState<string | null>(null);
   const [redo, setRedo] = useState(false);
@@ -93,7 +94,7 @@ export default function TailorPageView() {
     setStarting(true);
     setStartError(null);
     try {
-      const run = await api<RunStatus>("/tailor/run", { method: "POST", json: { length, conservative: lightTouch, ...model } });
+      const run = await api<RunStatus>("/tailor/run", { method: "POST", json: { length, conservative: lightTouch, review_mode: reviewMode, ...model } });
       set({ ...data!, run, review: null });
       setRedo(false);
     } catch (e) {
@@ -124,7 +125,7 @@ export default function TailorPageView() {
 
   const header = (
     <>
-      <PageHeader title="Tailor" description="Review each proposed change against your verified facts. Nothing is used until you decide." />
+      <PageHeader title="Tailor" description="Review every proposed change against your verified facts, yourself or with conservative AI assistance." />
       <BatchStrip onOpened={reload} currentJobId={data?.job?.job_id} />
     </>
   );
@@ -158,7 +159,7 @@ export default function TailorPageView() {
         {data.stale_message && (
           <div className="mb-4"><Alert tone="review" title="Profile changed" role="status">{data.stale_message}</Alert></div>
         )}
-        <ReviewRoom review={data.review} onChange={(r: Review) => set({ ...data, review: r })} onDiscard={discard} />
+        <ReviewRoom review={data.review} onChange={(r: Review) => set({ ...data, review: r })} onReload={reload} onDiscard={discard} />
       </>
     );
   }
@@ -202,6 +203,10 @@ export default function TailorPageView() {
               <div className="mt-3"><Alert tone="review" title="No resume yet">Import your resume in <a className="font-semibold underline" href="/profile">Career Profile</a> first.</Alert></div>
             )}
             {!data.model_ready && <div className="mt-3"><Alert tone="review" title="The writing model isn't set up">Enter your own model and key under Settings, or set LLM_MODEL and LLM_API_KEY on the server.</Alert></div>}
+            <div className="mt-5">
+              <RadioGroup legend="Who reviews proposed changes?" help="Manual is the default. AI assistance accepts only clearly supported wording and keeps clear failures out; uncertain changes still need you. You can change each decision later."
+                name="review-mode" value={reviewMode} options={[{ value: "manual", label: "I'll review changes" }, { value: "assisted", label: "AI-assisted review" }]} onChange={setReviewMode} />
+            </div>
             <details className="mt-5 rounded-[var(--radius-card)] border border-line p-4">
               <summary className="cursor-pointer font-semibold">Settings</summary>
               <div className="mt-4 flex flex-col gap-4">
@@ -233,7 +238,7 @@ export default function TailorPageView() {
           </Card>
           <Card>
             <h2 className="text-[18px] font-semibold">What happens</h2>
-            <p className="mt-2 text-muted">Job Copilot rewrites only what your verified facts support, checks every line, and shows each change for you to accept, edit or reject.</p>
+            <p className="mt-2 text-muted">Job Copilot proposes wording from your verified facts and shows every change. Manual review lets you decide; AI assistance handles only clear cases and leaves uncertain ones for you.</p>
             <p className="mt-2 text-muted">Requirements you don&apos;t meet are listed, never added.</p>
           </Card>
         </div>
