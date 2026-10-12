@@ -11,6 +11,7 @@ Two converters, tried in order:
    PDF there, so it could never be handed to Apply.
 """
 
+import logging
 import os
 import shutil
 import subprocess
@@ -18,6 +19,8 @@ import sys
 import tempfile
 import time
 from pathlib import Path
+
+log = logging.getLogger(__name__)
 
 # docx2pdf's convert() calls word.Quit() after each conversion, then the
 # NEXT convert() call's win32com.client.Dispatch("Word.Application")
@@ -95,7 +98,79 @@ def _convert_with_libreoffice(soffice: str, docx_path: str, pdf_path: str) -> No
         shutil.move(str(produced), pdf_path)
 
 
+def _private_word_available() -> bool:
+    """Windows with pywin32 (a docx2pdf dependency): a conversion can own a private Word."""
+    if sys.platform != "win32":
+        return False
+    try:
+        import win32com.client  # noqa: F401
+    except ImportError:
+        return False
+    return True
+
+
+_WD_EXPORT_FORMAT_PDF = 17
+
+
+def _export_with_private_word(dispatch_ex, docx_path: str, pdf_path: str) -> None:
+    """One conversion in a Word process this call starts and always shuts down (spec 020).
+
+    docx2pdf attaches to any running Word, quits it afterwards, and so can pull Word out from
+    under a concurrent conversion (leaving its document locked) or quit the person's own Word.
+    DispatchEx never attaches. Nothing here is ever killed by name or process id."""
+    word = dispatch_ex("Word.Application")
+    doc = None
+    primary: Exception | None = None
+    try:
+        word.Visible = False
+        word.DisplayAlerts = 0
+        doc = word.Documents.Open(str(Path(docx_path).resolve()), ReadOnly=True,
+                                  AddToRecentFiles=False, ConfirmConversions=False)
+        doc.ExportAsFixedFormat(str(Path(pdf_path).resolve()), _WD_EXPORT_FORMAT_PDF)
+    except Exception as exc:
+        primary = exc
+    cleanup: list[Exception] = []
+    if doc is not None:
+        try:
+            doc.Close(SaveChanges=0)
+        except Exception as exc:
+            cleanup.append(exc)
+    try:
+        word.Quit(SaveChanges=0)
+    except Exception as exc:
+        cleanup.append(exc)
+    for exc in cleanup:
+        log.warning("Word cleanup failed after converting %s: %s", Path(docx_path).name, exc)
+    if primary is not None:
+        raise primary
+    if cleanup:
+        raise cleanup[0]
+
+
+def _convert_with_private_word(docx_path: str, pdf_path: str) -> None:
+    import pythoncom
+    from win32com.client import DispatchEx
+
+    pythoncom.CoInitialize()
+    try:
+        last_error: Exception | None = None
+        for attempt in range(_MAX_ATTEMPTS):
+            if attempt > 0:
+                time.sleep(_RETRY_DELAY_SECONDS)
+            try:
+                _export_with_private_word(DispatchEx, docx_path, pdf_path)
+                return
+            except Exception as exc:
+                last_error = exc
+    finally:
+        pythoncom.CoUninitialize()
+    raise DocxConversionUnavailable(f"DOCX-to-PDF conversion failed: {last_error}") from last_error
+
+
 def _convert_with_word(docx_path: str, pdf_path: str) -> None:
+    if _private_word_available():
+        _convert_with_private_word(docx_path, pdf_path)
+        return
     try:
         from docx2pdf import convert
     except ImportError as exc:
