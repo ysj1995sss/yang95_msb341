@@ -8,9 +8,11 @@ from resume_tailorer.profile_import import store_for
 from resume_tailorer.review_store import load_review
 from tests.test_batch import _job, _fake_pdf, RewritesTheSqlBullet
 from tests.test_profile_sync import A1, A2, A3, _docx, _profile
+import threading
+import time
 
 
-def test_real_streamlit_hook_stages_then_runner_publishes(tmp_path, monkeypatch):
+def _seed(tmp_path, monkeypatch):
     from resume_tailorer.ui import batch_panel
     monkeypatch.setenv('JOB_COPILOT_DATA_DIR', str(tmp_path))
     monkeypatch.setenv('LLM_MODEL', 'stub/model')
@@ -25,6 +27,11 @@ def test_real_streamlit_hook_stages_then_runner_publishes(tmp_path, monkeypatch)
     job = _job(1, 'Data Analyst')
     service.db.save_job_posting(job)
     service.close()
+    return batch_panel, job
+
+
+def test_real_streamlit_hook_stages_then_runner_publishes(tmp_path, monkeypatch):
+    batch_panel, job = _seed(tmp_path, monkeypatch)
     with patch('resume_tailorer.llm.client.LLMClient', lambda settings: RewritesTheSqlBullet()), \
          patch('resume_tailorer.docx_export.pipeline.convert_docx_to_pdf', _fake_pdf), \
          patch('resume_tailorer.docx_export.converter._word_platform', lambda: False), \
@@ -40,3 +47,44 @@ def test_real_streamlit_hook_stages_then_runner_publishes(tmp_path, monkeypatch)
     saved = load_review(artifacts_dir('local'), 'greenhouse_1')
     assert saved and saved['pdf_bytes'] and saved['source_info']['filename'] == 'synthetic.docx'
     assert br.read_batch(user_dir('local'))['items'][0]['status'] == 'done'
+
+
+def test_real_streamlit_late_hook_cannot_replace_resumed_review(tmp_path, monkeypatch):
+    batch_panel, job = _seed(tmp_path, monkeypatch)
+    entered, release = threading.Event(), threading.Event()
+    calls = []
+    class Model(RewritesTheSqlBullet):
+        def __init__(self, settings=None):
+            self.old = not calls
+            calls.append(self)
+        def complete(self, *args, **kwargs):
+            if self.old:
+                entered.set()
+                assert release.wait(20)
+            return super().complete(*args, **kwargs)
+    with patch('resume_tailorer.llm.client.LLMClient', Model), \
+         patch('resume_tailorer.docx_export.pipeline.convert_docx_to_pdf', _fake_pdf), \
+         patch('resume_tailorer.docx_export.converter._word_platform', lambda: False), \
+         patch('resume_tailorer.docx_export.converter._soffice', lambda: None):
+        first = br.start(user_dir('local'), [br.new_item('greenhouse_1', job.title, job.company, job.description)], {},
+                         batch_panel._hooks({}))
+        try:
+            assert entered.wait(10)
+            with br._file_lock(user_dir('local')):
+                data = br._read_batch_file(user_dir('local'))
+                data['heartbeat'] = time.time() - br.STALE_SECONDS - 1
+                br.write_batch(user_dir('local'), data)
+            br.continue_batch(user_dir('local'), batch_panel._hooks({}), background=False)
+            current = load_review(artifacts_dir('local'), 'greenhouse_1')
+            assert current and current['pdf_bytes']
+            release.set()
+            for thread in threading.enumerate():
+                if thread.name == f"batch-{first['id']}":
+                    thread.join(10)
+                    assert not thread.is_alive()
+            assert load_review(artifacts_dir('local'), 'greenhouse_1')['pdf_bytes'] == current['pdf_bytes']
+        finally:
+            release.set()
+            for thread in threading.enumerate():
+                if thread.name == f"batch-{first['id']}":
+                    thread.join(10)

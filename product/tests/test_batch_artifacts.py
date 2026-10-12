@@ -169,3 +169,23 @@ def test_old_lock_cannot_be_stolen_from_a_live_publisher(tmp_path):
         thread.start()
         thread.join(3)
         assert not thread.is_alive() and outcomes == ['busy']
+
+
+def test_linked_staging_root_never_writes_or_cleans_external_data(tmp_path):
+    import subprocess
+    folder, outside = tmp_path / 'artifacts', tmp_path / 'external'
+    folder.mkdir()
+    outside.mkdir()
+    marker = outside / 'preserve.txt'
+    marker.write_text('synthetic external data', encoding='utf-8')
+    link = folder / '.batch-staging'
+    if os.name == 'nt':
+        subprocess.run(['cmd.exe', '/c', 'mklink', '/J', str(link), str(outside)],
+                       capture_output=True, check=True)
+        assert link.is_junction()
+    else:
+        link.symlink_to(outside, target_is_directory=True)
+    with pytest.raises(ValueError, match='links'):
+        new_stage(folder, 'a' * 32, 'job-a')
+    cleanup_staging(folder, now=time.time(), retention_seconds=0)
+    assert marker.read_text(encoding='utf-8') == 'synthetic external data'

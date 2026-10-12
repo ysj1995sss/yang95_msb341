@@ -103,10 +103,10 @@ def cleanup_staging(artifacts_dir: Path, *, now: float, retention_seconds: float
     for execution in root.iterdir():
         if execution.name == current.get('execution'):
             continue
-        if execution.is_symlink() or execution.is_junction() or not re.fullmatch(r'[a-f0-9]{32}', execution.name):
+        if execution.is_symlink() or execution.is_junction() or not execution.is_dir() or not re.fullmatch(r'[a-f0-9]{32}', execution.name):
             continue
         for job in execution.iterdir():
-            if job.is_symlink() or job.is_junction() or not re.fullmatch(r'[a-f0-9]{64}', job.name):
+            if job.is_symlink() or job.is_junction() or not job.is_dir() or not re.fullmatch(r'[a-f0-9]{64}', job.name):
                 continue
             for attempt in job.iterdir():
                 try:

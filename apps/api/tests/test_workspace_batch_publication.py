@@ -58,3 +58,27 @@ def test_api_late_worker_preserves_current_download_and_status(tailor_client, mo
         for thread in threading.enumerate():
             if thread.name == f"batch-{first['id']}":
                 thread.join(10)
+
+
+def test_delayed_callbacks_cannot_replace_current_execution_status(tailor_client):
+    from app.workspace.batch_router import _hooks
+    from app.workspace.identity import Owner
+    from app.workspace.tailor_router import RunRequest, _write_run
+    from resume_tailorer import batch_runner as br
+    from resume_tailorer.identity import user_dir
+    folder = user_dir('local')
+    data = dict(id='batch', execution='c' * 32, boot=br.PROCESS_ID, heartbeat=time.time(), status='running',
+                items=[dict(job_id='job-a', status='running')])
+    br.write_batch(folder, data)
+    _write_run('local', dict(status='running', step='Current step', batch=True, boot=br.PROCESS_ID))
+    hooks = _hooks(Owner(owner_id='local', name='Synthetic', signed_in=False), None, RunRequest())
+    obsolete = br.ExecutionClaim(folder, 'batch', 'a' * 32, 'job-a')
+    hooks.on_claim_step(obsolete, 'Obsolete step')
+    hooks.on_claim_finish(br.ExecutionClaim(folder, 'batch', 'a' * 32))
+    assert tailor_client.get('/v2/tailor/run').json()['step'] == 'Current step'
+    hooks.on_claim_step(br.ExecutionClaim(folder, 'batch', 'c' * 32, 'job-a'), 'New step')
+    assert tailor_client.get('/v2/tailor/run').json()['step'] == 'New step'
+    # After a new single run starts, even a matching old batch token cannot finish it.
+    _write_run('local', dict(status='running', step='Single run', boot=br.PROCESS_ID))
+    hooks.on_claim_finish(br.ExecutionClaim(folder, 'batch', 'c' * 32))
+    assert tailor_client.get('/v2/tailor/run').json()['step'] == 'Single run'
