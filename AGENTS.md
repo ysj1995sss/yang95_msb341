@@ -13,6 +13,21 @@ a brand new session act like a colleague who already knows what you are working 
 
 ## Current state
 
+> **Newest local work (2026-10-12, spec 019):** the Tailor review redesign is
+> implemented on `codex/truthful-tailoring-sources-publication`, not merged or
+> pushed. Read `specs/019-tailor-review-clarity-batch-and-ai-assisted-decisions.md`,
+> decision 042 and `discovery/experiments/2026-10-12-spec-019-tailor-review.md`
+> before modifying review decisions. Both UIs now offer manual (default) or
+> conservative AI-assisted review before a new run, full before/after text,
+> distinctive queue titles, and atomic selected accept/keep-original actions.
+> Shared revisioned persistence prevents stale Streamlit/API saves; legacy
+> decision origin is shown as unknown. AI assistance uses deterministic checks
+> and a strict no-omission gate, not a second model. Full product/API and browser
+> evidence is in the experiment and handoffs. Independent review was blocked by
+> the owner spend cap; Windows Playwright printed passing cases but did not
+> exit cleanly. Preserve `.claude/settings.local.json`; no push/merge/deploy was
+> authorized. The Word conversion lock and 0 human participants remain open.
+
 > **Newest state (2026-10-11):** read the specs 016–018 local-fixes update at the top of `HANDOFF-TO-CODEX.md`
 > first. The fixes are on `codex/truthful-tailoring-sources-publication`, not merged or pushed.
 > It covers the Next.js web app (`apps/web`), specs 009–018, decisions 028–041, how to

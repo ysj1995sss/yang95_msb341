@@ -1,6 +1,6 @@
 # Handoff to Codex — Job Copilot
 
-**Date:** 2026-10-11 (release update); older sections below are history
+**Date:** 2026-10-12 (local spec-019 update); older sections below are history
 **From:** Claude Code (specs 009–011) and Codex (spec 012, decision 034)
 **Repo:** `ysj1995sss/yang95_msb341`
 **Audience:** A fresh Codex session continuing this product.
@@ -9,6 +9,45 @@ Read this file first, then `AGENTS.md`, then the decisions listed below. Do not 
 decisions 001, 006, 009, 012, 014, 015, 016, or 017 unless new evidence forces it.
 
 ---
+
+## START HERE (2026-10-12) — spec 019 local Tailor review redesign
+
+This section supersedes older review UI notes. Current branch is
+`codex/truthful-tailoring-sources-publication`; **not merged or pushed**. Read
+`specs/019-tailor-review-clarity-batch-and-ai-assisted-decisions.md`, decision
+042, and `discovery/experiments/2026-10-12-spec-019-tailor-review.md` before
+changing Tailor review. Preserve `.claude/settings.local.json` and the separate
+Next.js/Streamlit apps. Node is `D:/Yang/Software/cursor/NodeJs/node.exe`.
+
+- Manual review is the default. Before a new run, either UI can choose a
+  conservative AI-assisted mode. It uses the existing proposal and deterministic
+  checks, never a second model call. Only anchored, individually passing,
+  non-omitting rephrases are auto-accepted; clear failures keep originals;
+  uncertainty remains for a person. Human overrides retain their origin.
+- Distinct queue titles reflect source and proposed wording, not repeated job
+  requirements. Both UIs show full original/proposed/requirement text and can
+  decide a selected set at once. A revision-checked, per-user locked transaction
+  prevents partial/stale batch writes; Streamlit's session save cannot overwrite
+  a newer API/other-tab review. Legacy decisions say origin not recorded.
+- Final artifact validation is unchanged. Failed PDFs cannot be downloaded or
+  handed to Apply. No true duplicate proposals from the builder's resume were
+  established, so decision 018's global matcher was not touched.
+- Local verification (synthetic data): product **1349 passed, 1 skipped**,
+  API **154 passed, 282 warnings**, web lint/types exit 0. The Playwright run
+  printed **29 `ok` cases**, including the assisted review journey and mobile
+  accessibility, but the Windows runner lingered after server shutdown and was
+  interrupted; **no browser exit-0 claim**. An earlier concurrent product/API
+  run had one process-race startup timeout; isolated and sequential reruns
+  passed. No real-model run or human study was done for spec 019.
+- A fresh independent review was requested under the superpowers review
+  process but could not run because the workspace owner spend cap was reached;
+  **approval is not claimed**. Next: independent review when available, clean
+  browser/CI exit, then a supervised synthetic live-model check. Existing Word
+  temporary-file lock remains a release risk. No merge, push, or deployment.
+
+Latest spec-019 code commits: `060a45e`, `dcf1a50`, `51da087`, `fc61fec`,
+`9313a98`, `28fe54f`, `a92fe4f`. New
+decision/experiment: `decisions/042-*`, `discovery/experiments/2026-10-12-spec-019-tailor-review.md`.
 
 ## START HERE (2026-10-11) — specs 016–018 local fixes
 

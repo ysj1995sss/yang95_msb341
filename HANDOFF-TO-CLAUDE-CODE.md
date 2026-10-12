@@ -1,6 +1,6 @@
 # Handoff to Claude Code — Job Copilot
 
-**Date:** 2026-10-11 (latest update; older sections are history)
+**Date:** 2026-10-12 (local spec-019 update; older sections are history)
 **From:** Cursor Cloud Agent (Steps 4–9 wrap-up)  
 **Repo:** `ysj1995sss/yang95_msb341`  
 **Audience:** A fresh Claude Code session continuing this product.
@@ -8,6 +8,30 @@
 Read this file first, then `CLAUDE.md`, then the decisions listed below. Do not re-litigate Decisions 001 / 010 / 011 unless new evidence forces it.
 
 ---
+
+## Latest local update (2026-10-12) — spec 019 Tailor review redesign
+
+Current branch remains `codex/truthful-tailoring-sources-publication`, not
+merged or pushed. Read spec 019, decision 042, and
+`discovery/experiments/2026-10-12-spec-019-tailor-review.md` before touching
+review decisions. Next.js and Streamlit both offer a pre-run manual/default or
+conservative AI-assisted choice, distinctive source-to-proposal labels, full
+before/after text, and atomic selected accept/keep-original actions. The shared
+assistant uses the existing model output plus deterministic evidence checks; it
+does not make a second model call. It now leaves any anchored rephrase that
+drops substantive original words for human review. Revisioned, locked writes
+prevent stale cross-app/session decisions; old reviews remain readable and do
+not invent a decision origin. Failed artifacts remain blocked.
+
+Synthetic local results: product **1349 passed, 1 skipped**; API **154 passed,
+282 warnings**; lint/types exit 0. Playwright printed **29 `ok` cases** but
+Windows left its runner open after servers closed, so it was interrupted and
+there is no exit-0 browser claim. Independent review could not start at the
+owner spend cap; no approval is claimed. No spec-019 live-model run, human
+participant, merge, push, deployment, or new account. The Word cleanup lock
+from decision 041 remains unresolved. Preserve `.claude/settings.local.json`,
+the synthetic-data boundary, and both frontends. See the Codex handoff for
+commit list and runtime details.
 
 ## Latest update (2026-10-11) — specs 016–018 local fixes
 
