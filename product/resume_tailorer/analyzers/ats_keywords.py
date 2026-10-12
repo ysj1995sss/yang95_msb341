@@ -147,7 +147,7 @@ NAMED_TOOLS = {
     'Jenkins', 'GitHub Actions', 'Git', 'Linux', 'Selenium', 'NetSuite', 'SAP', 'QuickBooks',
     'Hyperion', 'Bloomberg', 'Epic', 'Cerner', 'AutoCAD', 'SolidWorks', 'Zendesk', 'Gong',
     'Workday', 'Adobe Creative Suite', 'Photoshop', 'Illustrator', 'InDesign', 'Sketch',
-    'Asana', 'Smartsheet', 'MS Project', 'Confluence',
+    'Asana', 'Smartsheet', 'MS Project', 'Confluence', 'Rust', 'Swift',
 }
 
 # Single letters and very short tokens need standalone context to count.

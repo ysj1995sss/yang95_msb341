@@ -50,11 +50,28 @@ def test_an_unknown_explicit_platform_is_check_yourself(name):
 @pytest.mark.parametrize('requirement', [
     'Experience with nebulaplatform analytics.',
     'Experience with analytics software NebulaForms.',
+    'Experience with analytics software nebulaplatform.',
+    'Proficiency in analytics tools nebulaplatform.',
+    'Experience with The Trade Desk analytics.',
+    'Experience with The NebulaForms analytics software.',
     'EXPERIENCE WITH NebulaForms analytics.',
 ])
 def test_unknown_explicit_platform_patterns_do_not_inherit_analytics(requirement):
     row = review_for(requirement).rows[0]
     assert row.status == 'check' and not row.supported
+
+
+@pytest.mark.parametrize('requirement', ['Experience with analytics software.', 'Experience with analytics tools and reporting.'])
+def test_generic_descriptor_without_product_does_not_invent_a_named_platform(requirement):
+    row = review_for(requirement).rows[0]
+    assert row.status != 'check'
+    assert not any(term.lower() == 'and' for term in row.terms)
+
+
+def test_generic_caution_does_not_turn_any_and_unless_into_product_names():
+    from resume_tailorer.analyzers.requirement_review import explicit_platform_terms
+    caution = 'Do not claim experience with any platform unless it is supported by your actual work.'
+    assert explicit_platform_terms(caution) == ()
 
 
 @pytest.mark.parametrize("bullet,listed,provenance,want", [

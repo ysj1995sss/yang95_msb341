@@ -79,6 +79,9 @@ def _run(action) -> None:
     """Start, continue or redo a batch; show why not when it can't."""
     from resume_tailorer.batch_runner import BatchBusy
 
+    if st.session_state.get('tailor_one_off'):
+        st.error('A batch uses your Career Profile resume. In Tailor, choose "Go back to my profile resume" to remove the one-off file first.')
+        return
     try:
         action()
     except ValueError as exc:

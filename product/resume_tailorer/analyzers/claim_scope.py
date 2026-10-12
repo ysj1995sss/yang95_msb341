@@ -3,13 +3,27 @@ from __future__ import annotations
 
 import re
 
-from resume_tailorer.analyzers.requirement_review import GENERIC_TERMS, _mentions_any, explicit_platform_terms
+from resume_tailorer.analyzers.requirement_review import GENERIC_TERMS, _mentions_any, _search_forms, explicit_platform_terms
 from resume_tailorer.models import CareerTruthProfile
 from resume_tailorer.analyzers.ats_keywords import NAMED_TOOLS
 
 # Reuse existing product/term spellings; generic capabilities are deliberately not products.
 _TOOLS = NAMED_TOOLS
 _ACTION = re.compile(r"\b(?:built|used|using|implemented|developed|created|delivered|designed|automated|led|managed|owned|improved|reduced|analyzed|analysed|performed)\b", re.I)
+
+
+def _listing_context(text: str, labels: set[str]) -> tuple[str, ...]:
+    """A list may reorder known terms, not introduce a new surrounding claim.
+
+    Compare the non-list wording rather than pretending a finite verb list recognizes
+    every activity. Section headings, separators and equivalent list lead-ins aren't facts.
+    """
+    text = re.sub(r'^\s*(?:summary|professional summary|skills|technical skills|tools|competencies)\s*\n', '', text, flags=re.I)
+    for label in sorted(labels, key=len, reverse=True):
+        for form in _search_forms(label):
+            text = re.sub(rf'(?<![\w+#]){re.escape(form)}(?![\w+#])', ' ', text, flags=re.I)
+    text = re.sub(r'\b(?:skills?|skilled|proficient|proficiency|familiar)\s*(?:in|with|of)?\b', ' ', text, flags=re.I)
+    return tuple(word for word in re.findall(r'[\w+#]+', text.lower()) if word not in {'and', 'or'})
 
 
 def introduced_unscoped_tools(original: str, proposed: str, profile: CareerTruthProfile, *,
@@ -33,12 +47,16 @@ def introduced_unscoped_tools(original: str, proposed: str, profile: CareerTruth
                         and not _mentions_any(role.employer, original or '') for role in profile.work_experience)
     added_context = added_context or bool(re.search(r'\b(?:at|for|on|during)\b[^.;\n]*\b(?:project|client|employer)\b', proposed, re.I)
                                           and not re.search(r'\b(?:project|client|employer)\b', original or '', re.I))
-    list_section = section in {"skills", "tools", "competencies"} and not _ACTION.search(proposed) and not added_context
+    listing_sections = {'summary', 'skills', 'tools', 'competencies'}
+    context_changed = section in listing_sections and _listing_context(original or '', tools | set(profile.skills)) != _listing_context(proposed, tools | set(profile.skills))
+    list_section = section in {"skills", "tools", "competencies"} and not _ACTION.search(proposed) and not added_context and not context_changed
     summary_list = section == "summary" and not _ACTION.search(proposed) and bool(
-        re.search(r"\b(?:skills?|skilled|proficien(?:t|cy)|familiar)\b", proposed, re.I)) and not added_context
+        re.search(r"\b(?:skills?|skilled|proficien(?:t|cy)|familiar)\b", proposed, re.I)) and not added_context and not context_changed
     listed_facts = "\n".join([*profile.skills, *profile.tools])
-    original_listing = section in {'summary', 'skills', 'tools', 'competencies'} and not _ACTION.search(original or '')
-    promoted_use = ((original_listing and bool(_ACTION.search(proposed)))
+    bare_summary_list = section == 'summary' and (original or '').count(',') >= 2 and not re.search(r'\b(?:who|which|that|where)\b', original or '', re.I)
+    original_listing = (section in {'skills', 'tools', 'competencies'} or bare_summary_list or
+                        (section == 'summary' and bool(re.search(r'\b(?:skills?|skilled|proficien(?:t|cy)|familiar)\b', original or '', re.I)))) and not _ACTION.search(original or '')
+    promoted_use = ((original_listing and (bool(_ACTION.search(proposed)) or context_changed))
                     or (section in {'summary', 'skills', 'tools', 'competencies'} and added_context))
     issues = []
     for tool in sorted(tools, key=str.casefold):

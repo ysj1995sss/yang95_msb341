@@ -26,6 +26,69 @@ def test_tool_from_another_role_does_not_pass_manual_validation():
     assert any("Tableau" in issue for issue in issues)
 
 
+@pytest.mark.parametrize('proposed', [
+    'Analyst at Acme Retail skilled in SQL; spearheaded Tableau reporting for regional teams.',
+    'Analyst at Acme Retail skilled in SQL and Tableau who spearheaded reporting for regional teams.',
+    'Analyst at Acme Retail skilled in SQL and Tableau, orchestrating reporting for regional teams.',
+])
+def test_summary_listing_cannot_gain_activity_with_an_unrecognized_verb(proposed):
+    candidate = profile()
+    candidate.skills.append('Tableau')
+    candidate.summary = 'Analyst at Acme Retail skilled in SQL, Tableau, and reporting for regional teams.'
+    assert validate_manual_text(candidate.summary, proposed, candidate, section='summary')
+    changes = build_freeform_changes(candidate, 'SUMMARY\n' + proposed + '\nEXPERIENCE\n- ' + SQL + '\n', GapReport([], ''))
+    summary = next(c for c in changes if c.section == 'summary')
+    assert summary.validation_status == ValidationStatus.FAIL
+    assert any(f.code == 'UNSUPPORTED_TOOL_ATTRIBUTION' for f in validate_pdf_content(summary.proposed_text, candidate, [summary]))
+
+
+def test_summary_can_reorder_listed_tools_without_changing_other_context():
+    candidate = profile()
+    candidate.skills.append('Tableau')
+    original = 'Analyst at Acme Retail skilled in SQL, Tableau, and reporting for regional teams.'
+    proposed = 'Analyst at Acme Retail skilled in Tableau and SQL, reporting for regional teams.'
+    assert validate_manual_text(original, proposed, candidate, section='summary') == []
+
+
+def test_summary_existing_activity_with_unrecognized_verb_can_be_rephrased():
+    candidate = profile()
+    candidate.skills.append('Tableau')
+    original = 'Analyst at Acme Retail who spearheaded Tableau reporting.'
+    assert validate_manual_text(original, original[:-1] + ' for regional teams.', candidate, section='summary') == []
+
+
+def test_summary_can_add_a_known_skill_listing_without_new_activity():
+    from resume_tailorer.analyzers.claim_scope import introduced_unscoped_tools
+    candidate = profile()
+    candidate.skills.append('Tableau')
+    assert introduced_unscoped_tools('Analyst', 'Analyst proficient in SQL and Tableau.', candidate, section='summary') == []
+
+
+def test_bare_summary_list_cannot_become_tool_use():
+    candidate = profile()
+    candidate.skills.append('Tableau')
+    candidate.summary = 'SQL, Tableau, analytics, reporting, regional sales teams, data analysis.'
+    proposed = 'Built SQL and Tableau analytics reporting and data analysis for regional sales teams.'
+    assert validate_manual_text(candidate.summary, proposed, candidate, section='summary')
+    changes = build_freeform_changes(candidate, 'SUMMARY\n' + proposed + '\nEXPERIENCE\n', GapReport([], ''))
+    summary = next(c for c in changes if c.section == 'summary')
+    assert summary.validation_status == ValidationStatus.FAIL
+    assert any(f.code == 'UNSUPPORTED_TOOL_ATTRIBUTION' for f in validate_pdf_content(summary.proposed_text, candidate, [summary]))
+
+
+def test_listed_rust_without_posting_evidence_cannot_be_attached_to_sql_activity():
+    candidate = profile()
+    candidate.skills.append('Rust')
+    assert validate_manual_text(SQL, SQL + ' using Rust', candidate)
+
+
+def test_existing_rust_source_use_can_be_preserved():
+    candidate = profile()
+    candidate.skills.append('Rust')
+    original = SQL + ' using Rust'
+    assert validate_manual_text(original, original + ' weekly', candidate) == []
+
+
 @pytest.mark.parametrize('tool', ['Alteryx', 'Java', 'Photoshop', 'Terraform', 'SQL Server'])
 def test_curated_tool_elsewhere_cannot_be_assigned_to_sql_project(tool):
     from resume_tailorer.analyzers.requirement_review import build_review
