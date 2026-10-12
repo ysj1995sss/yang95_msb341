@@ -49,12 +49,14 @@ class Confirm(BaseModel):
 
 @router.delete("/account")
 def delete_account(body: Confirm, ws: Workspace = Depends(workspace)):
+    from resume_tailorer.batch_artifacts import _absolute
     from resume_tailorer.identity import user_dir
 
     if body.confirm != "DELETE":
         raise HTTPException(400, 'Type DELETE to confirm.')
     ws.close()  # this request's database connections, before the folder goes
-    shutil.rmtree(user_dir(ws.owner_id), ignore_errors=False)
+    # Batch staging can put files beyond Windows MAX_PATH even when the user's folder is short.
+    shutil.rmtree(_absolute(user_dir(ws.owner_id)), ignore_errors=False)
     return {"deleted": True}
 
 

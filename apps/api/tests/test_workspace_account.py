@@ -1,7 +1,10 @@
 """Your data: export, delete, sign out everywhere (decision 030). Synthetic data only."""
 
 import io
+import os
 import zipfile
+
+import pytest
 
 from tests.workspace_helpers import SECRET, resume_docx, token
 
@@ -36,6 +39,24 @@ def test_delete_removes_everything_and_needs_confirmation(workspace_client):
     assert workspace_client.request("DELETE", "/v2/account", json={"confirm": "DELETE"}).json() == {"deleted": True}
     assert not (data_root() / "users" / "local" / "profile").exists()
     assert workspace_client.get("/v2/profile").json()["readiness"]["has_resume"] is False
+
+
+@pytest.mark.skipif(os.name != "nt", reason="Windows long-path deletion regression")
+def test_delete_removes_deep_batch_staging_files_on_windows(workspace_client, tmp_path, monkeypatch):
+    from resume_tailorer.batch_artifacts import new_stage
+    from resume_tailorer.identity import user_dir
+
+    monkeypatch.setenv("JOB_COPILOT_DATA_DIR", str(tmp_path / "scratch-workspace-with-a-deep-profile-root"))
+    root = user_dir("local")
+    stage = new_stage(root / "artifacts", "a" * 32, "synthetic-job")
+    (stage / "synthetic.pdf").write_bytes(b"synthetic PDF bytes")
+    assert len(str(stage / "synthetic.pdf")) > 260
+
+    response = workspace_client.request("DELETE", "/v2/account", json={"confirm": "DELETE"})
+
+    assert response.status_code == 200
+    assert response.json() == {"deleted": True}
+    assert not root.exists()
 
 
 def test_sign_out_everywhere_rejects_older_sessions(workspace_client, monkeypatch):
