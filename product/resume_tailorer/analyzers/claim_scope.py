@@ -5,15 +5,10 @@ import re
 
 from resume_tailorer.analyzers.requirement_review import GENERIC_TERMS, _mentions_any, explicit_platform_terms
 from resume_tailorer.models import CareerTruthProfile
+from resume_tailorer.analyzers.ats_keywords import NAMED_TOOLS
 
 # Reuse existing product/term spellings; generic capabilities are deliberately not products.
-_TOOLS = {
-    "SQL", "Excel", "Tableau", "Power BI", "Looker", "Google Analytics", "Python", "R",
-    "Snowflake", "Salesforce", "HubSpot", "Marketo", "Jira", "Figma", "PowerPoint",
-    "JavaScript", "TypeScript", "React", "AWS", "Kubernetes", "Docker", "Go",
-    "Qualtrics", "SurveyMonkey", "SAP", "Oracle", "Workday", "QuickBooks", "Git",
-    "PostgreSQL", "MySQL", "MongoDB", "Azure", "GCP", "SAS", "SPSS", "Stata",
-}
+_TOOLS = NAMED_TOOLS
 _ACTION = re.compile(r"\b(?:built|used|using|implemented|developed|created|delivered|designed|automated|led|managed|owned|improved|reduced|analyzed|analysed|performed)\b", re.I)
 
 
@@ -34,12 +29,17 @@ def introduced_unscoped_tools(original: str, proposed: str, profile: CareerTruth
         tools.update(t for row in review.rows for t in row.terms
                      if t in _TOOLS or re.search(r"[a-z][A-Z]", t))
         tools.update(t for row in review.rows for t in explicit_platform_terms(row.text))
-    list_section = section in {"skills", "tools", "competencies"} and not _ACTION.search(proposed)
+    added_context = any(role.employer.strip() and _mentions_any(role.employer, proposed)
+                        and not _mentions_any(role.employer, original or '') for role in profile.work_experience)
+    added_context = added_context or bool(re.search(r'\b(?:at|for|on|during)\b[^.;\n]*\b(?:project|client|employer)\b', proposed, re.I)
+                                          and not re.search(r'\b(?:project|client|employer)\b', original or '', re.I))
+    list_section = section in {"skills", "tools", "competencies"} and not _ACTION.search(proposed) and not added_context
     summary_list = section == "summary" and not _ACTION.search(proposed) and bool(
-        re.search(r"\b(?:skills?|skilled|proficien(?:t|cy)|familiar)\b", proposed, re.I))
+        re.search(r"\b(?:skills?|skilled|proficien(?:t|cy)|familiar)\b", proposed, re.I)) and not added_context
     listed_facts = "\n".join([*profile.skills, *profile.tools])
     original_listing = section in {'summary', 'skills', 'tools', 'competencies'} and not _ACTION.search(original or '')
-    promoted_use = original_listing and bool(_ACTION.search(proposed))
+    promoted_use = ((original_listing and bool(_ACTION.search(proposed)))
+                    or (section in {'summary', 'skills', 'tools', 'competencies'} and added_context))
     issues = []
     for tool in sorted(tools, key=str.casefold):
         if not _mentions_any(tool, proposed) or (_mentions_any(tool, original or "") and not promoted_use):

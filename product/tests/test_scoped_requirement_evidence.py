@@ -47,6 +47,16 @@ def test_an_unknown_explicit_platform_is_check_yourself(name):
     assert not row.supported
 
 
+@pytest.mark.parametrize('requirement', [
+    'Experience with nebulaplatform analytics.',
+    'Experience with analytics software NebulaForms.',
+    'EXPERIENCE WITH NebulaForms analytics.',
+])
+def test_unknown_explicit_platform_patterns_do_not_inherit_analytics(requirement):
+    row = review_for(requirement).rows[0]
+    assert row.status == 'check' and not row.supported
+
+
 @pytest.mark.parametrize("bullet,listed,provenance,want", [
     (None, (), None, "none"),
     (None, ("Qualtrics",), None, "mention"),

@@ -26,6 +26,7 @@ _GO_IN_CONTEXT = (
 
 # Ordinary English words that are also technologies: (case-sensitive pattern, exclusions).
 _AMBIGUOUS: dict[str, tuple[str, str]] = {
+    'r': (r'\bR\b(?!\s*&\s*D\b)|(?i:\b(?:using|with|in)\s+r(?=\s*(?:[.,;:/)]|$)))', ''),
     "go": (r"\b(?:Go|Golang|golang|GoLang)\b|" + _GO_IN_CONTEXT,
            r"\bGo(?:-to|\s+to\b|\s+above\b|\s+beyond\b|\s+live\b|-live)"),
     "rest": (r"\bREST(?:ful)?\b|\bRESTful\b", ""),

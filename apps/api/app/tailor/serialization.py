@@ -51,6 +51,8 @@ def changes_from_json(data: list[dict]) -> list[ResumeChange]:
             validation_status=ValidationStatus(item["validation_status"]),
             disposition=ChangeDisposition(item["disposition"]),
             manual_text=item.get("manual_text"),
+            baseline_span=tuple(item['baseline_span']) if item.get('baseline_span') is not None else None,
+            scope_issues=tuple(item.get('scope_issues') or ()),
         )
         for item in data
     ]

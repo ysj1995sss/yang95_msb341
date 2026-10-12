@@ -26,6 +26,31 @@ def test_tool_from_another_role_does_not_pass_manual_validation():
     assert any("Tableau" in issue for issue in issues)
 
 
+@pytest.mark.parametrize('tool', ['Alteryx', 'Java', 'Photoshop', 'Terraform', 'SQL Server'])
+def test_curated_tool_elsewhere_cannot_be_assigned_to_sql_project(tool):
+    from resume_tailorer.analyzers.requirement_review import build_review
+    candidate = other_project_profile()
+    candidate.work_experience[-1].responsibilities = [f'Used {tool} for inventory planning.']
+    candidate.skills.append(tool)
+    posting = f'Required Qualifications:\n- SQL and {tool} experience.'
+    analysis = JobAnalyzer().analyze(posting)
+    assert any("can't verify" in issue for issue in validate_manual_text(
+        SQL, SQL + f' using {tool}', candidate, build_review(analysis, candidate, posting=posting)))
+
+
+def test_summary_cannot_attach_listed_tools_to_an_employer_without_an_action_word():
+    candidate = other_project_profile()
+    original = 'Analyst skilled in Tableau and SQL reporting for regional teams.'
+    proposed = original[:-1] + ' at Acme Retail.'
+    assert any("can't verify" in issue for issue in validate_manual_text(original, proposed, candidate, section='summary'))
+
+
+def test_research_and_development_is_not_the_r_language():
+    from resume_tailorer.analyzers.claim_scope import introduced_unscoped_tools
+    candidate = other_project_profile()
+    assert introduced_unscoped_tools('Built SQL dashboards.', 'Built SQL dashboards for R&D.', candidate) == []
+
+
 def test_listed_skill_does_not_become_project_tool_even_without_a_job_review():
     candidate = profile()
     candidate.skills.append("Tableau")

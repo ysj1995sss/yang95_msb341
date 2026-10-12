@@ -560,7 +560,7 @@ def review_changes(
         if disposition is ChangeDisposition.MANUALLY_EDITED:
             if not item.manual_text:
                 raise HTTPException(status_code=400, detail="manual_text is required for MANUALLY_EDITED")
-            issues = validate_manual_text(change.original_text, item.manual_text, profile)
+            issues = validate_manual_text(change.original_text, item.manual_text, profile, section=change.section)
             if issues:
                 raise HTTPException(
                     status_code=400,
@@ -576,6 +576,7 @@ def review_changes(
             reason=change.reason, job_requirement=change.job_requirement,
             evidence_source=change.evidence_source, evidence_text=change.evidence_text,
             validation_status=change.validation_status, disposition=disposition, manual_text=manual_text,
+            baseline_span=change.baseline_span, scope_issues=change.scope_issues,
         )
 
     final_changes = [updated.get(c.change_id, c) for c in changes]

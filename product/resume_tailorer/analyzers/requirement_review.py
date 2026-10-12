@@ -285,9 +285,17 @@ def explicit_platform_terms(text: str) -> tuple[str, ...]:
             if name and len(name.split()) <= 3 and not terms_in(name):
                 found.append(name)
     # A proper/camel-case product after an explicit usage pattern is also not generic evidence.
-    usage = re.search(r"\b(?:experience with|proficiency in|using)\s+([A-Z][A-Za-z0-9+#.-]+)", text)
-    if usage and not terms_in(usage.group(1)):
-        found.append(usage.group(1))
+    for usage in re.finditer(r"\b(?:experience with|proficiency in|using)\s+([A-Za-z][A-Za-z0-9+#.-]*)([^.;\n]*)", text, re.I):
+        name = usage.group(1).rstrip('.')
+        snippet = name + usage.group(2)
+        known_leading = any(key.split()[0] == name.lower() and mentions(key, snippet) for key in VOCABULARY)
+        generic_suffix = bool(re.match(r'\s+(?:analytics|platforms?|tools?|software)\b', usage.group(2), re.I))
+        if not known_leading and (name[0].isupper() or re.search(r'[a-z][A-Z]', name) or generic_suffix):
+            found.append(name)
+    for descriptor in re.finditer(r'\b(?:platforms?|tools?|software)\s+([A-Za-z][A-Za-z0-9+#.-]*)', text, re.I):
+        name = descriptor.group(1).rstrip('.')
+        if name.lower() not in {'such', 'including', 'like', 'e'} and name[0].isupper() and not terms_in(name):
+            found.append(name)
     return tuple(dict.fromkeys(found))
 
 

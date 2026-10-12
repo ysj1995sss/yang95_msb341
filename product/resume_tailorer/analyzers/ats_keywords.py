@@ -133,6 +133,23 @@ VOCABULARY: dict[str, str] = {
     "microsoft project": "MS Project", "confluence": "Confluence", "tableau desktop": "Tableau", "looker studio": "Looker",
 }
 
+# Named products/languages in the existing vocabulary, shared by requirement and claim guards.
+# Broad practices (analytics, CRM, ETL, Agile, etc.) are not specific tool-use evidence.
+NAMED_TOOLS = {
+    'SQL', 'Excel', 'Tableau', 'Power BI', 'Looker', 'Qualtrics', 'SurveyMonkey',
+    'Google Analytics', 'Python', 'R', 'Salesforce', 'HubSpot', 'Marketo', 'Jira', 'Figma',
+    'PowerPoint', 'JavaScript', 'TypeScript', 'React', 'AWS', 'Kubernetes', 'Docker', 'Go',
+    'PostgreSQL', 'MySQL', 'SQL Server', 'Oracle', 'MongoDB', 'Snowflake', 'BigQuery',
+    'Redshift', 'Databricks', 'dbt', 'Airflow', 'Spark', 'Kafka', 'Hadoop', 'pandas',
+    'NumPy', 'scikit-learn', 'TensorFlow', 'PyTorch', 'VBA', 'SAS', 'SPSS', 'Stata', 'Alteryx',
+    'Java', 'C#', 'C++', 'Ruby', 'PHP', 'Scala', 'Kotlin', 'Node.js', 'Angular', 'Vue',
+    'Django', 'Flask', 'Spring Boot', '.NET', 'GraphQL', 'Azure', 'Google Cloud', 'Terraform',
+    'Jenkins', 'GitHub Actions', 'Git', 'Linux', 'Selenium', 'NetSuite', 'SAP', 'QuickBooks',
+    'Hyperion', 'Bloomberg', 'Epic', 'Cerner', 'AutoCAD', 'SolidWorks', 'Zendesk', 'Gong',
+    'Workday', 'Adobe Creative Suite', 'Photoshop', 'Illustrator', 'InDesign', 'Sketch',
+    'Asana', 'Smartsheet', 'MS Project', 'Confluence',
+}
+
 # Single letters and very short tokens need standalone context to count.
 _AMBIGUOUS = {"r"}
 
