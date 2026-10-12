@@ -9,7 +9,38 @@ Read this file first, then `CLAUDE.md`, then the decisions listed below. Do not 
 
 ---
 
-## Latest update (2026-10-11) — release safeguards (spec 015, decision 037)
+## Latest update (2026-10-11) — specs 016–018 local fixes
+
+Current branch: `codex/truthful-tailoring-sources-publication`, forked from main `a993491`.
+**Not merged or pushed.** Integration/push needs the builder's explicit request. Preserve
+`.claude/settings.local.json` and both frontends.
+
+Read specs 016–018, decisions 038–040 and
+`discovery/experiments/2026-10-11-specs-016-018-fixes.md`. Fixes cover exact-source project/tool
+attribution across artifact/manual/refinement/final gates, named-platform evidence, effective
+profile provenance/freshness with one-off files, both UIs' file-versus-facts disclosure, and
+obsolete batch workers publishing artifacts/status. Actual frontend hook races, Windows-spawn
+processes, save failures, Stop/drain and a real junction are covered. Decision 018's matcher stays.
+
+Final local checks: **1311 product passed, 1 skipped; 148 API passed, 282 warnings;
+lint/types clean; 23 Playwright passed**. All exit 0; no new remote/Linux CI claimed.
+Latest code commits: `6ddef84`, `b044535`, `4a7d591`, `352407b`, `9f114ff`, `bcb90cd`,
+`2be3189`; HEAD may be a documentation-only follow-up.
+
+Final independent sign-off remains open: the reviewer reported three reproduced/fixed gaps,
+then stopped at the owner spending cap before its verdict. A real-model browser run produced
+a passing one-page PDF but no meaningful proposals. A live batch drained its first PDF safely;
+Continue's next call returned no answer, leaving **1 done / 1 failed and resumable**, not a
+completed batch. New live Streamlit and real-model restart checks are still open. Human
+participants: **0**, separate from agent/automated walkthroughs. No deployment/accounts/store
+publishing performed. Next: independent review, remaining live checks, P01–P03 and release checklist.
+
+Restart both frontends together on rollout: persistent `msvcrt`/`fcntl` OS locks replace
+exclusive-create locks; old executables must not share the folder. Existing batch/review JSON
+loads. Node is `D:/Yang/Software/cursor/NodeJs/node.exe`. Use synthetic scratch data, existing
+venvs and `LITELLM_MODE=PRODUCTION`; personal data and home `.env` remain out of scope.
+
+## Historical update — release safeguards (spec 015, decision 037)
 
 - **Primary frontend:** Next.js; keep Streamlit maintained. Retain the existing local model
   for supervised testing; a signed-in deployment needs a supported remote provider/budget.

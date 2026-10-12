@@ -8,7 +8,7 @@
 
 **Tech Stack:** Existing Python, pytest, FastAPI, Streamlit, Next.js and Playwright.
 **Spec:** `specs/017-one-off-resume-source-disclosure.md` (approved 2026-10-11).
-**Status:** Implementation plan awaiting builder review.
+**Status:** Builder approved; implementation and full local verification completed. Independent final sign-off remains open; see decision 039 and the specs-016–018 experiment.
 
 ## Global Constraints
 

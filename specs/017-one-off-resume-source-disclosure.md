@@ -1,6 +1,6 @@
 # Spec 017: Explain which resume and facts a one-off run uses
 
-**Status:** Approved by the builder on 2026-10-11; detailed implementation plan awaiting review.
+**Status:** Approved and implemented locally on 2026-10-11. Full suites/browser passed; independent final sign-off remains open. See decision 039 and the specs-016–018 experiment.
 **Plan:** `docs/superpowers/plans/2026-10-11-spec-017-upload-sources.md`.
 **Date:** 2026-10-11
 **Builds on:** specs 007, 011–012, 014–015 and decision 037.

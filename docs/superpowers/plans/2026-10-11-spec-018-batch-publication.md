@@ -8,7 +8,7 @@
 
 **Tech Stack:** Existing Python threads/files/atomic replace, pytest, FastAPI, Streamlit and browser tests; no queue service or new dependency.
 **Spec:** `specs/018-batch-artifact-publication-ownership.md` (approved 2026-10-11).
-**Status:** Implementation plan awaiting builder review.
+**Status:** Builder approved; implementation, full suites and deterministic cross-process/frontend checks completed. Real-model Continue returned no answer and independent final sign-off remains open; see decision 040 and the specs-016–018 experiment.
 
 ## Global Constraints
 

@@ -10,7 +10,48 @@ decisions 001, 006, 009, 012, 014, 015, 016, or 017 unless new evidence forces i
 
 ---
 
-## START HERE (2026-10-11) — spec 015 release verification
+## START HERE (2026-10-11) — specs 016–018 local fixes
+
+This section supersedes older state below. Branch is `codex/truthful-tailoring-sources-publication`,
+forked from main `a993491`. **Not merged or pushed.** Preserve `.claude/settings.local.json`.
+Read specs 016–018, decisions 038–040 and
+`discovery/experiments/2026-10-11-specs-016-018-fixes.md` before changing these paths.
+
+- Exact original activity guards new tool-use claims across Word/free-form, refinement,
+  manual edits, Accept/rebuild and final PDF checks. Generic analytics does not establish
+  Qualtrics; unknown explicit platforms stay Check yourself. Named tools share one vocabulary;
+  summaries cannot attach broad skill mentions to a new employer/project. R&D is not R.
+  Decision 018's global matcher and old review compatibility are retained.
+- A one-off file does not replace canonical facts or confirm optional facts. Effective
+  provenance/hash are frozen, so profile edits flag those reviews. Both apps show Resume file
+  and Facts; selecting another upload cannot rename an existing review's source. One-off Word
+  files are not promised full sync; independent uploads do not create master facts.
+- Both actual batch hooks stage privately. Current execution/running-item ownership is checked
+  under the recovery lock before publishing immutable bytes and the atomic review. Stop drains
+  its owned job; failed saves remain resumable. API callbacks respect lock order and cannot
+  overwrite a new batch or single run. Actual frontend and two-process races/junction safety pass.
+
+Final local checks: **product 1311 passed, 1 skipped; API 148 passed, 282 warnings;
+lint/types clean; Playwright 23 passed**. All exit 0; no new Linux/remote CI is claimed.
+Latest code commits: `6ddef84`, `b044535`, `4a7d591`, `352407b`, `9f114ff`, `bcb90cd`,
+`2be3189`. HEAD may be a documentation-only follow-up.
+
+**Open release checks:** the one independent reviewer reported three gaps, reproduced/fixed,
+then hit the owner spending cap before a final verdict. Final sign-off is still open. A live
+synthetic Word/browser run produced a passing one-page PDF but no meaningful proposals. Stop
+drained the first real-model batch job; Continue's second call returned no answer, leaving
+**1 done / 1 failed and resumable**, not a completed batch. New real-model Streamlit and live
+restart checks remain open. Human participants: **0**, separate from agent/automated tests.
+Next: finish independent review, retry those live checks when the model responds, then P01–P03
+sessions and the release checklist. All-profile invalidation/PID-reuse heartbeat fallback remain.
+
+**Rollout:** restart both frontends together. Persistent `msvcrt`/`fcntl` OS locks replace
+exclusive-create locks; old executable versions must not share this data folder. Existing
+batch IDs/options and format-2 reviews remain compatible. Windows locks were exercised; POSIX
+awaits CI. Node is `D:/Yang/Software/cursor/NodeJs/node.exe`. Use explicit synthetic scratch data,
+existing separate venvs and `LITELLM_MODE=PRODUCTION`; personal data/home `.env` stay out of scope.
+
+## Historical update — spec 015 release verification
 
 This section supersedes everything below it. The older sections are history; trust the code, the
 `specs/` and the `decisions/` over them.

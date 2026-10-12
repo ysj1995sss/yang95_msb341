@@ -1,6 +1,6 @@
 # Spec 018: Only the current batch execution may publish its artifacts
 
-**Status:** Approved by the builder on 2026-10-11; detailed implementation plan awaiting review. The reproduced overwrite is not fixed yet.
+**Status:** Approved and implemented locally on 2026-10-11. Reproduced overwrite, actual frontend hooks and two-process tests pass. Full suites/browser pass; live-model Continue and independent final sign-off remain open. See decision 040 and the specs-016–018 experiment.
 **Plan:** `docs/superpowers/plans/2026-10-11-spec-018-batch-publication.md`.
 **Date:** 2026-10-11
 **Builds on:** specs 014–015, decision 037.

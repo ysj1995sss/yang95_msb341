@@ -9,7 +9,7 @@
 **Tech Stack:** Existing Python, pytest, FastAPI, Streamlit, Next.js and Playwright environments.
 
 **Spec:** `specs/016-scoped-truthful-tailoring-evidence.md` (approved 2026-10-11).
-**Status:** Implementation plan awaiting builder review. No fix implemented.
+**Status:** Builder approved; implementation and full local verification completed. Independent final sign-off remains open after a spending-cap interruption. Reported review findings were reproduced/fixed; see decision 038 and the specs-016–018 experiment.
 
 ## Global Constraints
 
