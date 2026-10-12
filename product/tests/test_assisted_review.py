@@ -89,3 +89,12 @@ def test_manual_mode_does_not_automatically_decide_anything():
     policy = _assisted_module()
     initial = _state([_change()], mode="manual")
     assert policy.apply_assisted_review(initial)["decided"] == set()
+
+
+def test_rephrase_that_drops_a_substantive_original_detail_stays_for_person():
+    policy = _assisted_module()
+    omitted = replace(_change(),
+                      original_text="Built weekly SQL reports for 40 regional managers",
+                      proposed_text="Built SQL reports for managers")
+    entries, _reasons = policy.recommend_decisions([omitted], set())
+    assert entries == []

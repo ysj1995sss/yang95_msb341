@@ -54,7 +54,7 @@ test("resume → profile → goals → jobs → tailor → apply → tracker", a
   await expect(page).toHaveURL(/\/tailor$/);
   await page.getByRole("button", { name: "Tailor my resume" }).click();
   await expect(page.getByRole("heading", { name: "Proposed changes" })).toBeVisible({ timeout: 60_000 });
-  await expect(page.getByText(/Work experience · Review this change/)).toBeVisible();
+  await expect(page.getByRole("region", { name: /Work experience.*Built/ }).first()).toBeVisible();
   // Spec 010: the requirement review with linked evidence, and the local readability check.
   await expect(page.getByRole("heading", { name: "Requirement review" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Keywords" })).toBeVisible();  // spec 011
@@ -96,6 +96,27 @@ test("resume → profile → goals → jobs → tailor → apply → tracker", a
   await expectAccessible(page, "tracker, email suggestion");
   await page.getByRole("button", { name: "Confirm update" }).click();
   await expect(page.getByRole("button", { name: /Closed \(1\)/ })).toBeVisible();
+});
+
+test("AI-assisted review makes conservative choices before the person opens the review", async ({ page }) => {
+  await page.goto("/jobs");
+  await page.getByRole("button", { name: /Data Analyst, Growth/ }).click();
+  await page.getByRole("button", { name: "Prepare this application" }).click();
+  await expect(page).toHaveURL(/\/tailor$/);
+  await page.getByRole("radio", { name: "AI-assisted review" }).check();
+  await page.getByRole("button", { name: "Tailor my resume" }).click();
+  await expect(page.getByRole("heading", { name: "Proposed changes" })).toBeVisible({ timeout: 60_000 });
+  await page.getByRole("button", { name: "Show all changes" }).click();
+  await expect(page.getByText("Chosen by AI assistance", { exact: true }).first()).toBeVisible();
+  await expect(page.getByText(/AI assistance made only conservative decisions/)).toBeVisible();
+  await expectAccessible(page, "tailor, assisted review");
+  await page.getByRole("checkbox", { name: "Select change 1" }).check();
+  await page.getByRole("button", { name: "Keep original for selected" }).click();
+  await expect(page.getByText("Chosen by you", { exact: true }).first()).toBeVisible();
+  await expect(page.getByRole("button", { name: "Rebuild resume" })).toBeEnabled();
+  await page.getByRole("button", { name: "Rebuild resume" }).click();
+  await expect(page.getByText("Chosen by you", { exact: true }).first()).toBeVisible();
+  await expect(page.getByText("Chosen by AI assistance", { exact: true })).toHaveCount(0);
 });
 
 test("Gmail suggestions change nothing until confirmed (Google's answers are stubbed)", async ({ page }) => {
@@ -315,7 +336,7 @@ test("one-off sources are disclosed and unsupported project wording is refused",
   await page.getByRole("button", { name: "Save my wording" }).click();
   await page.getByRole("button", { name: "Rebuild resume" }).click();
   await expect(page.getByRole("alert").filter({ hasText: /this project/ })).toBeVisible();
-  await page.getByRole("button", { name: "Keep original" }).click();
+  await page.getByRole("button", { name: "Keep original", exact: true }).click();
   await page.getByRole("button", { name: "Rebuild resume" }).click();
   await expect(page.getByText("Your resume is ready for Apply.")).toBeVisible();
   // Next selection cannot rewrite the source recorded by the review just built.

@@ -7,6 +7,7 @@ not an independent second model or a substitute for final PDF validation.
 from __future__ import annotations
 
 from collections import Counter
+import re
 from typing import Iterable
 
 from resume_tailorer.artifacts.models import ChangeCategory, ResumeChange, ValidationStatus
@@ -14,6 +15,23 @@ from resume_tailorer.review_decisions import apply_decisions
 from resume_tailorer.ui.artifact_review import visible_changes
 from resume_tailorer.ui.tailor_progress import duplicate_key
 from resume_tailorer.ui.tailoring_view import group_changes
+
+
+_TOKEN = re.compile(r"[a-z0-9]+")
+_FUNCTION_WORDS = {"a", "an", "and", "as", "at", "by", "for", "from", "in", "into",
+                   "of", "on", "or", "the", "to", "with"}
+
+
+def preserves_original_details(original: str, proposed: str) -> bool:
+    """A conservative lexical gate: changed wording can stay open for the person.
+
+    The individual truth check prevents new claims; this separate gate prevents an
+    AI decision from silently dropping dates, metrics, tools, or other content.
+    Exact words are intentionally strict: a synonym is not proof of preservation.
+    """
+    original_terms = {word for word in _TOKEN.findall(original.lower()) if word not in _FUNCTION_WORDS}
+    proposed_terms = set(_TOKEN.findall(proposed.lower()))
+    return bool(original_terms) and original_terms <= proposed_terms
 
 
 def recommend_decisions(
@@ -35,6 +53,7 @@ def recommend_decisions(
         safe = (change.validation_status is ValidationStatus.PASS
                 and change.category is ChangeCategory.REPHRASED
                 and bool(change.original_text.strip() and change.proposed_text.strip())
+                and preserves_original_details(change.original_text, change.proposed_text)
                 and key is not None
                 and not change.scope_issues)
         if safe:
