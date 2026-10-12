@@ -106,3 +106,17 @@ a brand new session act like a colleague who already knows what you are working 
 ## Voice
 
 Writing other people read (product copy, marketing, memos) sounds like: clear and direct, focused on the job seeker's time saved and confidence; "Stop spending 2 hours tailoring your resume for every application. We do it in 5 minutes."
+
+## Agent skills
+
+### Issue tracker
+
+GitHub Issues on `ysj1995sss/yang95_msb341`, via the `gh` CLI. See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+Default five-label vocabulary (`needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human`, `wontfix`). See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+Single-context: `CONTEXT.md` at the repo root. Decision records already live in `decisions/` (001–042), so that folder takes the place of `docs/adr/`. See `docs/agents/domain.md`.
