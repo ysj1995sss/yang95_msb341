@@ -177,7 +177,7 @@ export function ReviewRoom({ review, onChange, onReload, onDiscard }: {
                 <ol className="flex flex-col gap-1">
                   {review.changes.map((c, i) => (
                     <li key={c.id} className="flex min-w-0 items-start gap-2">
-                      <Checkbox label={`Select change ${i + 1}`} checked={selectedIds.includes(c.id)}
+                      <Checkbox label={`Select ${c.title || `${i + 1}. ${c.section_label}`}`} hideLabel checked={selectedIds.includes(c.id)}
                         onChange={(checked) => setSelected((ids) => checked ? [...ids, c.id] : ids.filter((id) => id !== c.id))} />
                       <button type="button" aria-current={c.id === current?.id ? "step" : undefined} onClick={() => setFocus(c.id)}
                         className={cx("flex min-h-11 min-w-0 flex-1 items-start gap-2 rounded-[var(--radius-control)] px-3 py-2 text-left text-[15px] transition-colors duration-150 cursor-pointer",

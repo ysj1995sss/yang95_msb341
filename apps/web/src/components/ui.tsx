@@ -213,12 +213,16 @@ export function RadioGroup<T extends string>({ legend, help, value, options, onC
   );
 }
 
-export function Checkbox({ label, checked, onChange }: { label: string; checked: boolean; onChange: (v: boolean) => void }) {
+export function Checkbox({ label, checked, onChange, hideLabel = false }: {
+  label: string; checked: boolean; onChange: (v: boolean) => void;
+  // For a checkbox next to text that already says what it selects: screen readers still hear the label.
+  hideLabel?: boolean;
+}) {
   return (
     <label className="flex min-h-11 cursor-pointer items-center gap-2">
       <input type="checkbox" checked={checked} onChange={(e) => onChange(e.target.checked)}
         className="size-4 accent-[var(--color-primary)]" />
-      {label}
+      <span className={hideLabel ? "sr-only" : undefined}>{label}</span>
     </label>
   );
 }

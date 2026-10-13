@@ -110,7 +110,7 @@ test("AI-assisted review makes conservative choices before the person opens the 
   await expect(page.getByText("Chosen by AI assistance", { exact: true }).first()).toBeVisible();
   await expect(page.getByText(/AI assistance made only conservative decisions/)).toBeVisible();
   await expectAccessible(page, "tailor, assisted review");
-  await page.getByRole("checkbox", { name: "Select change 1" }).check();
+  await page.getByRole("checkbox", { name: /^Select 1\. / }).check();
   await page.getByRole("button", { name: "Keep original for selected" }).click();
   await expect(page.getByText("Chosen by you", { exact: true }).first()).toBeVisible();
   await expect(page.getByRole("button", { name: "Rebuild resume" })).toBeEnabled();

@@ -396,6 +396,13 @@ def run_status(ws: Workspace = Depends(workspace)):
     return _run_status(ws.owner_id)
 
 
+def _job_id_or_404(ws: Workspace) -> str:
+    job_id = _pending(ws).get("job_id")
+    if not job_id:
+        raise HTTPException(404, "There's no tailored resume to review for this job yet.")
+    return job_id
+
+
 def _state_or_404(ws: Workspace) -> tuple[str, dict]:
     job_id = _pending(ws).get("job_id")
     state = _review(ws, job_id)
@@ -426,7 +433,7 @@ def _mutate_review(ws: Workspace, job_id: str, entries: list[tuple[str, str]],
                    expected_revision: int | None, manual_texts: dict[str, str] | None = None,
                    allow_blank_manual: bool = False) -> dict:
     from resume_tailorer.review_decisions import (
-        ReviewConflict, ReviewSelectionError, ReviewStorageError, mutate_saved_review,
+        ReviewConflict, ReviewNotFound, ReviewSelectionError, ReviewStorageError, mutate_saved_review,
     )
 
     try:
@@ -437,13 +444,15 @@ def _mutate_review(ws: Workspace, job_id: str, entries: list[tuple[str, str]],
         raise HTTPException(409, str(exc)) from exc
     except ReviewSelectionError as exc:
         raise HTTPException(400, str(exc)) from exc
+    except ReviewNotFound as exc:
+        raise HTTPException(404, str(exc)) from exc
     except ReviewStorageError as exc:
         raise HTTPException(500, str(exc)) from exc
 
 
 @router.post("/tailor/decisions/batch")
 def decide_batch(body: BatchDecisions, ws: Workspace = Depends(workspace)):
-    job_id, _state = _state_or_404(ws)
+    job_id = _job_id_or_404(ws)
     if not 1 <= len(body.decisions) <= 100:
         raise HTTPException(400, "Select between 1 and 100 changes.")
     state = _mutate_review(ws, job_id, [(item.change_id, item.decision) for item in body.decisions],
@@ -453,9 +462,8 @@ def decide_batch(body: BatchDecisions, ws: Workspace = Depends(workspace)):
 
 @router.post("/tailor/decisions")
 def decide(body: Decision, ws: Workspace = Depends(workspace)):
-    job_id, state = _state_or_404(ws)
-    if body.change_id not in {c.change_id for c in state["changes"]}:
-        raise HTTPException(404, "That change isn't in this review.")
+    # The locked transaction reads the review once and checks the change belongs to it.
+    job_id = _job_id_or_404(ws)
     texts = {body.change_id: body.manual_text} if body.decision == "MANUALLY_EDITED" and body.manual_text is not None else None
     state = _mutate_review(ws, job_id, [(body.change_id, body.decision)], body.expected_revision, texts,
                            allow_blank_manual=body.decision == "MANUALLY_EDITED")

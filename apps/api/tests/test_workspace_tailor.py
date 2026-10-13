@@ -456,3 +456,32 @@ def test_assisted_rebuild_failure_keeps_the_review_for_the_person(tailor_client,
     review = tailor_client.get("/v2/tailor").json()["review"]
     assert review["changes"] and all(c["decision_origin"] != "AI-assisted" for c in review["changes"])
     assert "synthetic rebuild failure" in review["assisted_note"]
+
+
+@pytest.mark.parametrize("batch", [False, True])
+def test_a_decision_reads_the_saved_review_once(tailor_client, monkeypatch, batch):
+    # Review finding 7: each Accept decoded the whole saved review (PDF and Word bytes
+    # included) twice, once only to check the change belonged to it.
+    from resume_tailorer import review_decisions, review_store
+
+    _ready(tailor_client)
+    assert _run(tailor_client)["status"] == "done"
+    review = tailor_client.get("/v2/tailor").json()["review"]
+    calls = []
+    for module in (review_store, review_decisions):
+        real = module.load_review
+        monkeypatch.setattr(module, "load_review", lambda *a, _real=real: (calls.append(1), _real(*a))[1])
+    change_id = review["changes"][0]["id"]
+    if batch:
+        response = tailor_client.post("/v2/tailor/decisions/batch", json={
+            "expected_revision": review["review_revision"], "decisions": [{"change_id": change_id, "decision": "REJECTED"}]})
+    else:
+        response = tailor_client.post("/v2/tailor/decisions", json={"change_id": change_id, "decision": "REJECTED"})
+    assert response.status_code == 200 and len(calls) == 1
+
+
+def test_a_decision_for_a_change_outside_the_review_is_refused(tailor_client):
+    _ready(tailor_client)
+    assert _run(tailor_client)["status"] == "done"
+    response = tailor_client.post("/v2/tailor/decisions", json={"change_id": "paragraph:999", "decision": "ACCEPTED"})
+    assert response.status_code in (400, 404) and "change" in response.json()["detail"].lower()

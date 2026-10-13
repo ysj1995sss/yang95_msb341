@@ -30,6 +30,10 @@ class ReviewStorageError(OSError):
     """The saved review could not be read or replaced."""
 
 
+class ReviewNotFound(ReviewStorageError):
+    """There is no saved review for this job (never tailored, or discarded)."""
+
+
 def new_review_revision() -> int:
     """The starting revision of a newly tailored review.
 
@@ -128,7 +132,7 @@ def mutate_saved_review(
     with _file_lock(artifacts.parent):
         state = load_review(str(artifacts), job_id)
         if state is None:
-            raise ReviewStorageError("This review is no longer available. Reload Tailor.")
+            raise ReviewNotFound("There's no tailored resume to review for this job yet.")
         revision = int(state.get("review_revision", 0)) if expected_revision is None else expected_revision
         updated = apply_decisions(state, entries, origin=origin, expected_revision=revision,
                                   manual_texts=manual_texts, reasons=reasons,

@@ -66,8 +66,8 @@ test("full changes are readable and selected changes are decided together", asyn
   await expect(page.getByText(first.proposed, { exact: true })).toBeVisible();
   await expect(page.getByText(second.proposed, { exact: true })).toBeVisible();
   await expect(page.getByText(first.full_requirement, { exact: true }).first()).toBeVisible();
-  await page.getByRole("checkbox", { name: "Select change 1" }).check();
-  await page.getByRole("checkbox", { name: "Select change 2" }).check();
+  await page.getByRole("checkbox", { name: /^Select 1\. / }).check();
+  await page.getByRole("checkbox", { name: /^Select 2\. / }).check();
   await expect(page.getByText("2 selected", { exact: true })).toBeVisible();
   await page.getByRole("button", { name: "Accept selected" }).click();
   await expect.poll(() => sent).toEqual({ expected_revision: 0, decisions: [
@@ -94,7 +94,7 @@ test("selection is explicit, reversible, and rejects only the selected changes",
   await expect(page.getByText("2 selected", { exact: true })).toBeVisible();
   await page.getByRole("button", { name: "Clear selection" }).click();
   await expect(page.getByText("0 selected", { exact: true })).toBeVisible();
-  await page.getByRole("checkbox", { name: "Select change 2" }).focus();
+  await page.getByRole("checkbox", { name: /^Select 2\. / }).focus();
   await page.keyboard.press("Space");
   await page.getByRole("button", { name: "Keep original for selected" }).click();
   await expect.poll(() => sent).toEqual({ expected_revision: 0,
@@ -111,7 +111,7 @@ test("a stale batch decision reloads rather than reporting success", async ({ pa
     await route.fulfill({ status: 409, json: { detail: "Review changed elsewhere" } });
   });
   await page.goto("/tailor");
-  await page.getByRole("checkbox", { name: "Select change 1" }).check();
+  await page.getByRole("checkbox", { name: /^Select 1\. / }).check();
   await page.getByRole("button", { name: "Accept selected" }).click();
   await expect(page.getByText("This review changed elsewhere. The latest decisions are loading; select changes again.")).toBeVisible();
   await expect(page.getByText("0 selected", { exact: true })).toBeVisible();
