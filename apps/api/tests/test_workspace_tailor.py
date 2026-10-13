@@ -511,3 +511,11 @@ def test_a_skill_shown_in_experience_is_added_to_the_skills_line_and_explained(t
     assert added["proposed"].startswith("SQL, Excel, ") and "Tableau" in added["proposed"]
     assert {"term": "Tableau", "level": 2} in [{k: a[k] for k in ("term", "level")} for a in added["added_skills"]]
     assert all(a["reason"] for a in added["added_skills"])
+
+
+def test_tailor_says_whether_facts_are_confirmed(tailor_client):
+    # Bug 15 / builder's answer S2: unconfirmed facts silently make tailoring do nothing.
+    _ready(tailor_client)
+    assert tailor_client.get("/v2/tailor").json()["facts_confirmed"] is False
+    tailor_client.post("/v2/profile/confirm")
+    assert tailor_client.get("/v2/tailor").json()["facts_confirmed"] is True

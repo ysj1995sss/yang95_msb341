@@ -261,6 +261,8 @@ def tailor_page(show_all: bool = False, ws: Workspace = Depends(workspace)):
         "resume": {"label": source[2], "one_off": source[3],
                    "source_info": source_details(source[0], source[3], resolve_fact_context(ws.session))} if source else None,
         "model_ready": model_ready,
+        # Bug 15: unconfirmed facts don't count as evidence, so tailoring can't use them (same rule as Home).
+        "facts_confirmed": bool(ws.record.get("facts_confirmed_at")),
         "custom_api_base_allowed": not ws.owner.signed_in,
         "ats_explainer": ats_explainer.as_dict(),
         "run": run,

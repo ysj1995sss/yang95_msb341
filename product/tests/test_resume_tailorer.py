@@ -399,3 +399,12 @@ class TestReconcileHeadersWithProfile:
         result = _reconcile_headers_with_profile(text, sample_profile)
         assert "A great engineer." in result
         assert "Python, Go" in result
+
+
+def test_the_summary_never_gains_tool_names():
+    # Spec 022 measurement + builder's answer S1: the model added "using SQL, Python, Excel, and
+    # Tableau" to the summary, which the job-scope check rightly can't verify, failing every PDF.
+    tailorer = ResumeTailorer(llm=MagicMock())
+    for prompt in (tailorer._build_system_prompt(), tailorer._build_refinement_system_prompt()):
+        assert "SUMMARY TOOLS" in prompt
+        assert "Never add a tool" in prompt

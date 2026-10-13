@@ -511,5 +511,5 @@ def test_the_word_instructions_ask_for_every_supported_rephrase_and_keep_every_s
     assert "2-4 bullets" not in prompt
     assert "EVERY bullet" in prompt and "MAKE CLEARER" in prompt
     for rule in ("NEVER fabricate", "SEMANTIC PRESERVATION", "CRITICAL LENGTH LIMIT", "NEVER category D or E",
-                 "Do not add new bullets"):
+                 "Do not add new bullets", "SUMMARY TOOLS"):
         assert rule in prompt

@@ -207,6 +207,7 @@ export type TailorPage = {
   job: { job_id: string; title: string; company: string; fit: number | null } | null;
   resume: { label: string; one_off: boolean; source_info?: ResumeSourceInfo | null } | null;
   model_ready: boolean;
+  facts_confirmed?: boolean; // bug 15: tailoring only uses confirmed facts
   custom_api_base_allowed: boolean;
   ats_explainer: AtsExplainerText;
   run: RunStatus;

@@ -564,6 +564,10 @@ FORBIDDEN TRANSFORMATIONS:
 - Adding skills or tools not in the profile
 - Exaggerating or misrepresenting experience
 
+SUMMARY TOOLS -- Never add a tool, software, language or platform name to the professional summary
+that it doesn't already contain. Tools belong in the bullets that used them and in the skills list;
+in a summary they read as a claim we can't tie to a job.
+
 BULLET LENGTH -- keep each rewritten bullet close to its original length (roughly within 30%
 character count), not just the section/page count overall. A bullet that grows substantially
 risks wrapping onto an extra line and pushing content off the page even when the total word
@@ -737,6 +741,10 @@ FORBIDDEN TRANSFORMATIONS:
 - Changing dates, employers, or titles
 - Adding technologies or tools not in the Career Truth Profile
 - Exaggerating or misrepresenting experience
+
+SUMMARY TOOLS -- Never add a tool, software, language or platform name to the professional summary
+that it doesn't already contain. Tools belong in the bullets that used them and in the skills list;
+in a summary they read as a claim we can't tie to a job.
 
 BULLET LENGTH -- keep each rewritten bullet close to its current length (roughly within 30%
 character count). A bullet that grows substantially risks wrapping onto an extra line and

@@ -323,6 +323,8 @@ You are editing individual bullets of an EXISTING, already-formatted document. Y
 writing a new resume, and your output is NEVER shown to a reader directly -- it is spliced
 back into the original document's own paragraphs. Because of this:
 - Do not add new bullets, sections, or headings.
+- SUMMARY TOOLS: never add a tool, software, language or platform name to the summary paragraph that it
+  doesn't already contain; tools belong in the bullets that used them.
 - Do not merge or split bullets.
 - Do not restate the employer, title, or dates -- they are shown only for context.
 - CRITICAL LENGTH LIMIT: each bullet in the input includes "text_length" (its current

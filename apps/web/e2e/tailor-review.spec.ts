@@ -146,3 +146,17 @@ test("skills added by code say which ones you have and which are adjacent", asyn
   await expect(added.getByText("You have SQL; the job asks for PostgreSQL, a closely related skill.")).toBeVisible();
   await expectAccessible(page, "tailor added skills");
 });
+
+test("unconfirmed facts are explained before tailoring, with both ways forward", async ({ page }) => {
+  let confirmed = false;
+  await page.route("**/api/backend/tailor", (route) => route.fulfill({ json: { ...pageData(null), facts_confirmed: confirmed } }));
+  await page.route("**/api/backend/profile/confirm", (route) => { confirmed = true; return route.fulfill({ json: { confirmed: 6 } }); });
+  await page.goto("/tailor");
+  const alert = page.getByRole("status").filter({ hasText: "Your facts aren't confirmed yet" });
+  await expect(alert).toBeVisible();
+  await expect(alert.getByRole("link", { name: "Review and confirm my facts" })).toHaveAttribute("href", "/profile");
+  await alert.getByRole("button", { name: "Use my facts as imported" }).click();
+  await expect.poll(() => confirmed).toBe(true);
+  await expect(page.getByText("Your facts aren't confirmed yet")).toHaveCount(0);
+  await expectAccessible(page, "tailor unconfirmed facts");
+});

@@ -68,6 +68,20 @@ export default function TailorPageView() {
   const [lightTouch, setLightTouch] = useState(false);
   const [reviewMode, setReviewMode] = useState<"manual" | "assisted">("manual");
   const [starting, setStarting] = useState(false);
+  const [confirming, setConfirming] = useState(false);
+
+  async function confirmFacts() {
+    setConfirming(true);
+    try {
+      await api("/profile/confirm", { method: "POST" });
+      toast("Your imported facts are confirmed.");
+      reload();
+    } catch (e) {
+      setStartError((e as Error).message);
+    } finally {
+      setConfirming(false);
+    }
+  }
   const [startError, setStartError] = useState<string | null>(null);
   const [redo, setRedo] = useState(false);
   const [model, setModel] = useState({ model: "", api_key: "", api_base: "" });
@@ -201,6 +215,17 @@ export default function TailorPageView() {
               <ResumeSource info={data.resume.source_info} />
             ) : (
               <div className="mt-3"><Alert tone="review" title="No resume yet">Import your resume in <a className="font-semibold underline" href="/profile">Career Profile</a> first.</Alert></div>
+            )}
+            {data.resume && !data.resume.one_off && data.facts_confirmed === false && (
+              <div className="mt-3">
+                <Alert tone="review" role="status" title="Your facts aren't confirmed yet">
+                  Tailoring only uses facts you&apos;ve confirmed in Career Profile, so right now it can&apos;t improve anything.
+                  <span className="mt-3 flex flex-wrap gap-2">
+                    <LinkButton href="/profile">Review and confirm my facts</LinkButton>
+                    <Button busy={confirming} onClick={() => void confirmFacts()}>Use my facts as imported</Button>
+                  </span>
+                </Alert>
+              </div>
             )}
             {!data.model_ready && <div className="mt-3"><Alert tone="review" title="The writing model isn't set up">Enter your own model and key under Settings, or set LLM_MODEL and LLM_API_KEY on the server.</Alert></div>}
             <div className="mt-5">
