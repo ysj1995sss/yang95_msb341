@@ -109,3 +109,16 @@ def test_times_reach_the_browser_with_their_utc_offset():
     aware = datetime(2026, 10, 5, 18, 29, tzinfo=timezone.utc)
     assert stamp(aware) == "2026-10-05T18:29:00+00:00"
     assert jsonable({"d": date(2026, 10, 5), "t": aware}) == {"d": "2026-10-05", "t": "2026-10-05T18:29:00+00:00"}
+
+
+def test_a_failed_search_says_so_without_internal_details(jobs_client, monkeypatch):
+    # Dogfood, 2026-10-13: any error inside the search was pasted into the message people see.
+    from resume_tailorer.job_search.job_service import JobService
+
+    def broken(self, *args, **kwargs):
+        raise RuntimeError("database is locked at D:/data/owner/jobs.db")
+
+    monkeypatch.setattr(JobService, "search_and_store", broken)
+    response = jobs_client.post("/v2/jobs/search", json={"job_title": "Data Analyst"})
+    assert response.status_code == 502
+    assert "didn't finish" in response.json()["detail"] and "jobs.db" not in response.json()["detail"]

@@ -244,8 +244,11 @@ def regenerate(session: MutableMapping[str, Any], state: dict) -> None:
             issues = validate_manual_text(change.original_text, manual_text, state["profile"],
                                           state.get("requirement_review"), section=change.section)
             if issues:
+                from resume_tailorer.artifacts.regeneration import explain_edit_problems
+
                 raise TailoringError(
-                    f"Your edit for '{change.original_text[:40]}…' adds something we can't verify: " + "; ".join(issues)
+                    f"Your wording for “{change.original_text[:40]}…” " + "; ".join(explain_edit_problems(issues))
+                    + ". Keep the original, or change your wording. If it's true, add it to your Career Profile first."
                 )
         # proposed_text stays the model's untouched proposal so the freeform
         # path can still find it in the baseline text (ResumeChange.manual_text).

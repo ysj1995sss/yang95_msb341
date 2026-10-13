@@ -18,7 +18,7 @@ def test_listed_tableau_cannot_be_added_to_sql_project(tailor_client, monkeypatc
     })
     assert response.status_code == 200
     failed = tailor_client.post('/v2/tailor/rebuild')
-    assert failed.status_code == 400 and 'this project' in failed.json()['detail']
+    assert failed.status_code == 400 and 'only listed in your skills' in failed.json()['detail']
     assert tailor_client.get('/v2/tailor/download/pdf').content == before  # only previous safe version
     tailor_client.post('/v2/tailor/decisions', json={'change_id': change['id'], 'decision': 'REJECTED'})
     restored = tailor_client.post('/v2/tailor/rebuild')

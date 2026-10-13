@@ -217,3 +217,20 @@ def test_refinement_cannot_move_an_existing_tool_to_a_different_project():
     )
     assert result.tailored_resume == initial
     assert "project/tool" in result.stop_reason
+
+
+def test_a_skills_line_may_list_a_tool_the_work_history_shows():
+    """Dogfood, 2026-10-13: typing "Tableau" into a skills line was refused as not used "in this
+    project", though a bullet shows Tableau. A skills line claims familiarity, not use in one job;
+    a tool nowhere in the profile is still refused, and bullets keep the project rule."""
+    from resume_tailorer.analyzers.claim_scope import introduced_unscoped_tools
+    from resume_tailorer.models import CareerTruthProfile
+
+    person = CareerTruthProfile(contact_info={"name": "Sam Example"}, education=[], skills=["SQL", "Excel"], tools=[],
+                                certifications=[], accomplishments=[],
+                                work_experience=[WorkExperience("Acme", "Analyst", "2021-2024",
+                                                                ["Built Tableau dashboards used by 40 managers"], [])])
+    assert introduced_unscoped_tools("SQL, Excel", "SQL, Excel, Tableau", person, section="skills") == []
+    assert introduced_unscoped_tools("SQL, Excel", "SQL, Excel, Looker", person, section="skills")
+    assert introduced_unscoped_tools("Built SQL reports", "Built SQL reports in Tableau", person,
+                                     section="work_experience")

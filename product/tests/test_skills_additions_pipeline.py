@@ -247,3 +247,31 @@ def test_a_length_correction_keeps_the_changes_the_file_still_contains(no_word, 
 
 def _skills(result):
     return next(c for c in result.changes if c.category is ChangeCategory.SKILLS_ADDED)
+
+
+def test_a_refused_edit_says_once_in_plain_words_what_it_adds(no_word):
+    """Dogfood, 2026-10-13: adding Terraform showed "⚠️ FABRICATION RISK: 'terraform' mentioned in …",
+    then the same thing twice more in other words, calling a skills line "this project"."""
+    from resume_tailorer.tailoring_service import TailoringError, regenerate
+
+    result = _run(_docx(), _review())
+    [change] = [c for c in result.changes if c.category is ChangeCategory.SKILLS_ADDED]
+    edited = _review_state(result, {change.change_id: "MANUALLY_EDITED"}, {change.change_id: "SQL, Excel, Terraform"})
+    with pytest.raises(TailoringError) as refused:
+        regenerate({}, edited)
+    message = str(refused.value)
+    assert "Terraform" in message and message.lower().count("terraform") == 1
+    for jargon in ("FABRICATION", "⚠", "project", "mentioned in"):
+        assert jargon not in message
+    assert "Career Profile" in message
+
+
+def test_a_longer_but_truthful_edit_is_not_refused_for_its_length(no_word):
+    """Length is a soft warning for model rewrites; it used to refuse a person's own edit outright."""
+    from resume_tailorer.tailoring_service import regenerate
+
+    result = _run(_docx(), _review())
+    [change] = [c for c in result.changes if c.category is ChangeCategory.SKILLS_ADDED]
+    state = _review_state(result, {change.change_id: "MANUALLY_EDITED"}, {change.change_id: "SQL, Excel, Tableau"})
+    regenerate({}, state)
+    assert "SQL, Excel, Tableau" in [p.text for p in Document(io.BytesIO(state["docx_bytes"])).paragraphs]

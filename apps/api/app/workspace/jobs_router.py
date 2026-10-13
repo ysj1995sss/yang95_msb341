@@ -5,6 +5,7 @@ session, so it survives reloads and devices."""
 
 from __future__ import annotations
 
+import logging
 import threading
 from datetime import datetime
 from typing import Any, Literal, Optional
@@ -15,6 +16,7 @@ from pydantic import BaseModel, Field
 from app.workspace import limits
 from app.workspace.context import Workspace, jsonable, stamp, workspace
 
+logger = logging.getLogger("job_copilot.api")
 router = APIRouter(prefix="/v2", tags=["workspace"])
 
 LAST_SEARCH_FIELD = "last_search"
@@ -175,7 +177,10 @@ def search(body: SearchForm, ws: Workspace = Depends(workspace)):
     try:
         summary = ws.service.search_and_store(goals, sources, custom_boards=boards)
     except Exception as exc:
-        raise HTTPException(502, f"The search didn't finish: {exc}. Your previous results are still here; try again.") from exc
+        # The underlying error can name server files, so it's logged rather than shown.
+        logger.warning("Job search failed: %s", type(exc).__name__)
+        raise HTTPException(502, "The search didn't finish. Your previous results are still here; try again in "
+                                 "a minute.") from exc
     record = ws.record
     if record.get("profile"):
         save_goals(record, form_to_goals(form))

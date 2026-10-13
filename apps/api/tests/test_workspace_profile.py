@@ -78,3 +78,13 @@ def test_saved_answers(workspace_client):
     answers = workspace_client.post("/v2/answers", json={"question": "Why Acme?", "answer": "Analytics."}).json()
     key = answers["answers"][0]["question_key"]
     assert workspace_client.delete(f"/v2/answers/{key}").json()["answers"] == []
+
+
+def test_a_damaged_file_gets_a_plain_message_without_server_details(workspace_client):
+    """Dogfood, 2026-10-13: a broken .docx showed the server's temporary file path in the error."""
+    for name, data, says in (("r.docx", b"PK not really a word file", "Word file"),
+                             ("r.pdf", b"%PDF-1.4 broken", "PDF")):
+        response = workspace_client.post("/v2/profile/resume", files={"file": (name, data, "application/octet-stream")})
+        detail = response.json()["detail"]
+        assert response.status_code == 422 and says in detail
+        assert "Temp" not in detail and ":\\" not in detail and "Package" not in detail and "/" not in detail

@@ -3,6 +3,7 @@ Streamlit Career Profile page. Legally significant answers are only what the use
 
 from __future__ import annotations
 
+import logging
 from typing import Any, Optional
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
@@ -92,8 +93,15 @@ async def import_resume_file(file: UploadFile = File(...), ws: Workspace = Depen
     try:
         import_resume(ws.store(), name, data)
     except Exception as exc:
-        raise HTTPException(422, f"We couldn't read that file: {exc}. Try the Word version, or a PDF with "
-                                 "selectable text.") from exc
+        # The reader's own error names server temp files, so it goes to the log, not the person.
+        logging.getLogger("job_copilot.api").warning("Resume import failed: %s", type(exc).__name__)
+        if name.lower().endswith(".docx"):
+            message = ("This Word file looks damaged, or isn't really a .docx. Open it in Word, save it again "
+                       "as a Word document, and import it, or import a PDF instead.")
+        else:
+            message = ("We couldn't read this PDF. Import a PDF whose text you can select, or the Word "
+                       "version of your resume.")
+        raise HTTPException(422, message) from exc
     return _view(Workspace(ws.owner, ws.service))
 
 

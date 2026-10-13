@@ -61,6 +61,21 @@ COMPETENCY_EVIDENCE_PATTERNS: dict[str, dict[str, list[str]]] = {
             r"\bmulti(ple)?\s*(project|initiative|workstream)",
         ],
     },
+    # Leading people: "Led a team of 4 engineers" was no evidence for "leading or mentoring
+    # engineers" because no entry here covered it (dogfood, 2026-10-13).
+    "team leadership: leading and mentoring": {
+        "strong": [
+            r"\bled\b.{0,25}\b(teams?|engineers?|developers?|analysts?|staff|people|reports)\b",
+            r"\bmanaged\b.{0,20}\b(teams?|engineers?|developers?|analysts?|staff|\d+\s+(people|reports|direct reports))\b",
+            r"\bmentor\w*",
+            r"\bdirect reports?\b",
+            r"\bsupervis\w*",
+        ],
+        "partial": [
+            r"\bcoach\w*",
+            r"\btrain(ed|ing)\b.{0,20}\b(new|junior)\b",
+        ],
+    },
     "cross-functional leadership": {
         "strong": [r"cross-functional", r"cross-cultural"],
         "partial": [

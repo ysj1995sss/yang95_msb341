@@ -53,6 +53,11 @@ def introduced_unscoped_tools(original: str, proposed: str, profile: CareerTruth
     summary_list = section == "summary" and not _ACTION.search(proposed) and bool(
         re.search(r"\b(?:skills?|skilled|proficien(?:t|cy)|familiar)\b", proposed, re.I)) and not added_context and not context_changed
     listed_facts = "\n".join([*profile.skills, *profile.tools])
+    if list_section:
+        # A skills line claims familiarity, not use in one job: a tool any role shows may be listed
+        # (typing a bullet-proven "Tableau" into the skills line was refused, 2026-10-13).
+        listed_facts += "\n" + "\n".join(text for job in profile.work_experience
+                                         for text in [*job.responsibilities, *job.accomplishments])
     bare_summary_list = section == 'summary' and (original or '').count(',') >= 2 and not re.search(r'\b(?:who|which|that|where)\b', original or '', re.I)
     original_listing = (section in {'skills', 'tools', 'competencies'} or bare_summary_list or
                         (section == 'summary' and bool(re.search(r'\b(?:skills?|skilled|proficien(?:t|cy)|familiar)\b', original or '', re.I)))) and not _ACTION.search(original or '')

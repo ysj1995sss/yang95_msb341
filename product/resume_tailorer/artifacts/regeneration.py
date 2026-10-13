@@ -201,6 +201,54 @@ def regenerate_freeform_artifact(
     return pdf_bytes, final_text
 
 
+def explain_edit_problems(issues: Sequence[str]) -> list[str]:
+    """The checks' findings, said once each in plain words for the person who wrote the edit. Each
+    check words its own audit message, so one unsupported word came back three ways, with internal
+    labels and "this project" even on a skills line (dogfood, 2026-10-13)."""
+    import re
+
+    def remember(bucket: dict[str, str], term: str) -> None:
+        # Keep the person's or the profile's spelling over a checker's lower-cased one.
+        if term.casefold() not in bucket or term != term.lower():
+            bucket[term.casefold()] = term
+
+    added: dict[str, str] = {}     # nowhere in the Career Profile
+    in_role: dict[str, str] = {}   # in the profile, but not shown in this role
+    listed_only: dict[str, str] = {}
+    plain: list[str] = []
+    for issue in issues:
+        found = re.search(r"'([^']+)' mentioned in", issue) or re.search(r"adds “([^”]+)”", issue)
+        if found:
+            remember(added, found.group(1).strip())
+        elif (scoped := re.match(r"(.+?) appears elsewhere or is newly added", issue)):
+            remember(in_role, scoped.group(1).strip())
+        elif (listed := re.search(r"turns “([^”]+)” from a listed skill", issue)):
+            remember(listed_only, listed.group(1).strip())
+        elif (numbers := re.search(r"dropped metric\(s\) \[(.*?)\]", issue)):
+            plain.append(f"leaves out {numbers.group(1)} from the original")
+        elif (words := re.search(r"dropped word\(s\) \[(.*?)\]", issue)):
+            plain.append(f"leaves out {words.group(1)}, which changes what the original says")
+        else:
+            plain.append(issue)
+    # One sentence per term, the most serious reason first, in the best spelling any check gave.
+    for key in added:
+        for bucket in (in_role, listed_only):
+            if key in bucket:
+                remember(added, bucket[key])
+    listed_only = {k: v for k, v in listed_only.items() if k not in added}
+    in_role = {k: v for k, v in in_role.items() if k not in added and k not in listed_only}
+    lead = []
+    if added:
+        lead.append(f"adds {', '.join(added.values())}, which your Career Profile doesn't show")
+    if listed_only:
+        lead.append(f"turns {', '.join(listed_only.values())}, which is only listed in your skills, into something "
+                    "you did")
+    if in_role:
+        lead.append(f"says you used {', '.join(in_role.values())} in this role, which your Career Profile doesn't "
+                    "show for this role")
+    return list(dict.fromkeys(lead + plain))
+
+
 def validate_manual_text(
     original_text: str, manual_text: str, profile: CareerTruthProfile, review=None, *, section: str = "work_experience"
 ) -> list[str]:
@@ -211,12 +259,12 @@ def validate_manual_text(
     from resume_tailorer.diff_generator import DiffGenerator
     from resume_tailorer.analyzers.requirement_review import introduced_unsupported
     from resume_tailorer.analyzers.claim_scope import introduced_unscoped_tools
-    from resume_tailorer.utils.length_check import bullet_length_delta
 
     generator = DiffGenerator()
     issues = list(generator.check_semantic_drift(original_text, manual_text))
     issues.extend(generator.check_bullet_pair_fabrication_risk(original_text, manual_text, profile))
     issues.extend(introduced_unsupported(original_text, manual_text, review))
     issues.extend(introduced_unscoped_tools(original_text, manual_text, profile, section=section, review=review))
-    issues.extend(bullet_length_delta(original_text, manual_text))
+    # Length is a soft warning for model rewrites (utils/length_check.py), never a reason to refuse a
+    # person's own words: the rebuild's page-count check catches a resume that really grew a page.
     return issues

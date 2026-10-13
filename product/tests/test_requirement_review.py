@@ -161,3 +161,23 @@ def test_a_state_abbreviation_is_never_read_as_a_masters_degree():
     ms = _Passage("MS in Business Analytics, State University, 2021", "Education", "education[0]", "education")
     assert _degree_evidence("Master's degree preferred", [ms])[1] == "master's"
     assert _degree_evidence("Bachelor's degree", [ms])[1] == "master's"  # a higher degree meets it
+
+
+def test_leading_a_team_is_evidence_for_leading_or_mentoring():
+    """Dogfood, 2026-10-13: "Led a team of 4 engineers" was "No evidence" for "Experience leading or
+    mentoring engineers", so it was never made clearer and was listed as missing."""
+    from resume_tailorer.models import CareerTruthProfile, WorkExperience
+
+    led = "Led a team of 4 engineers migrating a legacy monolith to microservices"
+    person = CareerTruthProfile(contact_info={"name": "Alex Example"}, education=[], skills=["Python"], tools=[],
+                                certifications=[], accomplishments=[],
+                                work_experience=[WorkExperience(employer="Northwind", title="Senior Engineer",
+                                                                dates="2021 - 2024", responsibilities=[led],
+                                                                accomplishments=[])])
+    for requirement in ("Experience leading or mentoring engineers", "Leading small engineering teams",
+                        "Team leadership experience"):
+        posting = f"Requirements:\n- {requirement}\n"
+        [row] = build_review(JobAnalyzer().analyze(posting), person, posting=posting).rows
+        assert row.status == "transferable" and row.evidence[0].text == led, requirement
+    years = "Requirements:\n- 5+ years of professional software engineering\n"
+    assert all(r.status != "transferable" for r in build_review(JobAnalyzer().analyze(years), person, posting=years).rows)
