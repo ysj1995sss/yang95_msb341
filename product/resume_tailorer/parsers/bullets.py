@@ -10,7 +10,9 @@ from __future__ import annotations
 import re
 
 # A glyph, or a dash/asterisk/"o" that is followed by whitespace (so "-5%" or "office" never count).
-_TYPED_BULLET = re.compile(r"^\s*(?:[•●▪■◦‣∙·○➢►▶✓✔➤]|[-–—*](?=\s)|o(?=\t))[\s ]*")
+# U+F0A7/U+F0B7/U+F0D8/U+F0FC/U+F076: Symbol/Wingdings bullets as Word's "Save as PDF" writes them;
+# U+007F: what the PDF reader returns for the bullet in PDFs Job Copilot generates (bug hunt 2026-10-12).
+_TYPED_BULLET = re.compile(r"^\s*(?:[•●▪■◦‣∙·○➢►▶✓✔➤\uf0a7\uf0b7\uf0d8\uf0fc\uf076\x7f]|[-–—*](?=\s)|o(?=\t))[\s ]*")
 
 
 def typed_bullet_prefix(text: str) -> str:

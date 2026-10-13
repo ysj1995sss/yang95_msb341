@@ -462,3 +462,58 @@ def test_title_on_the_line_below_company_city_dates_is_not_swapped():
     assert [(j.title, j.employer) for j in jobs] == [("Data Analyst", "Acme Corp"), ("Reporting Analyst", "Beta LLC")]
     assert jobs[0].dates == "January 2021 to Present" and jobs[0].location == "Portland, OR"
     assert jobs[0].responsibilities + jobs[0].accomplishments == ["Built SQL dashboards used by 40 managers"]
+
+
+# Bug hunt 2026-10-12, second pass. Synthetic resumes only.
+
+@pytest.mark.parametrize("glyph", ["\uf0b7", "\x7f"], ids=["word-pdf-symbol-bullet", "reportlab-pdf-bullet"])
+def test_pdf_bullet_glyphs_are_read_as_bullets(glyph):
+    # U+F0B7 is the bullet Word's "Save as PDF" puts in the text layer; \x7f is what the
+    # PDF reader returns for Job Copilot's own generated PDFs. Both lost every bullet.
+    text = ("Sam Example\nsam@example.com\nEXPERIENCE\nData Analyst | Acme Corp | Jan 2021 - Present\n"
+            f"{glyph} Built SQL dashboards used by 40 managers\n {glyph} Cut report time by 30%\n"
+            "EDUCATION\nBS Economics, State University, 2019\n")
+    [job] = ResumeParser()._parse_text(text).work_experience
+    assert job.responsibilities + job.accomplishments == ["Built SQL dashboards used by 40 managers",
+                                                          "Cut report time by 30%"]
+
+
+def test_a_resume_job_copilot_generated_keeps_its_bullets_when_imported_again(tmp_path):
+    from resume_tailorer.pdf.generator import PDFGenerator
+
+    body = ("sam@example.com | (555) 010-0100\nEXPERIENCE\nData Analyst | Acme Corp | Jan 2021 - Present\n"
+            "- Built SQL dashboards used by 40 managers\n- Cut report time by 30%\n"
+            "EDUCATION\nBS Economics, State University, 2019\nSKILLS\nSQL, Python\n")
+    path = str(tmp_path / "ours.pdf")
+    PDFGenerator().generate(body, "Sam Example", output_path=path)
+    [job] = ResumeParser().parse(path).work_experience
+    assert len(job.responsibilities + job.accomplishments) == 2
+
+
+def test_name_and_contact_in_a_word_header_table_are_read(tmp_path):
+    from docx import Document
+
+    doc = Document()
+    table = doc.add_table(rows=1, cols=2)
+    table.cell(0, 0).text = "Sam Example"
+    table.cell(0, 1).text = "sam@example.com\n(555) 010-0100\nPortland, OR"
+    for line in ("SUMMARY", "Analyst with five years of reporting experience.", "EXPERIENCE",
+                 "Data Analyst | Acme Corp | Jan 2021 - Present", "- Built SQL dashboards used by 40 managers",
+                 "EDUCATION", "BS Economics, State University, 2019"):
+        doc.add_paragraph(line)
+    path = tmp_path / "table.docx"
+    doc.save(path)
+    contact = ResumeParser().parse(str(path)).contact_info
+    assert (contact.get("name"), contact.get("email"), contact.get("phone")) == (
+        "Sam Example", "sam@example.com", "(555) 010-0100")
+
+
+def test_a_section_heading_is_never_taken_as_the_name():
+    text = "SUMMARY\nAnalyst with five years of reporting experience.\nEXPERIENCE\nData Analyst | Acme | 2021 - Present\n"
+    assert ResumeParser()._extract_contact_info(text)["name"] == "Unknown"
+
+
+def test_a_summary_heading_after_a_multi_line_contact_block_is_not_part_of_the_summary():
+    text = ("Sam Example\nsam@example.com\n(555) 010-0100\nPortland, OR\n\nSUMMARY\n"
+            "Analyst with five years of reporting experience.\nEXPERIENCE\nData Analyst | Acme | 2021 - Present\n")
+    assert ResumeParser()._extract_summary(text) == "Analyst with five years of reporting experience."

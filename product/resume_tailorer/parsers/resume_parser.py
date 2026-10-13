@@ -117,6 +117,43 @@ def _split_one_line_education(line: str) -> tuple[str, str, str] | None:
     return None
 
 
+def _paragraphs_in_order(doc):
+    """Every paragraph in reading order, including those inside tables. Many resume
+    templates put the name and contact details in a header table, which used to be
+    skipped entirely (bug hunt 2026-10-12). Merged cells are read once."""
+    from docx.table import Table
+    from docx.text.paragraph import Paragraph
+
+    def walk(parent, element):
+        for child in element.iterchildren():
+            tag = child.tag.rsplit("}", 1)[-1]
+            if tag == "p":
+                yield Paragraph(child, parent)
+            elif tag == "tbl":
+                seen = set()
+                for row in Table(child, parent).rows:
+                    for cell in row.cells:
+                        if id(cell._tc) not in seen:
+                            seen.add(id(cell._tc))
+                            yield from walk(cell, cell._tc)
+
+    yield from walk(doc, doc.element.body)
+
+
+# Lines that open a section are never a person's name (bug hunt 2026-10-12: "SUMMARY" was taken
+# as the name when the real name sat in a table).
+_HEADING_LINES = {
+    "summary", "professional summary", "profile", "professional profile", "objective", "career objective",
+    "about", "about me", "contact", "contact information", "experience", "work experience",
+    "professional experience", "employment", "education", "skills", "technical skills", "certifications",
+    "projects", "resume", "curriculum vitae",
+}
+
+
+def _is_heading_line(line: str) -> bool:
+    return line.strip().rstrip(":").lower() in _HEADING_LINES or bool(SECTION_BOUNDARY_RE.match(line))
+
+
 class ResumeParser:
     """
     Parses PDF/DOCX resumes and extracts a CareerTruthProfile.
@@ -187,7 +224,7 @@ class ResumeParser:
         doc = Document(file_path)
         lines = [
             f"- {strip_typed_bullet(para.text)}" if is_bullet_paragraph(para) else para.text
-            for para in doc.paragraphs
+            for para in _paragraphs_in_order(doc)
         ]
         return "\n".join(lines)
 
@@ -264,8 +301,8 @@ class ResumeParser:
                 or "linkedin" in line.lower()
                 or re.search(r"\d{3}[-.\s]?\d{3}[-.\s]?\d{4}", line)
             )
-            if looks_like_contact:
-                continue
+            if looks_like_contact or (start_idx is None and _is_heading_line(line)):
+                continue  # a "SUMMARY"/"PROFILE" heading is not part of the summary text
             if start_idx is None and i < NAME_SEARCH_LINES and len(line.split()) <= 6:
                 # Short line near the top before any real prose -- almost
                 # certainly the name, not the summary.
@@ -295,7 +332,7 @@ class ResumeParser:
         # Name: typically first line or top section
         lines = text.split("\n")
         for line in lines[:NAME_SEARCH_LINES]:  # Check first N lines
-            if line.strip() and len(line.split()) <= 4 and not re.search(r"@|\d", line):
+            if line.strip() and len(line.split()) <= 4 and not re.search(r"@|\d", line) and not _is_heading_line(line):
                 contact_info["name"] = line.strip()
                 break
 
