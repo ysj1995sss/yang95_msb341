@@ -151,6 +151,7 @@ class PDFGenerator:
         """Build Platypus ParagraphStyle objects from a length preset and optional style hints."""
         body_font = preset["font_size"]
         leading = preset["leading"]
+        space = preset.get("space", 1.0)  # paragraph spacing shrinks with a tighter fit
         bullet_leading = preset["bullet_leading"]
 
         heading_style_hint = (style_hints or {}).get("heading_style", "bold")
@@ -169,7 +170,7 @@ class PDFGenerator:
             fontSize=16,
             leading=19,
             alignment=TA_CENTER,
-            spaceAfter=2,
+            spaceAfter=2 * space,
         )
         title_style = ParagraphStyle(
             name="JobTitle",
@@ -177,7 +178,7 @@ class PDFGenerator:
             fontSize=10,
             leading=12,
             alignment=TA_CENTER,
-            spaceAfter=8,
+            spaceAfter=8 * space,
             textColor="#333333",
         )
         section_style = ParagraphStyle(
@@ -185,8 +186,8 @@ class PDFGenerator:
             fontName=fonts["bold"],
             fontSize=body_font + heading_size_bump,
             leading=leading + heading_size_bump,
-            spaceBefore=8,
-            spaceAfter=4,
+            spaceBefore=8 * space,
+            spaceAfter=4 * space,
         )
         bullet_style = ParagraphStyle(
             name="Bullet",
@@ -194,14 +195,14 @@ class PDFGenerator:
             fontSize=body_font,
             leading=bullet_leading,
             leftIndent=14,
-            spaceAfter=2,
+            spaceAfter=2 * space,
         )
         body_style = ParagraphStyle(
             name="Body",
             fontName=fonts["regular"],
             fontSize=body_font,
             leading=leading,
-            spaceAfter=2,
+            spaceAfter=2 * space,
         )
         # "Employer | Location    Dates" line -- bold, like the original
         # resume's own layout, instead of falling through to plain body text.
@@ -210,8 +211,8 @@ class PDFGenerator:
             fontName=fonts["bold"],
             fontSize=body_font,
             leading=leading,
-            spaceBefore=6,
-            spaceAfter=1,
+            spaceBefore=6 * space,
+            spaceAfter=1 * space,
         )
         # The job title / degree line right after an org header -- italic,
         # matching the original resume's layout.
@@ -220,7 +221,7 @@ class PDFGenerator:
             fontName=fonts["italic"],
             fontSize=body_font,
             leading=leading,
-            spaceAfter=2,
+            spaceAfter=2 * space,
         )
         return {
             "name": name_style,
@@ -240,6 +241,7 @@ class PDFGenerator:
         job_title: str = None,
         target_length: str = "1_page",
         style_hints: dict = None,
+        fit_to_page: bool = True,
     ) -> str:
         """
         Generate a text-based PDF from resume text.
@@ -267,9 +269,48 @@ class PDFGenerator:
 
         Raises:
             ValueError: If target_length is not a recognized preset.
+
+        fit_to_page: when the content overflows the page limit of target_length, try slightly
+            tighter font size, spacing and margins (never below MIN_FONT_SIZE) before giving up.
+            The content is never changed; a resume still too long is reported by the validator.
         """
         preset = self._get_length_preset(target_length, style_hints)
+        limit = {"1_page": 1, "2_page": 2}.get(self.resolve_target_length(target_length, style_hints))
+        if fit_to_page and limit:
+            for tighter in self._tighter_presets(preset):
+                path = self._generate_once(resume_text, candidate_name, output_path, job_title, tighter, style_hints)
+                output_path = path
+                if self._page_count(path) <= limit:
+                    return path
+            return path  # the tightest readable layout; the page-limit check reports what's left
+        return self._generate_once(resume_text, candidate_name, output_path, job_title, preset, style_hints)
+
+    MIN_FONT_SIZE = 8.0
+    MIN_MARGIN = 0.4
+
+    @classmethod
+    def _tighter_presets(cls, preset: dict):
+        """The preset itself, then steps of 0.25pt smaller text with proportionally tighter spacing
+        and margins, down to MIN_FONT_SIZE / MIN_MARGIN."""
+        yield preset
+        size = preset["font_size"]
+        while size - 0.25 >= cls.MIN_FONT_SIZE:
+            size -= 0.25
+            ratio = size / preset["font_size"]
+            yield {"font_size": size, "leading": round(preset["leading"] * ratio, 2),
+                   "bullet_leading": round(preset["bullet_leading"] * ratio, 2),
+                   "margin": max(cls.MIN_MARGIN, round(preset["margin"] * (0.5 + 0.5 * ratio), 3)),
+                   "space": round(ratio ** 2, 3)}
+
+    @staticmethod
+    def _page_count(path: str) -> int:
+        from pypdf import PdfReader
+
+        return len(PdfReader(path).pages)
+
+    def _generate_once(self, resume_text, candidate_name, output_path, job_title, preset, style_hints) -> str:
         styles = self._build_styles(preset, style_hints)
+        space = preset.get("space", 1.0)
 
         if output_path is None:
             safe_name = re.sub(r"[^A-Za-z0-9_-]+", "_", candidate_name.strip()) or "resume"
@@ -294,14 +335,15 @@ class PDFGenerator:
         if job_title:
             story.append(Paragraph(self._escape(job_title), styles["title"]))
         else:
-            story.append(Spacer(1, 6))
+            story.append(Spacer(1, 6 * space))
 
-        story.extend(self._build_body_flowables(resume_text, candidate_name, styles, style_hints))
+        story.extend(self._build_body_flowables(resume_text, candidate_name, styles, style_hints, space))
 
         doc.build(story)
         return output_path
 
-    def _build_body_flowables(self, resume_text: str, candidate_name: str, styles: dict, style_hints: dict = None):
+    def _build_body_flowables(self, resume_text: str, candidate_name: str, styles: dict, style_hints: dict = None,
+                              space: float = 1.0):
         """Convert plain resume text into a list of Platypus flowables."""
         flowables = []
         # Defense-in-depth: ResumeTailorer already strips Markdown from LLM
@@ -320,7 +362,7 @@ class PDFGenerator:
         for raw_line in lines:
             line = raw_line.strip()
             if not line:
-                flowables.append(Spacer(1, 4))
+                flowables.append(Spacer(1, 4 * space))
                 prev_was_org_header = False
                 continue
 

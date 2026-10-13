@@ -365,3 +365,36 @@ def test_without_a_unicode_font_only_unprintable_letters_are_simplified(monkeypa
     monkeypatch.setattr(gen, "unicode_font_family", lambda family: None)
     escaped = gen.PDFGenerator()._escape("Mondelēz café")
     assert escaped == "Mondelez café"
+
+
+def _resume_with_bullets(n):
+    lines = ["EXPERIENCE", "Analyst | Example Co | 2021 - Present"]
+    lines += [f"- Delivered result number {i} by building weekly reporting for regional teams and tracking {i} outcomes" for i in range(n)]
+    return "\n".join(lines) + "\n"
+
+
+def test_a_resume_slightly_too_long_for_its_page_limit_is_fitted_not_failed(tmp_path):
+    # Found on the builder's own resume (2026-10-12): 10 lines spilled onto page 2 of a 1-page
+    # original and the PDF failed its page-limit check. The generator now tries slightly tighter
+    # layouts (never below 8pt) before giving up; the content is never changed.
+    from pypdf import PdfReader
+
+    gen = PDFGenerator()
+    for n in range(28, 70):
+        text = _resume_with_bullets(n)
+        plain = gen.generate(text, "Sam Example", output_path=str(tmp_path / "plain.pdf"), target_length="1_page", fit_to_page=False)
+        if len(PdfReader(plain).pages) == 2:
+            fitted = gen.generate(text, "Sam Example", output_path=str(tmp_path / "fit.pdf"), target_length="1_page")
+            assert len(PdfReader(fitted).pages) == 1, f"{n} bullets"
+            assert "result number %d " % (n - 1) in PdfReader(fitted).pages[0].extract_text()  # content untouched
+            return
+    raise AssertionError("never found a resume that needed fitting")
+
+
+def test_a_resume_far_too_long_still_reports_honestly_at_a_readable_size(tmp_path):
+    from pypdf import PdfReader
+
+    path = PDFGenerator().generate(_resume_with_bullets(200), "Sam Example", output_path=str(tmp_path / "long.pdf"),
+                                   target_length="1_page")
+    assert len(PdfReader(path).pages) > 1  # never squeezed into an unreadable page
+    assert PDFGenerator.MIN_FONT_SIZE >= 8
