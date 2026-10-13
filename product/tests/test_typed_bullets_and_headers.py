@@ -99,7 +99,7 @@ def test_one_line_headers_and_other_glyphs_in_pdf_text():
         ("Data Analyst", "Acme Corp", "Jan 2021 - Present"),
         ("Junior Analyst", "Globex", "2019 - 2020"),
     ]
-    assert jobs[0].accomplishments == ["Cut report time by 30%"]
+    assert jobs[0].responsibilities[-1] == "Cut report time by 30%" and jobs[0].accomplishments == []  # order kept
     assert jobs[1].responsibilities == ["Cleaned data in Excel"]
 
 

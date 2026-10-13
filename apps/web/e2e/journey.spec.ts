@@ -327,7 +327,7 @@ test("one-off sources are disclosed and unsupported project wording is refused",
   await page.goto("/tailor");
   await expect(page.getByText("Resume file", { exact: true })).toBeVisible();
   await expect(page.getByText("Facts", { exact: true })).toBeVisible();
-  await expect(page.getByText(/Uploading here does not update/)).toBeVisible();
+  await expect(page.getByText(/used for this job only/)).toBeVisible();
   await expect(page.getByText(/source-one.docx/)).toBeVisible();
   await page.getByRole("button", { name: "Tailor my resume" }).click();
   await expect(page.getByRole("heading", { name: "Proposed changes" })).toBeVisible({ timeout: 60_000 });

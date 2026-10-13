@@ -459,3 +459,53 @@ def test_a_job_line_near_the_top_is_not_a_second_contact_location():
         assert [(f.outcome, f.blocking) for f in fields] == [("updated", False)]
         assert doc.paragraphs[1].text == "riley@example.com | 555-0100 | Boulder, CO"
         assert doc.paragraphs[4].text == "Acme Analytics | Denver, CO | 2021 - Present"
+
+
+def _sync_blockers(lines, profile):
+    from resume_tailorer.docx_export.profile_sync import sync_docx_to_profile
+
+    doc = Document()
+    for line in lines:
+        doc.add_paragraph(line)
+    out = io.BytesIO()
+    doc.save(out)
+    return [(f.field, f.reason) for f in sync_docx_to_profile(out.getvalue(), profile).fields if f.blocking]
+
+
+def _person(**fields):
+    base = dict(contact_info={"name": "Sam Example", "email": "sam@example.com"}, education=[], work_experience=[],
+                skills=[], tools=[], certifications=[], accomplishments=[])
+    return CareerTruthProfile(**{**base, **fields})
+
+
+def test_an_unchanged_degree_above_its_school_line_never_blocks_tailoring():
+    """Dogfood round 3, 2026-10-13: "BS Economics" above "University … | 2019" (read correctly since
+    this morning) was "education format is ambiguous", so the Word resume couldn't be tailored."""
+    person = _person(education=[EducationEntry(degree="BS", field="Economics", institution="University of Texas at Austin",
+                                               year=2019, gpa=None, notes=[])])
+    assert _sync_blockers(["Sam Example", "EDUCATION", "BS Economics", "University of Texas at Austin | 2019"], person) == []
+
+
+def test_unchanged_certifications_one_per_line_never_block_tailoring():
+    """Dogfood round 3: two certifications on their own lines were "missing or ambiguous" and blocked
+    every run, though the profile said exactly what the file did."""
+    lines = ["Sam Example", "CERTIFICATIONS", "PMP", "AWS Certified Cloud Practitioner"]
+    assert _sync_blockers(lines, _person(certifications=["AWS Certified Cloud Practitioner", "PMP"])) == []
+    # A real disagreement still blocks: the file would show a certification the person removed.
+    assert _sync_blockers(lines, _person(certifications=["PMP"])) == [
+        ("certifications", "certifications section missing or ambiguous")]
+
+
+def test_skills_and_tools_already_in_the_file_raise_no_sync_note():
+    """Dogfood round 3: skills one per line, and a tool read from a bullet, said "couldn't safely sync"
+    on every run though the file already shows each of them."""
+    from resume_tailorer.docx_export.profile_fields import sync_simple_fields
+
+    doc = Document()
+    for line in ("Sam Example", "sam@example.com", "EXPERIENCE", "Analyst", "Acme | 2021 - 2024", "Moved reporting to AWS Redshift",
+                 "SKILLS", "SQL", "Python", "Tableau: dashboards"):
+        doc.add_paragraph(line)
+    person = _person(skills=["SQL", "Python", "Tableau", "dashboards"], tools=["AWS"])
+    assert [f.field for f in sync_simple_fields(doc, person)] == []
+    # A skill the file doesn't show is still reported, so the person knows it wasn't placed.
+    assert [f.field for f in sync_simple_fields(doc, _person(skills=["SQL", "Kubernetes"]))] == ["skills"]

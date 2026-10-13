@@ -181,3 +181,14 @@ def test_leading_a_team_is_evidence_for_leading_or_mentoring():
         assert row.status == "transferable" and row.evidence[0].text == led, requirement
     years = "Requirements:\n- 5+ years of professional software engineering\n"
     assert all(r.status != "transferable" for r in build_review(JobAnalyzer().analyze(years), person, posting=years).rows)
+
+
+def test_explaining_results_to_business_leads_partly_shows_communication():
+    """Dogfood round 3, 2026-10-13: "Partnered with merchandising leads to explain sales trends" was no
+    evidence for "Strong communication with merchandising and finance leaders"."""
+    from resume_tailorer.analyzers.competency_map import find_transferable_evidence
+
+    requirement = "Strong communication with merchandising and finance leaders"
+    found = find_transferable_evidence(requirement, ["Partnered with merchandising leads to explain sales trends"])
+    assert found is not None and found.evidence_text.startswith("Partnered")
+    assert find_transferable_evidence(requirement, ["Built SQL pipelines for 120 stores"]) is None

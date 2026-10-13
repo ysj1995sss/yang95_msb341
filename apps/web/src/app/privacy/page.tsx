@@ -3,10 +3,12 @@
 import type { Metadata } from "next";
 import { FileText } from "lucide-react";
 import Link from "next/link";
+import { connection } from "next/server";
+import { sharedTestWorkspace } from "@/lib/auth";
 
 export const metadata: Metadata = { title: "Privacy" };
 
-const UPDATED = "October 5, 2026";
+const UPDATED = "October 13, 2026";
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
@@ -17,8 +19,11 @@ function Section({ title, children }: { title: string; children: React.ReactNode
   );
 }
 
-export default function PrivacyPage() {
+export default async function PrivacyPage() {
+  await connection();  // read at request time: the shared test changes what is true below
   const contact = process.env.PRIVACY_CONTACT;
+  // Decision 045: one workspace for everyone and no sign-in, on free hosting that can wipe data.
+  const shared = sharedTestWorkspace();
   return (
     <main id="main" className="mx-auto max-w-2xl px-4 py-10">
       <Link href="/" className="flex items-center gap-2 font-[family-name:var(--font-heading)] text-[18px] font-semibold">
@@ -27,8 +32,18 @@ export default function PrivacyPage() {
       <h1 className="mt-6 text-[30px] font-semibold">Privacy</h1>
       <p className="mt-1 text-muted">Last updated {UPDATED}. This covers the Job Copilot website and the Job Copilot form helper for Chrome and Edge.</p>
 
+      {shared && (
+        <p role="note" className="mt-6 rounded-[var(--radius-card)] border border-review/40 bg-review-soft p-4">
+          <strong>This address is a shared test.</strong> There is no sign-in, so everyone using this address sees and can
+          change the same data, and the free test server can wipe it at any time. Don&apos;t upload a resume you want kept
+          private.
+        </p>
+      )}
+
       <Section title="What Job Copilot keeps">
-        <p>Only what you give it or create in it, in a folder that belongs to your account alone:</p>
+        <p>
+          Only what you give it or create in it, {shared ? "in one folder shared by everyone using this test address" : "in a folder that belongs to your account alone"}:
+        </p>
         <ul>
           <li>Your Career Profile: the facts read from the resume you upload, and the edits and confirmations you make.</li>
           <li>The resume files you upload and the tailored resumes made from them.</li>
@@ -41,9 +56,9 @@ export default function PrivacyPage() {
 
       <Section title="Who else sees any of it">
         <ul>
-          <li><strong>The AI model that tailors your resume.</strong> To tailor a resume, your confirmed facts and the job description are sent to the model provider this site uses, or to your own model if you entered one for a run. Nothing else is sent to it.</li>
+          <li><strong>The AI model that tailors your resume.</strong> To tailor a resume, your confirmed facts and the job description are sent to the model provider this site uses, or to your own model if you entered one for a run. Nothing else is sent to it. The provider handles it under its own terms; free plans may use what&apos;s sent to improve their models.</li>
           <li><strong>Job boards.</strong> Job Copilot downloads public job listings from Greenhouse, Lever, Ashby and SmartRecruiters. It sends them nothing about you. Applying happens on the employer&apos;s own site, by you.</li>
-          <li><strong>Nobody else.</strong> Job Copilot doesn&apos;t sell your data, show ads, or use it to train AI models.</li>
+          <li><strong>Nobody else.</strong> Job Copilot itself doesn&apos;t sell your data, show ads, or use it to train AI models.</li>
         </ul>
       </Section>
 
@@ -70,7 +85,7 @@ export default function PrivacyPage() {
         <ul>
           <li><strong>Download my data</strong> (Career Profile → Your data) gives you everything Job Copilot keeps for you, as a zip file.</li>
           <li><strong>Delete my account and data</strong> removes it all from the server straight away.</li>
-          <li><strong>Sign out on every device</strong> ends every session at once.</li>
+          {!shared && <li><strong>Sign out on every device</strong> ends every session at once.</li>}
         </ul>
       </Section>
 

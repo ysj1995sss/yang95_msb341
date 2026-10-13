@@ -72,6 +72,13 @@ def _section_body(doc: DocxDocument, heading: str) -> list[Paragraph]:
     return [p for p in paragraphs[start:end] if p.text.strip()]
 
 
+def _shown_in(doc: DocxDocument, value: str) -> bool:
+    """The value appears as a whole term somewhere in the document's text."""
+    from resume_tailorer.analyzers.term_match import mentions
+
+    return any(mentions(value, p.text) for p in doc.paragraphs)
+
+
 def sync_simple_fields(doc: DocxDocument, profile: CareerTruthProfile) -> list[SyncField]:
     fields: list[SyncField] = []
     all_paragraphs = _all_paragraphs(doc)
@@ -164,7 +171,9 @@ def sync_simple_fields(doc: DocxDocument, profile: CareerTruthProfile) -> list[S
             targets = [body[0] for body in bodies if len(body) == 1 and ":" not in body[0].text]
             if len(targets) == 1:
                 _record_update(fields, key, ", ".join(values), targets[0], ", ".join(values))
-            else:
+            elif not all(_shown_in(doc, value) for value in values):
+                # Skills one per line, or tools read from bullets, are already in the file: only a
+                # value the file doesn't show needs a note (a false note on every run, 2026-10-13).
                 _unplaced(fields, key, ", ".join(values), f"{key} line missing or ambiguous")
     return fields
 
@@ -191,9 +200,12 @@ def sync_education_and_certifications(doc: DocxDocument, profile: CareerTruthPro
                 _unplaced(fields, "education", entry.institution, "education year is inconsistent", blocking=True)
             continue
         # Already in the file exactly as in the profile (any layout, e.g. "School | City  Dates"
-        # with the degree on the next line): nothing to sync, so nothing to block (2026-10-12).
-        following = education[education.index(p) + 1].text if education.index(p) + 1 < len(education) else ""
-        nearby = f"{p.text} {following}".casefold()
+        # with the degree on the next line, or on the line above): nothing to sync, so nothing to
+        # block (2026-10-12; the line above since 2026-10-13, when imports began reading it).
+        at = education.index(p)
+        before = education[at - 1].text if at > 0 else ""
+        following = education[at + 1].text if at + 1 < len(education) else ""
+        nearby = f"{before} {p.text} {following}".casefold()
         if (all(value.casefold() in nearby for value in (entry.degree, entry.field, entry.institution) if value)
                 and (not entry.year or str(entry.year) in nearby)):
             continue
@@ -208,7 +220,12 @@ def sync_education_and_certifications(doc: DocxDocument, profile: CareerTruthPro
 
     if profile.certifications:
         body = _section_body(doc, "CERTIFICATIONS")
-        if len(body) == 1:
+        listed = {p.text.strip().lstrip("•-–*").strip().casefold() for p in body}
+        if len(body) > 1 and listed == {cert.strip().casefold() for cert in profile.certifications}:
+            # One per line, exactly as in the profile: nothing to sync. This used to be "ambiguous"
+            # and blocked every run for such resumes (dogfood, 2026-10-13).
+            pass
+        elif len(body) == 1:
             _record_update(fields, "certifications", ", ".join(profile.certifications), body[0],
                            ", ".join(profile.certifications))
         else:

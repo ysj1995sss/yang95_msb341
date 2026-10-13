@@ -124,7 +124,13 @@ COMPETENCY_EVIDENCE_PATTERNS: dict[str, dict[str, list[str]]] = {
             r"executive-ready",
             r"presented?\b.{0,25}\b(leadership|executive|senior)",
         ],
-        "partial": [r"\bpresent\w*\b"],
+        "partial": [
+            r"\bpresent\w*\b",
+            # Explaining results to business leads is communication too: "Partnered with merchandising
+            # leads to explain sales trends" was no evidence for it (dogfood, 2026-10-13).
+            r"\bpartner\w*\b.{0,30}\b(leads?|leaders?|managers?|directors?|executives?)\b",
+            r"\bexplain\w*\b",
+        ],
     },
     "cpg experience": {
         "strong": [

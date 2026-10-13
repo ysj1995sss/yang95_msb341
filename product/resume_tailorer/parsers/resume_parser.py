@@ -633,16 +633,16 @@ class ResumeParser:
                     )
                     bullets[-1] = (category, merged_text)
 
-            responsibilities = [t for cat, t in bullets if cat == "responsibilities"]
-            accomplishments = [t for cat, t in bullets if cat == "accomplishments"]
-
+            # Every bullet stays in one list, in the resume's order. A separate accomplishments list
+            # (bullets with a number) was always listed after the rest, so a rebuilt PDF resume
+            # reordered each job's bullets (dogfood, 2026-10-13). Older profiles may still have one.
             work_experience.append(
                 WorkExperience(
                     employer=employer.strip(),
                     title=title,
                     dates=dates.strip(),
-                    responsibilities=responsibilities,
-                    accomplishments=accomplishments,
+                    responsibilities=[text for _category, text in bullets],
+                    accomplishments=[],
                     location=location.strip() if location else None,
                 )
             )

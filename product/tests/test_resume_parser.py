@@ -78,7 +78,7 @@ class TestWrappedBulletContinuation:
         jobs = parser._extract_work_experience(text)
 
         assert len(jobs) == 1
-        combined = " ".join(jobs[0].accomplishments)
+        combined = " ".join(jobs[0].responsibilities + jobs[0].accomplishments)
         assert "$50M" in combined
         # The wrapped continuation text must survive, not just the first line.
         assert "incremental sales potential" in combined
@@ -626,3 +626,18 @@ class TestSkillsSectionEdges:
         skills = ResumeParser()._extract_skills(text)
         assert {"Tableau", "Docker", "Git", "Python"} <= set(skills)
         assert not {"Tools & Platforms", "Languages"} & set(skills)
+
+
+def test_bullets_keep_their_order_in_the_resume():
+    """Dogfood round 3, 2026-10-13: bullets with a number were split into a separate accomplishments list
+    that every step lists after the rest, so a rebuilt PDF resume silently reordered each job's bullets
+    (and evidence labels like "bullet 3" counted in the wrong order)."""
+    text = ("EXPERIENCE\nSenior Data Analyst\nNorthwind Retail | Austin, TX | 2021 - Present\n"
+            "- Led a team of 3 analysts building weekly sales dashboards\n"
+            "- Migrated reporting to AWS Redshift, cutting query time by 40%\n"
+            "- Built SQL pipelines feeding pricing reviews\n")
+    [job] = ResumeParser()._extract_work_experience(text)
+    assert job.responsibilities == ["Led a team of 3 analysts building weekly sales dashboards",
+                                    "Migrated reporting to AWS Redshift, cutting query time by 40%",
+                                    "Built SQL pipelines feeding pricing reviews"]
+    assert job.accomplishments == []

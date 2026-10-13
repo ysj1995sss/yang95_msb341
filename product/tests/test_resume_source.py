@@ -38,3 +38,16 @@ def test_saved_disclosure_roundtrip_is_not_current_selection():
 def test_legacy_disclosure_is_unknown():
     assert 'unavailable' in source_disclosure(None)['file_label']
     assert 'Unknown' in source_disclosure(None)['facts_label']
+
+
+def test_only_a_one_off_file_is_described_as_uploaded_for_this_job():
+    """Dogfood round 3, 2026-10-13: every review said "Uploading here does not update your Career
+    Profile", though nothing on the page was being uploaded unless a one-off file was used."""
+    from resume_tailorer.resume_source import source_disclosure
+
+    profile_resume = source_disclosure({"filename": "r.docx", "file_source": "career_profile", "kind": "DOCX",
+                                        "fact_source": "vault", "profile_version": 1})
+    one_off = source_disclosure({"filename": "r.docx", "file_source": "one_off", "kind": "DOCX",
+                                 "fact_source": "vault", "profile_version": 1})
+    assert "upload" not in profile_resume["note"].lower()
+    assert "used for this job only" in one_off["note"]

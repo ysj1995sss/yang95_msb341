@@ -29,3 +29,13 @@ test("one visitor can't lock everyone out of the shared test", async ({ page }) 
   expect(refused.status()).toBe(400);
   expect((await page.request.get(`${SHARED}/api/backend/profile`)).ok()).toBeTruthy();
 });
+
+test("the privacy page tells the truth about the shared test", async ({ page }) => {
+  // Dogfood round 3, 2026-10-13: it said data sat "in a folder that belongs to your account alone" and
+  // that nobody else uses it, on a test where everyone shares one workspace and the free model may.
+  await page.goto(`${SHARED}/privacy`);
+  await expect(page.getByText(/everyone using this address sees and can change the same data/)).toBeVisible();
+  await expect(page.getByText(/belongs to your account alone/)).toHaveCount(0);
+  await expect(page.getByText(/free plans may use what's sent/)).toBeVisible();
+  await expect(page.getByText("Sign out on every device")).toHaveCount(0);
+});

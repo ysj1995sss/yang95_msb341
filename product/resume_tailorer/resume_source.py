@@ -47,7 +47,10 @@ def source_disclosure(info: dict | None) -> dict:
     file_label = f"{info['filename']} · {'one-off file' if info['file_source'] == 'one_off' else 'Career Profile resume'}"
     saved = info['fact_source'] == FACT_VAULT
     facts_label = 'Saved Career Profile (confirmation status preserved)' if saved else 'This uploaded resume'
-    note = 'Uploading here does not update your Career Profile or replace its master resume. '
+    # Only a one-off file was uploaded on this page; saying "Uploading here..." for the Career Profile
+    # resume described an upload that never happened (dogfood, 2026-10-13).
+    note = ("This file is used for this job only. It does not update your Career Profile or replace its master resume. "
+            if info['file_source'] == 'one_off' else '')
     if saved:
         note += 'Your saved Career Profile takes precedence as the source of facts. '
     else:
