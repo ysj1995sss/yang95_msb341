@@ -122,3 +122,12 @@ def test_a_failed_search_says_so_without_internal_details(jobs_client, monkeypat
     response = jobs_client.post("/v2/jobs/search", json={"job_title": "Data Analyst"})
     assert response.status_code == 502
     assert "didn't finish" in response.json()["detail"] and "jobs.db" not in response.json()["detail"]
+
+
+def test_saving_a_job_counts_as_saved_on_home_and_tracker(jobs_client):
+    # Dogfood, 2026-10-13: Home said "0 saved" right above a "Saved jobs" list with a job in it:
+    # the count was tracker entries in a "saved" status, which the website never creates.
+    _search(jobs_client)
+    assert jobs_client.post("/v2/jobs/greenhouse_101/action", json={"action": "save"}).status_code == 200
+    assert jobs_client.get("/v2/home").json()["weekly"]["saved"] == 1
+    assert jobs_client.get("/v2/tracker").json()["weekly"]["saved"] == 1

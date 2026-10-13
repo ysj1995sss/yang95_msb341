@@ -38,9 +38,11 @@ def week_bounds(today: date) -> tuple[date, date]:
 
 
 def build_weekly_summary(
-    entries: Iterable[tuple[ApplicationStatus, Optional[date]]], today: date
+    entries: Iterable[tuple[ApplicationStatus, Optional[date]]], today: date, saved_jobs: Optional[int] = None
 ) -> WeeklySummary:
-    """entries: (current status, date the application was submitted or None)."""
+    """entries: (current status, date the application was submitted or None). saved_jobs: jobs saved
+    with Save in Jobs; when given it is the "saved" count, matching the Saved jobs list (the website
+    never creates tracker entries in a saved status, so Home said "0 saved" beside a saved job)."""
     start, end = week_bounds(today)
     applied = interviews = saved = 0
     for status, submitted in entries:
@@ -51,4 +53,4 @@ def build_weekly_summary(
             applied += 1
         if status in _INTERVIEW:
             interviews += 1
-    return WeeklySummary(start, end, applied, interviews, saved)
+    return WeeklySummary(start, end, applied, interviews, saved if saved_jobs is None else saved_jobs)

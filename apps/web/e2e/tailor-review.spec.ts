@@ -175,4 +175,8 @@ test("the review list says each change's state in words, not only by icon and co
   const queue = page.getByRole("navigation", { name: "Review queue" });
   await expect(queue.getByText("Original kept by AI assistance", { exact: true })).toBeVisible();
   await expect(queue.getByText("Not reviewed · failed a check", { exact: true })).toBeVisible();
+  // A failed change can't be accepted, so selecting "all unreviewed" for Accept leaves it out
+  // (dogfood, 2026-10-13: one failed change made the whole "Accept selected" refuse).
+  await page.getByRole("button", { name: "Select all unreviewed" }).click();
+  await expect(page.getByText("0 selected", { exact: true })).toBeVisible();
 });

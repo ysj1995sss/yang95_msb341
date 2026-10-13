@@ -131,3 +131,25 @@ def test_a_profile_edit_flags_tailored_jobs_and_blocks_preparing(tailor_client, 
     assert [i["job_id"] for i in batch["items"]] == ["greenhouse_101"] and batch["items"][0]["stale"] is False
     assert batch["summary"] == "1 of 1 tailored"  # the same batch, redone in place
     assert tailor_client.post("/v2/batch/again", json={"job_id": "nope_1"}).status_code == 404
+
+
+def test_home_lists_every_batch_resume_awaiting_decisions(tailor_client, monkeypatch):  # noqa: F811
+    # Dogfood, 2026-10-13: "Resumes awaiting your decisions" only showed the open job, so a batch of
+    # several tailored resumes appeared on Home as one.
+    from resume_tailorer.docx_export import pipeline
+
+    from tests.e2e_server import fake_pdf
+
+    monkeypatch.setattr(pipeline, "convert_docx_to_pdf", fake_pdf)
+    _setup(tailor_client)
+    pasted = tailor_client.post("/v2/tailor/pasted", json={
+        "title": "Marketing Analyst", "company": "Bluebird Goods",
+        "description": ("Marketing Analyst at Bluebird Goods. Requirements: SQL and dashboard reporting for business "
+                        "partners, weekly KPI reporting, partnering with sales leaders, explaining trends to executives, "
+                        "and keeping data definitions consistent across teams in a fast-growing company. You will also "
+                        "own the quarterly business review deck and work closely with finance on forecasting.")}).json()
+    tailor_client.post("/v2/batch/tailor", json={"job_ids": ["greenhouse_101", pasted["job"]["job_id"]]})
+    assert all(i["status"] == "done" for i in _wait(tailor_client)["items"])
+    drafts = tailor_client.get("/v2/home").json()["view"]["drafts"]
+    titles = [d["title"] for d in drafts]
+    assert "Senior Data Analyst" in titles and "Marketing Analyst" in titles and len(titles) == len(set(titles))

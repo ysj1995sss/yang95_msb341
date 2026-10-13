@@ -10,10 +10,12 @@ import { ResumeSource } from "./resume-source";
 
 const pct = (v: number | null) => (v === null || v === undefined ? "–" : `${Math.round(v * 100)}%`);
 
+const FAILED_CHECK = "We could not verify this claim";
+
 /** A review-list row's state in words: decided (and by whom when AI decided) or not, and a failed check. */
 function queueState(c: Change): string {
   const decided = c.decision ? `${c.decision_label}${c.decision_origin === "AI-assisted" ? " by AI assistance" : ""}` : "Not reviewed";
-  return c.check === "We could not verify this claim" ? `${decided} · failed a check` : decided;
+  return c.check === FAILED_CHECK ? `${decided} · failed a check` : decided;
 }
 
 function Steps({ review }: { review: Review }) {
@@ -183,7 +185,8 @@ export function ReviewRoom({ review, onChange, onReload, onDiscard }: {
             <>
               <div className="flex flex-wrap items-center gap-2">
                 <Button onClick={() => setShowAll((value) => !value)}>{showAll ? "Show one change" : "Show all changes"}</Button>
-                <Button onClick={() => setSelected(review.changes.filter((change) => !change.decision).map((change) => change.id))}>Select all unreviewed</Button>
+                {/* Changes that failed a check can't be accepted, so they're never swept into a batch accept. */}
+                <Button onClick={() => setSelected(review.changes.filter((change) => !change.decision && change.check !== FAILED_CHECK).map((change) => change.id))}>Select all unreviewed</Button>
                 <Button onClick={() => setSelected([])} disabled={!selectedIds.length}>Clear selection</Button>
                 <span role="status" className="text-[14px] font-semibold">{selectedIds.length} selected</span>
               </div>

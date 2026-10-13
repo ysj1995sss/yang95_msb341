@@ -132,7 +132,7 @@ export default function HomePage() {
             ) : (
               <p className="mt-2 text-[14px] text-muted">Set a weekly goal in Career Profile → Job goals if it helps you pace yourself.</p>
             )}
-            <p className="mt-3 text-[14px]">{data.weekly.interviews} in interviews · {data.weekly.saved} saved</p>
+            <p className="mt-3 text-[14px]">{data.weekly.interviews} in interviews · {data.weekly.saved} saved {data.weekly.saved === 1 ? "job" : "jobs"}</p>
           </Card>
           <Card aria-labelledby="recent">
             <h2 id="recent" className="text-[18px] font-semibold">Recent activity</h2>

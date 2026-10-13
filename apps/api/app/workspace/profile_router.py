@@ -163,11 +163,11 @@ class Goals(BaseModel):
     relocation_willing: bool = False
     remote_preference: str = "any"
     experience_level: list[str] = Field(default_factory=list)
-    min_salary: int = 0
+    min_salary: int = Field(default=0, ge=0)
     industries: list[str] = Field(default_factory=list)
     authorized_to_work: Optional[bool] = None
     sponsorship_required: Optional[bool] = None
-    weekly_goal: Optional[int] = None
+    weekly_goal: Optional[int] = Field(default=None, ge=0)
 
 
 def _save_profile(ws: Workspace, new_profile: dict, **extra) -> dict:

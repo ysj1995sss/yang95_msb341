@@ -335,7 +335,7 @@ export default function TrackerPage() {
                 <p className="mt-2 text-[14px] text-muted">{data.weekly.applied} of {weeklyGoal}. A goal is a pace, not a test.</p>
               </>
             )}
-            <p className="mt-3 text-[15px]">{data.weekly.interviews} in interviews · {data.weekly.saved} saved, not applied</p>
+            <p className="mt-3 text-[15px]">{data.weekly.interviews} in interviews · {data.weekly.saved} saved {data.weekly.saved === 1 ? "job" : "jobs"}</p>
             <form className="mt-4 flex items-end gap-2" onSubmit={async (e) => {
               e.preventDefault();
               try { const r = await api<{ weekly_goal: number }>("/tracker/weekly-goal", { method: "PUT", json: { goal: weeklyGoal } }); setGoal(r.weekly_goal); toast("Weekly goal saved."); }

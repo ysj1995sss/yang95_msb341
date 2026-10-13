@@ -22,6 +22,27 @@ def _with_routes(items):
     return [dict(item, page=route_for(item.get("page", ""))) for item in items]
 
 
+def _batch_drafts(ws: Workspace, open_job_id, shown: set) -> list[dict]:
+    """Batch resumes still waiting for the person's decisions. Home only listed the open job, so a batch
+    of several tailored resumes looked like one (dogfood, 2026-10-13). They're opened from Tailor's
+    batch panel."""
+    from resume_tailorer.batch_runner import read_batch
+    from resume_tailorer.identity import user_dir
+    from resume_tailorer.review_store import load_review
+    from resume_tailorer.ui.home_state import TAILOR_PAGE
+
+    batch = read_batch(user_dir(ws.owner_id)) or {}
+    drafts = []
+    for item in batch.get("items") or []:
+        if item.get("status") != "done" or item.get("job_id") == open_job_id or item.get("title") in shown:
+            continue
+        review = load_review(ws.session["artifacts_dir"], item["job_id"])
+        if review and not (review.get("reviewed") and not review.get("dirty")):
+            drafts.append({"title": item.get("title", ""), "detail": f"{item.get('company', '')} · in your batch on Tailor",
+                           "page": TAILOR_PAGE})
+    return drafts
+
+
 @router.get("/home")
 def home(ws: Workspace = Depends(workspace)):
     from resume_tailorer.applications.models import ApplicationStatus
@@ -81,9 +102,11 @@ def home(ws: Workspace = Depends(workspace)):
     )
     view = jsonable(build_home_view(inputs))
     view["next_action"]["page"] = route_for(view["next_action"]["page"])
+    view["drafts"] += _batch_drafts(ws, pending.get("job_id"), {d["title"] for d in view["drafts"]})
     for key in ("drafts", "saved_jobs", "ready_to_finish", "followups_due"):
         view[key] = _with_routes(view[key])
-    weekly = build_weekly_summary([(r.status, r.applied) for r in rows], date.today())
+    weekly = build_weekly_summary([(r.status, r.applied) for r in rows], date.today(),
+                                  saved_jobs=len(service.db.get_jobs_by_latest_action("save", limit=10000)))
     recent = [
         {"date": stamp(r.last_update), "role": r.role, "company": r.company,
          "status": r.status.value.replace("_", " ")}

@@ -88,3 +88,11 @@ def test_a_damaged_file_gets_a_plain_message_without_server_details(workspace_cl
         detail = response.json()["detail"]
         assert response.status_code == 422 and says in detail
         assert "Temp" not in detail and ":\\" not in detail and "Package" not in detail and "/" not in detail
+
+
+def test_a_negative_salary_or_weekly_goal_is_refused(workspace_client):
+    # Dogfood, 2026-10-13: a minimum salary of -5 was saved as a goal.
+    _import(workspace_client)
+    assert workspace_client.put("/v2/profile/goals", json={"job_title": "Analyst", "min_salary": -5}).status_code == 422
+    assert workspace_client.put("/v2/profile/goals", json={"job_title": "Analyst", "weekly_goal": -1}).status_code == 422
+    assert workspace_client.put("/v2/profile/goals", json={"job_title": "Analyst", "min_salary": 90000}).status_code == 200
