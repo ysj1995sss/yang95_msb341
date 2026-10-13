@@ -1,8 +1,8 @@
 # Spec 023: Free online deployment for supervised testing
 
-**Status:** Draft for the builder's approval (2026-10-12). Nothing is deployed. No account has been
-created or touched.
-**Builds on:** decision 043 (online, free, sign-in, 3 testers first), decision 044 (free hosting,
+**Status:** Draft (2026-10-12), updated for decision 045: **no sign-in, one shared workspace.** Nothing is
+deployed. No account has been created or touched.
+**Builds on:** decision 043 (online, free, 3 testers first), decision 045 (no sign-in), decision 044 (free hosting,
 data may be wiped, the model provider may train on resumes), spec 009 ("Deploying").
 
 ## Goal and limits
@@ -47,7 +47,7 @@ python -c "import secrets; print(secrets.token_hex(32))"
 ```
 
 Save the two results in a password manager or a private note. First = `AUTH_SECRET`; second =
-`WORKSPACE_TOKEN_SECRET`. Each is 64 characters.
+`WORKSPACE_TOKEN_SECRET`. Each is 64 characters. **Use fresh values; never paste them into chat.**
 
 **A3. YOU: a model key.** Go to **aistudio.google.com**, sign in with a Google account, choose
 **Get API key → Create API key**, and save it privately. This is the free tier (see the limits
@@ -55,16 +55,7 @@ above). The app is already set up for Gemini, so `LLM_MODEL` will be `gemini/gem
 (the app's own fallback list uses this name; if Google has retired it, the first tailoring run
 will say so and we pick the current name).
 
-**A4. YOU: Google sign-in** (it makes each tester see only their own data):
-1. Go to **console.cloud.google.com** and create a project (any name).
-2. **APIs & Services → OAuth consent screen:** choose **External**, give the app a name and your
-   email, and save. Leave publishing status as **Testing**.
-3. On that screen, under **Test users**, click **Add users** and enter the Gmail address of **each
-   tester and yourself**. Only listed people can sign in.
-4. **APIs & Services → Credentials → Create credentials → OAuth client ID**, application type
-   **Web application**. Leave the address boxes empty for now and click Create.
-5. Copy the **Client ID** and **Client secret** into your private note. They are
-   `AUTH_GOOGLE_ID` and `AUTH_GOOGLE_SECRET`.
+**A4. Skipped:** no Google sign-in (decision 045). There is no Google Cloud step.
 
 ### B. The backend on Render
 
@@ -78,6 +69,8 @@ for the secret values:
 - `LLM_API_KEY` = your key from A3;
 - leave `LLM_FALLBACK_MODELS`, `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` and `ERROR_WEBHOOK_URL`
   empty.
+- optional: add `TAILOR_RUNS_PER_DAY` = `40`. The shared workspace is one owner, so the default
+  of 15 runs a day is shared by all testers together.
 
 **B3. YOU:** click **Apply**. The first build takes several minutes (it installs LibreOffice).
 When it says **Live**, copy the service address (like `https://job-copilot-api-xxxx.onrender.com`).
@@ -98,30 +91,27 @@ of the Render log to me (they contain no secrets) and I fix it.
 - `API_URL` = the Render address from B3, with no slash at the end;
 - `AUTH_SECRET` = your first secret from A2;
 - `WORKSPACE_TOKEN_SECRET` = your **second** secret (the same one as on Render);
-- `AUTH_GOOGLE_ID` and `AUTH_GOOGLE_SECRET` from A4.
+- `SHARED_TEST_WORKSPACE` = `yes` (this turns on the no-sign-in shared workspace);
+- do **not** add `AUTH_GOOGLE_ID` or `AUTH_GOOGLE_SECRET`.
 
 **C3. YOU:** click **Deploy** and copy the site address.
 
-### D. Finish Google sign-in
+### D. Skipped (Google sign-in)
 
-**D1. YOU:** back in Google Cloud, open your OAuth client and add:
-- **Authorized JavaScript origins:** `https://<name>.vercel.app`
-- **Authorized redirect URIs:** `https://<name>.vercel.app/api/auth/callback/google`
-
-Save, and wait about a minute. If Vercel was deployed before D1, click **Redeploy** there.
+Not needed. If you redeploy Vercel after changing settings, use **Redeploy** on the project.
 
 ### E. Check it before any tester sees it
 
-1. **YOU:** open the site in a private browser window and click sign in with Google.
-2. **YOU:** import a **PDF** resume, run a search, and tailor one job. The first request after
-   idle takes about a minute (Render waking up).
-3. **YOU:** sign in as a second Google account from your test users, in another private window.
-   **Confirm it can't see the first account's resume.**
+1. **YOU:** open the site. The header badge should say **Shared test**.
+2. **YOU:** import a **PDF** resume, run a search, and tailor one job. The first request after idle
+   takes about a minute (Render waking up).
+3. **YOU:** open the site in another browser or a private window. **You should see the same data.**
+   That is expected: it is one shared workspace.
 4. Tell me the result.
 
 ### F. What to tell each tester, before they sign in
 
-> This is a supervised test of an early product. Please upload your resume as a **PDF**. The free
+> This is a supervised test of an early product with no sign-in: **everyone using this address sees and overwrites the same data, so we test one person at a time.** Please upload your resume as a **PDF**. The free
 > test server forgets everything after about 15 minutes of inactivity, so please finish in one
 > sitting. The AI service we use on its free plan **may use what you send, including your resume
 > text, to improve its products, and its staff may read it.** If you're not comfortable with

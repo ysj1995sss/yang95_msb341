@@ -21,8 +21,8 @@ function isActive(pathname: string, href: string) {
   return href === "/" ? pathname === "/" : pathname === href || pathname.startsWith(`${href}/`);
 }
 
-export function AppShell({ children, signInEnabled, userName }: {
-  children: ReactNode; signInEnabled: boolean; userName: string | null;
+export function AppShell({ children, signInEnabled, sharedTest = false, userName }: {
+  children: ReactNode; signInEnabled: boolean; sharedTest?: boolean; userName: string | null;
 }) {
   const pathname = usePathname();
   if (pathname === "/signin" || pathname === "/privacy") return <ToastProvider>{children}</ToastProvider>;
@@ -71,11 +71,13 @@ export function AppShell({ children, signInEnabled, userName }: {
             ) : (
               <details className="relative">
                 <summary className="cursor-pointer list-none rounded-full border border-review/30 bg-review-soft px-3 py-1 text-[13px] font-semibold text-review">
-                  Local demo
+                  {sharedTest ? "Shared test" : "Local demo"}
                 </summary>
                 <p className="absolute right-0 z-50 mt-2 w-72 max-w-[calc(100vw-2rem)] rounded-[var(--radius-card)] border border-line bg-paper p-3 text-[14px] text-muted">
-                  Sign-in isn&apos;t set up here, so everyone using this address shares one workspace. Don&apos;t share
-                  this link. Job Copilot only uses facts you&apos;ve confirmed and never submits for you.
+                  {sharedTest
+                    ? "This is a shared test. There is no sign-in, so everyone using this address sees and overwrites the same resume and data, and it can be wiped at any time. Don't upload a resume you want kept private. "
+                    : "Sign-in isn't set up here, so everyone using this address shares one workspace. Don't share this link. "}
+                  Job Copilot only uses facts you&apos;ve confirmed and never submits for you.
                 </p>
               </details>
             )}

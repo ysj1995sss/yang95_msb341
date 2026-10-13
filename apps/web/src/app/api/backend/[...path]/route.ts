@@ -2,7 +2,7 @@
 // workspace API with a short-lived token for the signed-in user. The browser never holds
 // an API credential, and the API is never exposed to it directly (decision 029).
 import { type NextRequest } from "next/server";
-import { SESSION_COOKIE, apiToken, googleConfigured, readSession } from "@/lib/auth";
+import { SESSION_COOKIE, SHARED_SESSION, apiToken, googleConfigured, readSession, sharedTestWorkspace } from "@/lib/auth";
 
 const API_URL = process.env.API_URL ?? "http://127.0.0.1:8000";
 const FORWARDED_HEADERS = ["content-type", "accept"];
@@ -18,6 +18,8 @@ async function forward(request: NextRequest, context: { params: Promise<{ path: 
     const session = await readSession(request.cookies.get(SESSION_COOKIE)?.value);
     if (!session) return Response.json({ detail: "Sign in to continue." }, { status: 401 });
     headers.set("authorization", `Bearer ${await apiToken(session)}`);
+  } else if (sharedTestWorkspace()) {
+    headers.set("authorization", `Bearer ${await apiToken(SHARED_SESSION)}`);
   }
   const target = `${API_URL}/v2/${path.map(encodeURIComponent).join("/")}${request.nextUrl.search}`;
   const hasBody = !["GET", "HEAD"].includes(request.method);

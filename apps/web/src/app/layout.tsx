@@ -3,7 +3,7 @@ import { cookies } from "next/headers";
 import { connection } from "next/server";
 import { Lexend, Source_Sans_3 } from "next/font/google";
 import { AppShell } from "@/components/app-shell";
-import { SESSION_COOKIE, googleConfigured, readSession } from "@/lib/auth";
+import { SESSION_COOKIE, googleConfigured, readSession, sharedTestWorkspace } from "@/lib/auth";
 import "./globals.css";
 
 const lexend = Lexend({ subsets: ["latin"], weight: ["500", "600", "700"], variable: "--font-lexend" });
@@ -30,7 +30,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
   return (
     <html lang="en" className={`${lexend.variable} ${sourceSans.variable}`}>
       <body className="min-h-dvh antialiased">
-        <AppShell signInEnabled={signInEnabled} userName={session?.name ?? null}>
+        <AppShell signInEnabled={signInEnabled} sharedTest={sharedTestWorkspace()} userName={session?.name ?? null}>
           {children}
         </AppShell>
       </body>

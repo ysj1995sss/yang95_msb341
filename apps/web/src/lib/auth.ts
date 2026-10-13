@@ -16,6 +16,18 @@ export function googleConfigured(): boolean {
   return Boolean(process.env.AUTH_GOOGLE_ID && process.env.AUTH_GOOGLE_SECRET);
 }
 
+/**
+ * Shared test workspace (decision 045): with Google sign-in off and SHARED_TEST_WORKSPACE=yes, every
+ * visitor acts as one fixed owner, so an online test needs no sign-in. Everyone using the address
+ * sees and overwrites the same data, and anyone with the address can spend the model key. It is
+ * never on by default and never when Google sign-in is configured.
+ */
+export function sharedTestWorkspace(): boolean {
+  return !googleConfigured() && process.env.SHARED_TEST_WORKSPACE === "yes";
+}
+
+export const SHARED_SESSION: Session = { sub: "shared-test-workspace", name: "Shared test workspace", email: "", sv: 0 };
+
 function key(name: "AUTH_SECRET" | "WORKSPACE_TOKEN_SECRET"): Uint8Array {
   const value = process.env[name];
   if (!value || value.length < 32) {
