@@ -183,6 +183,13 @@ def sync_education_and_certifications(doc: DocxDocument, profile: CareerTruthPro
             if entry.year and str(entry.year) not in p.text:
                 _unplaced(fields, "education", entry.institution, "education year is inconsistent", blocking=True)
             continue
+        # Already in the file exactly as in the profile (any layout, e.g. "School | City  Dates"
+        # with the degree on the next line): nothing to sync, so nothing to block (2026-10-12).
+        following = education[education.index(p) + 1].text if education.index(p) + 1 < len(education) else ""
+        nearby = f"{p.text} {following}".casefold()
+        if (all(value.casefold() in nearby for value in (entry.degree, entry.field, entry.institution) if value)
+                and (not entry.year or str(entry.year) in nearby)):
+            continue
         parts = [part.strip() for part in p.text.split(",")]
         if len(parts) < 3 or entry.institution.lower() not in parts[1].lower():
             _unplaced(fields, "education", entry.institution, "education format is ambiguous", blocking=True)

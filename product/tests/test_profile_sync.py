@@ -398,3 +398,44 @@ def test_a_phone_in_brackets_never_gets_a_second_bracket():
     edited = _contact_doc()
     sync_simple_fields(edited, _contact_profile("(555) 010-0199"))
     assert edited.paragraphs[1].text == "sam@example.com | (555) 010-0199 | Portland, OR"
+
+
+def test_an_unchanged_two_line_education_entry_never_blocks_tailoring(tmp_path):
+    # Found by the builder's own batch (2026-10-12): "School, College | City<tab>Dates" with the
+    # degree on the next line was "education format is ambiguous" and blocked every Word tailoring,
+    # although the profile had not changed. Synthetic resume in that layout.
+    from resume_tailorer.docx_export.profile_sync import sync_docx_to_profile
+    from resume_tailorer.parsers.resume_parser import ResumeParser
+
+    doc = Document()
+    for line in ("Sam Example", "sam@example.com | (555) 010-0100", "EDUCATION",
+                 "STATE UNIVERSITY, SCHOOL OF BUSINESS | Springfield, IL\tSept 2025-Apr 2027",
+                 "Master of Business Administration",
+                 "STATE UNIVERSITY-NORTH | Springfield, IL\tApr 2018-Apr 2022",
+                 "B.S. Business Administration (Summa Cum Laude)",
+                 "EXPERIENCE", "Data Analyst", "Acme | Remote\tJan 2022-Present"):
+        doc.add_paragraph(line)
+    doc.add_paragraph("Built SQL dashboards used by 40 managers", style="List Bullet")
+    path = tmp_path / "two_line.docx"
+    doc.save(path)
+    profile = ResumeParser().parse(str(path))
+    assert len(profile.education) == 2
+    result = sync_docx_to_profile(path.read_bytes(), profile)
+    assert not result.has_blockers, result.summary
+
+
+def test_an_edited_two_line_education_entry_still_blocks_rather_than_guessing(tmp_path):
+    from dataclasses import replace
+    from resume_tailorer.docx_export.profile_sync import sync_docx_to_profile
+    from resume_tailorer.parsers.resume_parser import ResumeParser
+
+    doc = Document()
+    for line in ("Sam Example", "sam@example.com", "EDUCATION",
+                 "STATE UNIVERSITY-NORTH | Springfield, IL\tApr 2018-Apr 2022", "B.S. Business Administration",
+                 "EXPERIENCE", "Data Analyst", "Acme | Remote\tJan 2022-Present"):
+        doc.add_paragraph(line)
+    path = tmp_path / "edited.docx"
+    doc.save(path)
+    profile = ResumeParser().parse(str(path))
+    edited = replace(profile, education=[replace(profile.education[0], field="Economics")])
+    assert sync_docx_to_profile(path.read_bytes(), edited).has_blockers
