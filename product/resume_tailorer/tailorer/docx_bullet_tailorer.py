@@ -292,13 +292,15 @@ HOW TO APPROACH EACH BULLET -- work through this order, don't jump straight to r
    might already be evidenced by a bullet about aligning stakeholders, even if that bullet
    never uses the words "cross-functional" or "stakeholder management" verbatim). Find these
    BEFORE deciding anything needs a new phrase inserted.
-2. For each bullet, decide: KEEP (already strong evidence, clear language -- leave untouched),
-   REPHRASE (real evidence exists here, but job-relevant language would make it easier for a
-   recruiter to recognize the match), or LEAVE UNCHANGED (no relevant requirement applies to
-   this bullet -- most bullets should end up here).
-3. Do not spread edits thin by touching many bullets superficially. A resume where 2-4 bullets
-   are rephrased well to surface real, strong evidence beats one where every bullet has a
-   token keyword inserted.
+2. Rephrase EVERY bullet whose evidence supports a "MAKE CLEARER" target or a required
+   qualification, so a recruiter skimming for that requirement recognizes it at once: lead with
+   the job's own wording for the skill or outcome where the bullet's facts support it, name the
+   scope (who it was for, how often, how many) the bullet already states, and keep its metric.
+   The person chose tailoring because they want these edits; a resume returned unchanged when
+   the evidence supports clearer wording has failed them.
+3. Leave a bullet unchanged only when no requirement applies to it, or when it already uses the
+   job's wording for what it shows. Never insert a token keyword: every added word must be
+   supported by that bullet's own facts or the profile passage quoted for its target.
 
 SEMANTIC PRESERVATION -- CRITICAL, CHECK THIS BEFORE EVERY REWRITE:
 A rephrase may ADD job-relevant language. It must NEVER remove or replace a word that changes

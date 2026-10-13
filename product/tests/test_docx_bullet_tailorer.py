@@ -499,3 +499,17 @@ def test_edits_are_found_inside_a_reply_that_thinks_aloud_first():
     )
     assert _last_edit_array(reply) == [{"paragraph_index": 5, "change": False}]
     assert _last_edit_array("no json here [1, 2, 3]") is None
+
+
+def test_the_word_instructions_ask_for_every_supported_rephrase_and_keep_every_safety_rule():
+    # Spec 022 measurement: with confirmed evidence and "make clearer" targets, the model still
+    # kept every bullet, following "most bullets should end up here" and "2-4 bullets".
+    from resume_tailorer.tailorer.docx_bullet_tailorer import DocxBulletTailorer
+
+    prompt = DocxBulletTailorer(llm=MagicMock())._build_system_prompt()
+    assert "most bullets should end up here" not in prompt
+    assert "2-4 bullets" not in prompt
+    assert "EVERY bullet" in prompt and "MAKE CLEARER" in prompt
+    for rule in ("NEVER fabricate", "SEMANTIC PRESERVATION", "CRITICAL LENGTH LIMIT", "NEVER category D or E",
+                 "Do not add new bullets"):
+        assert rule in prompt
