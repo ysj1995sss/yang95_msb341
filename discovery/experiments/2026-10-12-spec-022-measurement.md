@@ -68,3 +68,25 @@ runs a day):
 
 Bugs 13 (date range read as a phone number) and 14 (doubled phone bracket) were found and fixed
 during these runs; see `discovery/bug-hunt-2026-10-12.md`.
+
+## After the changes (Word path, facts confirmed, real model)
+
+**Step 5, the instruction rewrite alone** (6 runs, a fresh scratch folder): changes per run went
+from 0,0,0,0,0,0 to **1,0,1,1,1,0**, all passing. The edits were small word-order rephrases.
+
+**Steps 3–4, skills additions** (6 runs on the same postings, after this commit):
+
+| Resume | Wise | Vanta | Experian |
+|---|---|---|---|
+| Fixture | 0 changes (1 rewrite turned down) | 0 | **Skills: "+ Oracle" (level 3, from SQL)** |
+| Fuller | 1 rephrase ("Aligned finance and merchandising leads on KPI definitions") | 0 | **Skills: "+ Oracle" (level 3)** |
+
+- **Checks:** all 6 passed.
+- **The additions** came from the reviewed adjacency list, and each one carried its reason.
+- **Variation:** job ordering varied between batches, so before/after compare similar, not
+  identical, postings.
+- **Honest limit:** most runs still change little. The safety checks rightly stop the model from
+  dropping or inventing words. Postings whose skills the person already lists leave nothing to
+  add.
+- **Not done yet:** the PDF/free-form path (it needs the builder's S1 answer first, and its own
+  check exemptions).
