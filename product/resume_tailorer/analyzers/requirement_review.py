@@ -615,6 +615,37 @@ def blocked_terms(review: RequirementReview) -> tuple[tuple[str, ...], tuple[str
     return tuple(never), tuple(listed)
 
 
+def requirement_wording(passage: str, review: Optional[RequirementReview]) -> str:
+    """The wording of the supported requirements `passage` is the evidence for. A rewrite of that
+    passage may use it: the review already found the evidence ("cross-team" for a bullet about a
+    launch "across 4 teams", for a job asking for "cross-team launches"). Decision 043 allows
+    rewording (level 1), and blocking the job's own words left tailoring with tiny edits
+    (2026-10-13). Named terms the evidence doesn't show are removed, so they stay blocked, and so
+    are years and numbers: "4+ years of analytics" is the job's ask, never the person's claim."""
+    if review is None or not passage:
+        return ""
+    flat = _flat(passage)
+    parts = []
+    for row in review.targets:
+        if not any(_same_passage(e.text, flat) for e in row.evidence):
+            continue
+        text = re.sub(r"\d+", " ", _YEARS.sub(" ", row.text))
+        for term in _specific_terms(row):
+            if term not in row.shown_terms:
+                for form in _search_forms(term):
+                    text = re.sub(rf"(?<![\w-]){re.escape(form)}(?![\w-])", " ", text, flags=re.IGNORECASE)
+        parts.append(text)
+    return " ".join(parts)
+
+
+def _same_passage(evidence: str, flat_passage: str) -> bool:
+    found = _flat(evidence)
+    if not found or not flat_passage:
+        return False
+    return found == flat_passage or (min(len(found), len(flat_passage)) > 20
+                                     and (found in flat_passage or flat_passage in found))
+
+
 def _is_listed(term: str, review: RequirementReview) -> bool:
     return term in review.listed or any(r.status == MENTION and term in r.terms for r in review.rows)
 

@@ -383,6 +383,13 @@ class DiffGenerator:
         "refined", "diagnosed", "resulting", "leading", "driving", "recognized",
         "serving", "served",  # "serving 50k users" restates "with 50k users" (2026-10-13)
     }
+    # Words that carry no claim of their own. A rewrite may drop them from a bullet's core clause:
+    # "dashboards used by 40 managers" -> "dashboards that let 40 managers" says the same thing.
+    # Requiring every one to survive left only word insertions (item 5, 2026-10-13).
+    _FILLER_WORDS = {
+        "used", "helped", "assisted", "responsible", "worked", "involved", "tasked", "participated",
+        "various", "several", "multiple", "different", "numerous", "duties", "also",
+    }
 
     @classmethod
     def _stem(cls, word: str) -> str:
@@ -474,7 +481,7 @@ class DiffGenerator:
         core, _elaboration = self._split_core_and_elaboration(original)
         core_words = self._content_words(core)
         new_stems = self._content_stems(new)
-        safe_stems = {self._stem(w) for w in self._SAFE_REPHRASE_WORDS}
+        safe_stems = {self._stem(w) for w in self._SAFE_REPHRASE_WORDS | self._FILLER_WORDS}
         dropped = {
             w for w in core_words
             if self._stem(w) not in new_stems and self._stem(w) not in safe_stems
@@ -531,7 +538,7 @@ class DiffGenerator:
 
     def check_bullet_pair_fabrication_risk(
         self, original: str, new: str, profile: CareerTruthProfile,
-        already_reported: Optional[set] = None,
+        already_reported: Optional[set] = None, grounded: str = "",
     ) -> List[str]:
         """
         Per-pair fabrication check, callable per bullet pair without any
@@ -550,6 +557,11 @@ class DiffGenerator:
         exact per-bullet-repetition problem that separate check's dedup
         existed to prevent. Defaults to a fresh set (today's per-call
         behavior, unchanged for every other existing caller).
+
+        `grounded`: wording a rewrite of THIS bullet may use as well, such as
+        the requirements the review found this bullet is the evidence for
+        (requirement_review.requirement_wording). It only exempts new words;
+        metrics and tool names are still checked against the profile.
         """
         if already_reported is None:
             already_reported = set()
@@ -603,7 +615,7 @@ class DiffGenerator:
         competency_backed_words = self._competency_label_words_evidenced_by(original)
         safe_stems = {self._stem(w) for w in self._SAFE_REPHRASE_WORDS} | {
             self._stem(w) for w in competency_backed_words
-        }
+        } | self._content_stems(grounded)
         genuinely_new = {
             w for w in self._content_words(new)
             if self._stem(w) not in trusted_stems

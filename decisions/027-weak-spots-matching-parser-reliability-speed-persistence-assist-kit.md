@@ -47,7 +47,8 @@ and fit scores must be reproducible.
   length.
 
 **Rejected:** raising the 15% length cap. It exists because a long bullet pushed a real one-page
-resume onto two pages.
+resume onto two pages. *(Reversed by decision 048: the cap is now 25%, because 15% left room for
+one or two words; the page check and decision 022's correction pass still handle overflow.)*
 
 ## 4. Search speed
 

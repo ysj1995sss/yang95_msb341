@@ -54,7 +54,7 @@ def build_freeform_changes(
     review=None,
 ) -> list[ResumeChange]:
     """Build deterministic, reviewable changes for the freeform/PDF path."""
-    from resume_tailorer.analyzers.requirement_review import introduced_unsupported
+    from resume_tailorer.analyzers.requirement_review import introduced_unsupported, requirement_wording
     from resume_tailorer.analyzers.claim_scope import introduced_unscoped_tools
 
     diff_generator = DiffGenerator()
@@ -80,7 +80,9 @@ def build_freeform_changes(
         status = ValidationStatus.PASS
         disposition = ChangeDisposition.PENDING
         unverified = (
-            diff_generator.check_bullet_pair_fabrication_risk(change.original, change.tailored, profile)
+            diff_generator.check_bullet_pair_fabrication_risk(
+                change.original, change.tailored, profile,
+                grounded=requirement_wording(change.original or "", review))
             if change.tailored
             else []
         )

@@ -22,9 +22,10 @@ Local commits on `main`, **not pushed**; the backend needs a Cloud Run rebuild a
   they're Remote" option hides jobs that don't state it.
 - **Certifications** the model drops are put back, never proposed for removal.
 - **Review list:** a change the checks kept out says "Left out", not "Not reviewed".
-- **Open (needs the builder's call):** tailoring proposes tiny rewrites because three checks block
-  ordinary rewording: the 15% length cap (Word), every core word must survive, and any new word
-  must already be in the profile. See the session report; decision 043 level 1 allows rewording.
+- **Room to reword (decision 048, approved):** the requirement's own wording is allowed on the
+  bullet that is its evidence (not years, numbers or unshown terms); filler words may be dropped;
+  the Word length cap is 25% (was 15%); the PDF instructions ask for every supported rephrase.
+  One real Codex pass on the fixture: 2 rewrites accepted, both blocked under the old rules.
 
 ## START HERE (2026-10-13, evening) — live on Vercel + Cloud Run; review, dogfood and bug fixes
 

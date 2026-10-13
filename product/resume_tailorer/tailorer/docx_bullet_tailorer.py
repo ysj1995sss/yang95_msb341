@@ -19,6 +19,7 @@ from resume_tailorer.analyzers.requirement_review import (
     RequirementReview,
     format_for_prompt,
     introduced_unsupported,
+    requirement_wording,
 )
 from resume_tailorer.diff_generator import DiffGenerator
 from resume_tailorer.llm.client import LLMClient
@@ -64,8 +65,10 @@ def _split_competency_line(text: str) -> tuple[str, list[str]]:
 # 71% longer than the original despite being told to keep length close,
 # which alone pushed a 1-page resume to 2 pages. Enforced again here in
 # code as a hard rule, per the user's own explicit ask that length limits
-# live in code, not just the system prompt.
-_MAX_LENGTH_GROWTH = 1.15
+# live in code, not just the system prompt. 25%, not 15%: 15% left room for one
+# or two words, so rewrites were tiny (item 5, 2026-10-13). A resume that still
+# grows onto an extra page fails the page check and gets the length correction.
+_MAX_LENGTH_GROWTH = 1.25
 
 # Wording that adds length but no claim. A draft that is only slightly over the cap
 # is trimmed with these before it is rejected (decision 027); the result still goes
@@ -328,7 +331,7 @@ back into the original document's own paragraphs. Because of this:
 - Do not merge or split bullets.
 - Do not restate the employer, title, or dates -- they are shown only for context.
 - CRITICAL LENGTH LIMIT: each bullet in the input includes "text_length" (its current
-  character count) and "max_new_text_length" (text_length + 15% -- the hard ceiling for
+  character count) and "max_new_text_length" (text_length + 25% -- the hard ceiling for
   "new_text"). This text replaces the original in a fixed-layout document; going over
   "max_new_text_length" risks pushing it onto an extra line or the whole resume onto an extra
   page. If your edit would exceed the limit, cut words elsewhere in the SAME bullet to stay
@@ -575,7 +578,8 @@ Return the JSON array now:"""
             # so it's enforced again here rather than trusted to the
             # prompt alone -- same lesson as length cap and semantic drift.
             fabrication_issues = self._diff_gen.check_bullet_pair_fabrication_risk(
-                bullet.text, new_text, profile
+                bullet.text, new_text, profile,
+                grounded=requirement_wording(bullet.text, getattr(self, "_review", None)),
             )
             if fabrication_issues:
                 warnings.append(f"Rejected a rewrite for paragraph {paragraph_index}: {fabrication_issues[0]}")

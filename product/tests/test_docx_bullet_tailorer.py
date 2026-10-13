@@ -11,7 +11,7 @@ from resume_tailorer.llm.client import LLMClient
 from resume_tailorer.tailorer.docx_bullet_tailorer import DocxBulletTailorer
 
 # Long enough that a short, safe addition (e.g. " via SQL") stays within the
-# 15% length-growth cap while every content word below is preserved --
+# length-growth cap (25%, decision 048) while every content word below is preserved --
 # avoids two hard-reject checks (length cap, semantic drift) fighting each
 # other in these fixtures purely because the base bullet was too short to
 # have room for both a realistic addition AND every original word intact.
@@ -194,7 +194,7 @@ class TestParseAndValidate:
     def test_rewrite_exceeding_length_cap_is_rejected_and_kept(
         self, sample_bullets, sample_profile, sample_job_analysis, sample_gap_report
     ):
-        """A rewrite that blows past the 15% growth cap must be rejected in
+        """A rewrite that blows past the growth cap (25%) must be rejected in
         CODE, not just discouraged in the prompt -- confirmed live
         (2026-09-22): a real model grew one bullet 71% longer despite being
         told to keep length close, pushing a 1-page resume to 2 pages."""
