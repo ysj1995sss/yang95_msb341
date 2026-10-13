@@ -1,6 +1,6 @@
 # Spec 020: Word conversion owns its own Word instance
 
-**Status:** Draft for review (2026-10-12). Not started.
+**Status:** Approved and implemented (2026-10-12, commit c243839). Live: two-process reproduction 12/12 passed, no Word left running. Not yet checked with the builder's own Word open.
 **Builds on:** decision 041 (open Word cleanup lock), decision 027 (converter order).
 
 ## Problem and evidence

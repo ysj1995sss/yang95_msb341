@@ -409,3 +409,56 @@ def test_a_wrapped_bullet_line_with_a_year_does_not_start_a_new_job():
     assert any(b.endswith("potential targeted for implementation by 2027") for b in first)
     assert any("9,000+ stores" in b for b in first)
     assert jobs[0].dates == "May 2026\u2013Aug 2026"
+
+
+class TestOneLineEducation:
+    """Bug hunt 2026-10-12 (#1, #2, #4): "Degree, School, Year" on one line put the whole
+    line in the school box and left the degree empty, so Career Profile asked the person to
+    fix a degree they had stated. Synthetic layouts only."""
+
+    @staticmethod
+    def _edu(*lines):
+        text = "Sam Example\nsam@example.com\nEDUCATION\n" + "\n".join(lines) + "\nSKILLS\nSQL, Excel\n"
+        return ResumeParser()._extract_education(text)
+
+    @pytest.mark.parametrize("line, degree, field, school, year", [
+        ("BS Economics, State University, 2019", "BS", "Economics", "State University", 2019),
+        ("B.S. in Economics, State University, 2019", "B.S.", "Economics", "State University", 2019),
+        ("Bachelor of Science in Economics, State University (2015-2019)",
+         "Bachelor of Science", "Economics", "State University", 2019),
+        ("State University | BA Statistics | 2018", "BA", "Statistics", "State University", 2018),
+        ("MBA, Tech Institute, 2022", "MBA", "", "Tech Institute", 2022),
+    ])
+    def test_one_line_degree_school_year(self, line, degree, field, school, year):
+        [entry] = self._edu(line)
+        assert (entry.degree, entry.field, entry.institution, entry.year) == (degree, field, school, year)
+
+    def test_two_one_line_degrees_both_keep_their_degree(self):
+        first, second = self._edu("M.S. Data Science, Tech Institute, 2022", "B.A. Statistics, State University, 2019")
+        assert (first.degree, first.field, first.institution) == ("M.S.", "Data Science", "Tech Institute")
+        assert (second.degree, second.field, second.institution) == ("B.A.", "Statistics", "State University")
+
+    @pytest.mark.parametrize("school_line", ["State University, Boston, MA 2019", "State College, Jackson, MS 2019"])
+    def test_a_state_abbreviation_is_not_a_degree(self, school_line):
+        [entry] = self._edu(school_line, "B.S. Economics")
+        assert (entry.degree, entry.field) == ("B.S.", "Economics")
+        assert entry.institution.startswith("State")
+
+    def test_two_line_layout_drops_the_year_from_the_school_and_keeps_gpa_apart(self):
+        [entry] = self._edu("State University, Portland, OR  2019", "B.S. Economics, GPA 3.6")
+        assert entry.institution == "State University, Portland, OR"
+        assert (entry.degree, entry.field, entry.gpa) == ("B.S.", "Economics", "3.6")
+
+
+def test_title_on_the_line_below_company_city_dates_is_not_swapped():
+    # Bug hunt 2026-10-12 (#3): "Acme Corp | Portland, OR | Dates" then "Data Analyst" was
+    # read as title "Acme Corp" at employer "Portland". Synthetic layout.
+    text = ("Sam Example\nsam@example.com\nEXPERIENCE\n"
+            "Acme Corp | Portland, OR | January 2021 to Present\nData Analyst\n"
+            "• Built SQL dashboards used by 40 managers\n"
+            "Beta LLC | Remote | 2018 - 2020\nReporting Analyst\n"
+            "• Automated weekly reports\nEDUCATION\nBS Economics, State University, 2019\n")
+    jobs = ResumeParser()._extract_work_experience(text)
+    assert [(j.title, j.employer) for j in jobs] == [("Data Analyst", "Acme Corp"), ("Reporting Analyst", "Beta LLC")]
+    assert jobs[0].dates == "January 2021 to Present" and jobs[0].location == "Portland, OR"
+    assert jobs[0].responsibilities + jobs[0].accomplishments == ["Built SQL dashboards used by 40 managers"]

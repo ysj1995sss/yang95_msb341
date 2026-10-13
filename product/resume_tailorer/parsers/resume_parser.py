@@ -75,6 +75,48 @@ def split_one_line_header(line: str) -> Optional[tuple[str, str, str, str]]:
     return title, employer, location, dates
 
 
+# Education written on one line ("BS Economics, State University, 2019"), found by the
+# 2026-10-12 bug hunt: the whole line used to land in the school box with no degree.
+_LONG_DEGREE = (r"(?:Bachelor|Master|Associate|Doctor)(?:'s)?"
+                r"(?:\s+of\s+(?:Business\s+Administration|Fine\s+Arts|Public\s+Health|Public\s+Policy|"
+                r"Science|Arts|Engineering|Education|Laws|Philosophy)|\s+degree)?")
+# Two-letter abbreviations double as US states (MA, MS), so they only count with a field after them.
+_SHORT_DEGREE = r"B\.?S\.?|B\.?A\.?|M\.?S\.?|M\.?A\.?"
+_STANDALONE_DEGREE = r"MBA|BBA|Ph\.?D\.?|B\.?Sc\.?|M\.?Sc\.?|B\.?Eng\.?|M\.?Eng\.?|J\.?D\.?"
+_DEGREE_PART = re.compile(
+    rf"^(?P<degree>{_LONG_DEGREE}|{_STANDALONE_DEGREE}|{_SHORT_DEGREE})(?![A-Za-z])\s*(?:in\s+)?(?P<field>.*)$",
+    re.IGNORECASE,
+)
+_MONTH = r"(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Sept|Oct|Nov|Dec)[a-z]*\.?"
+_DATE_SPAN = re.compile(
+    rf"\(?\s*(?:{_MONTH}\s+)?(?:19|20)\d{{2}}(?:\s*[-\u2013\u2014]\s*(?:(?:{_MONTH}\s+)?(?:19|20)\d{{2}}|present|current))?\s*\)?",
+    re.IGNORECASE,
+)
+_GPA = re.compile(r",?\s*\bGPA:?\s*([0-4]\.\d{1,2})(?:\s*/\s*4(?:\.0+)?)?", re.IGNORECASE)
+
+
+def _without_dates(text: str) -> str:
+    return _DATE_SPAN.sub("", text).strip(" ,;|-\u2013\u2014")
+
+
+def _split_one_line_education(line: str) -> tuple[str, str, str] | None:
+    """(degree, field, school) when one line holds the degree and the school, else None."""
+    parts = [p.strip() for p in re.split(r"\s*[,|]\s*|\s+[\u2013\u2014-]\s+", line) if p.strip()]
+    for i, part in enumerate(parts):
+        match = _DEGREE_PART.match(_without_dates(part))
+        if not match:
+            continue
+        degree, field = match.group("degree").strip(), match.group("field").strip()
+        if re.fullmatch(_SHORT_DEGREE, degree, re.IGNORECASE) and not re.search(r"[A-Za-z]", field):
+            continue  # "Boston, MA 2019": a state, not a degree
+        rest = [_without_dates(p) for j, p in enumerate(parts) if j != i]
+        school = next((p for p in rest if p), "")
+        if not school:
+            return None
+        return degree, field, school
+    return None
+
+
 class ResumeParser:
     """
     Parses PDF/DOCX resumes and extracts a CareerTruthProfile.
@@ -306,11 +348,12 @@ class ResumeParser:
 
             end_idx = anchor_idxs[a + 1] if a + 1 < len(anchor_idxs) else len(lines)
 
+            one_line = _split_one_line_education(institution_line)
             # The degree is the next non-blank line after the institution
-            # line, as long as it isn't a bullet.
+            # line, as long as it isn't a bullet (unless this line already holds it).
             degree_text = ""
             after_degree_idx = idx + 1
-            for j in range(idx + 1, end_idx):
+            for j in range(idx + 1, end_idx if one_line is None else idx + 1):
                 candidate = lines[j].strip()
                 if not candidate:
                     continue
@@ -328,12 +371,19 @@ class ResumeParser:
                 degree_text,
                 re.IGNORECASE,
             )
-            if degree_match:
+            if one_line is not None:
+                degree, field, institution = one_line
+            elif degree_match:
                 degree = degree_match.group(1).strip()
                 field = degree_match.group(2).strip()
             else:
                 degree = degree_text
                 field = ""
+            gpa_match = _GPA.search(field)
+            gpa = gpa_match.group(1) if gpa_match else None
+            if gpa_match:
+                field = (field[:gpa_match.start()] + field[gpa_match.end():]).strip(" ,;")
+            institution = _without_dates(institution) or institution
 
             notes = [
                 lines[j].strip().lstrip("•-").strip()
@@ -347,6 +397,7 @@ class ResumeParser:
                     field=field,
                     institution=institution,
                     year=year,
+                    gpa=gpa,
                     notes=notes,
                 )
             )
@@ -428,6 +479,16 @@ class ResumeParser:
 
             title_line = lines[block.title_index].strip() if block.title_index is not None else ""
             one_line = split_one_line_header(company_line)
+            below = next((i for i in block.body_indices if lines[i].strip()), None)
+            if (not title_line and below is not None and not is_bullet_line(lines[below])
+                    and len(lines[below].strip()) <= 80 and _TITLE_WORDS.search(lines[below])
+                    and not (one_line and _TITLE_WORDS.search(one_line[0]))):
+                # "Company | City | Dates" with the title on the line below it (bug hunt
+                # 2026-10-12): take that line as the title instead of reading the company
+                # line as "Title | Company | Dates".
+                title_line = lines[below].strip()
+                block.body_indices = [i for i in block.body_indices if i != below]
+                one_line = None
             if one_line and (not title_line or len(title_line) < MIN_TITLE_LENGTH):
                 # "Title | Company | Dates" on one line, so there is no separate title line.
                 title, employer, location, dates = one_line
