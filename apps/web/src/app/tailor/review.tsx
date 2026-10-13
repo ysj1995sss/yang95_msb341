@@ -53,6 +53,17 @@ function ChangeCard({ change, review, onDecide }: {
         <div className="min-w-0"><p className="text-[13px] font-semibold text-muted uppercase">Original</p><p className="mt-1 whitespace-pre-wrap break-words">{change.original || "(new line)"}</p></div>
         <div className="min-w-0"><p className="text-[13px] font-semibold text-muted uppercase">Proposed</p><p className="mt-1 whitespace-pre-wrap break-words rounded-[var(--radius-control)] bg-primary-soft p-2">{change.proposed}</p></div>
       </div>
+      {!!change.added_skills?.length && (
+        <ul className="mt-3 flex flex-col gap-2 text-[14px]" aria-label="Skills added to your skills line">
+          {change.added_skills.map((skill) => (
+            <li key={skill.term} className="flex flex-wrap items-center gap-2">
+              <Chip tone={skill.level === 2 ? "verified" : "review"}>{skill.level === 2 ? "Added skill: you have it" : "Added skill: adjacent"}</Chip>
+              <span className="font-semibold">{skill.term}</span>
+              <span className="text-muted">{skill.reason}</span>
+            </li>
+          ))}
+        </ul>
+      )}
       <p className="mt-2 text-[14px] text-muted">Check: {change.check}</p>
       {change.decision && <p className="mt-1 text-[14px] text-muted"><span>{change.decision_origin === "AI-assisted" ? "Chosen by AI assistance" : change.decision_origin === "person" ? "Chosen by you" : "Origin not recorded"}</span>{change.decision_reason && <span> · {change.decision_reason}</span>}</p>}
       {editing && (

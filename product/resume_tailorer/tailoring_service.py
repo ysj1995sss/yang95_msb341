@@ -28,7 +28,7 @@ from resume_tailorer.artifacts.length_control import (
     correct_docx_length_once,
     max_pages_label,
 )
-from resume_tailorer.artifacts.models import ChangeDisposition, FidelityMode
+from resume_tailorer.artifacts.models import ChangeCategory, ChangeDisposition, FidelityMode
 from resume_tailorer.artifacts.regeneration import (
     regenerate_docx_artifact,
     regenerate_freeform_artifact,
@@ -247,8 +247,15 @@ def regenerate(session: MutableMapping[str, Any], state: dict) -> None:
         selected = replace(change, disposition=disposition, manual_text=manual_text)
         from resume_tailorer.analyzers.claim_scope import introduced_unscoped_tools
         from resume_tailorer.artifacts.regeneration import final_text_for_change
-        scoped = introduced_unscoped_tools(change.original_text, final_text_for_change(selected), state["profile"],
-                                           section=change.section, review=state.get("requirement_review"))
+        final_text = final_text_for_change(selected)
+        # Spec 022: skills added by code (change levels 2-3) claim familiarity on the skills line, not
+        # use in one job, so the job-scope check doesn't apply when they're used exactly as computed.
+        # A person's own wording for that line gets every normal check.
+        computed_skills = (change.category is ChangeCategory.SKILLS_ADDED and final_text == change.proposed_text
+                           and disposition is not ChangeDisposition.MANUALLY_EDITED)
+        scoped = [] if computed_skills else introduced_unscoped_tools(
+            change.original_text, final_text, state["profile"], section=change.section,
+            review=state.get("requirement_review"))
         if scoped:
             raise TailoringError("Your selected change adds something we can't verify: " + "; ".join(scoped))
         updated_changes.append(selected)

@@ -72,10 +72,29 @@ class DocxTailoringResult:
     target_notes: dict[str, str] = field(default_factory=dict)
 
 
+def _skills_change(edit: BulletEdit, bullet, additions) -> ResumeChange:
+    """Spec 022: the skills-line edit carrying change levels 2-3, computed by code."""
+    return ResumeChange(
+        change_id=f"paragraph:{edit.paragraph_index}",
+        section="skills",
+        source_index=edit.paragraph_index,
+        original_text=edit.original_text,
+        proposed_text=edit.new_text,
+        category=ChangeCategory.SKILLS_ADDED,
+        reason=" ".join(a.reason for a in additions),
+        job_requirement=", ".join(a.term for a in additions),
+        evidence_source="career_truth_profile",
+        evidence_text=edit.original_text,
+        validation_status=ValidationStatus.PASS,
+        added_skills=tuple((a.term, a.level, a.reason) for a in additions),
+    )
+
+
 def changes_from_bullet_edits(
     edits: list[BulletEdit],
     bullets: list[Bullet],
     gap_report: GapReport,
+    skill_additions: list | None = None,
 ) -> list[ResumeChange]:
     """Build traceable DOCX changes from exact paragraph pairings."""
     bullets_by_index = {bullet.paragraph_index: bullet for bullet in bullets}
@@ -85,6 +104,10 @@ def changes_from_bullet_edits(
             continue
         bullet = bullets_by_index.get(edit.paragraph_index)
         if bullet is None:
+            continue
+        if bullet.section == "skills":
+            if skill_additions:
+                changes.append(_skills_change(edit, bullet, skill_additions))
             continue
         gap = _best_gap_for_edit(edit, gap_report)
         rejected = bool(edit.rejected_reason)
@@ -224,24 +247,47 @@ def run_docx_tailoring_pipeline(
             "Consider reviewing the gap report for evidence the tailoring pass didn't surface."
         )
 
-    result = finalize_docx_edits(
-        doc=doc,
-        structure=structure,
-        bullets=bullets,
-        edits=tailoring_result.edits,
-        original_docx_bytes=original_docx_bytes,
-        gap_report=gap_report,
-        profile=profile,
-        convert_to_pdf=convert_to_pdf,
-        extra_warnings=warnings,
-        bullets_evaluated=len(bullets),
-        bullets_changed=bullets_changed,
-        bullets_rejected=bullets_rejected,
-        addressable_requirements=addressable_requirements,
+    finalize_kwargs = dict(
+        structure=structure, original_docx_bytes=original_docx_bytes, gap_report=gap_report, profile=profile,
+        convert_to_pdf=convert_to_pdf, bullets_evaluated=len(bullets), bullets_changed=bullets_changed,
+        bullets_rejected=bullets_rejected, addressable_requirements=addressable_requirements,
         tailoring_seems_shallow=tailoring_seems_shallow,
     )
+    # Spec 022: change levels 2-3 go on the skills line, computed by code after the model answered,
+    # so the model never edits the skills line itself.
+    skills_bullet, skills_edit, additions = _skills_line_edit(doc, review)
+    result = None
+    if skills_edit is not None:
+        result = finalize_docx_edits(
+            doc=Document(io.BytesIO(original_docx_bytes)), bullets=bullets + [skills_bullet],
+            edits=tailoring_result.edits + [skills_edit], extra_warnings=list(warnings),
+            skill_additions=additions, **finalize_kwargs,
+        )
+        if result.page_count_preserved is False:
+            warnings.append("Added skills were left out: they pushed your resume onto another page.")
+            result = None
+    if result is None:
+        result = finalize_docx_edits(doc=doc, bullets=bullets, edits=tailoring_result.edits,
+                                     extra_warnings=warnings, **finalize_kwargs)
     result.target_notes = dict(tailoring_result.target_notes)  # spec 011
     return result
+
+
+def _skills_line_edit(doc, review: RequirementReview | None):
+    """(skills Bullet, its BulletEdit, the additions), or Nones when nothing can be added."""
+    from resume_tailorer.analyzers.skill_additions import propose_skill_additions
+    from resume_tailorer.docx_export.skills_line import append_skills, find_skills_paragraph_index
+
+    index = find_skills_paragraph_index(doc.paragraphs) if review is not None else None
+    if index is None:
+        return None, None, []
+    original = doc.paragraphs[index].text
+    additions = propose_skill_additions(review, original)
+    if not additions:
+        return None, None, []
+    new_text = append_skills(original, [a.term for a in additions])
+    return (Bullet(paragraph_index=index, text=original, section="skills"),
+            BulletEdit(index, original, new_text, changed=True), additions)
 
 
 def finalize_docx_edits(
@@ -260,6 +306,7 @@ def finalize_docx_edits(
     bullets_rejected: int = 0,
     addressable_requirements: int = 0,
     tailoring_seems_shallow: bool = False,
+    skill_additions: list | None = None,
 ) -> "DocxTailoringResult":
     """
     Splice a KNOWN set of edits into `doc`, convert to PDF, and validate --
@@ -372,7 +419,7 @@ def finalize_docx_edits(
         bullets_rejected=bullets_rejected,
         addressable_requirements=addressable_requirements,
         tailoring_seems_shallow=tailoring_seems_shallow,
-        changes=changes_from_bullet_edits(edits, bullets, gap_report),
+        changes=changes_from_bullet_edits(edits, bullets, gap_report, skill_additions),
         validation=ArtifactValidation.from_findings(
             structured_findings,
             original_page_count=original_page_count,

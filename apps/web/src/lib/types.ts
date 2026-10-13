@@ -147,6 +147,8 @@ export type Change = {
     title: string; category: string; full_requirement: string;
     check: string; decision: Decision | null; decision_label: string; manual_text: string;
     decision_origin: "person" | "AI-assisted" | null; decision_reason: string;
+    // Spec 022: skills added to the skills line by code; level 2 = you have it, 3 = adjacent.
+    added_skills?: { term: string; level: number; reason: string }[];
 };
 
 export type RequirementRowView = {

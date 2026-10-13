@@ -172,6 +172,9 @@ def _review_view(ws: Workspace, state: dict, show_all: bool = False) -> dict:
             "decision_origin": origin.get("by") if is_decided else None,
             "decision_reason": origin.get("reason") if is_decided else "",
             "manual_text": state["manual_texts"].get(change.change_id, change.proposed_text or ""),
+            # Spec 022: skills added by code, each with its change level (2 or 3) and why.
+            "added_skills": [{"term": term, "level": level, "reason": reason}
+                             for term, level, reason in getattr(change, "added_skills", ())],
         }
 
     return {

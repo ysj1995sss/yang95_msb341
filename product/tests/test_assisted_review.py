@@ -98,3 +98,16 @@ def test_rephrase_that_drops_a_substantive_original_detail_stays_for_person():
                       proposed_text="Built SQL reports for managers")
     entries, _reasons = policy.recommend_decisions([omitted], set())
     assert entries == []
+
+
+def test_assisted_review_accepts_computed_skills_additions_and_says_so():
+    # Spec 022, builder's answer 4: AI-assisted review accepts change levels 2-3 automatically and
+    # lists them; a manual review leaves them for the person.
+    policy = _assisted_module()
+    skills = replace(_change("paragraph:9", 9, category=ChangeCategory.SKILLS_ADDED), section="skills",
+                     original_text="SQL, Excel", proposed_text="SQL, Excel, Tableau, PostgreSQL",
+                     added_skills=(("Tableau", 2, "shown at Acme"), ("PostgreSQL", 3, "you have SQL")))
+    entries, reasons = policy.recommend_decisions([skills], blocked_ids=set())
+    assert entries == [("paragraph:9", "ACCEPTED")]
+    assert "Tableau" in reasons["paragraph:9"] and "adjacent" in reasons["paragraph:9"].lower()
+    assert policy.apply_assisted_review(_state([skills], mode="manual"))["decided"] == set()

@@ -125,3 +125,24 @@ test("legacy decisions do not claim a known decision-maker", async ({ page }) =>
   await expect(page.getByText("Origin not recorded", { exact: true })).toBeVisible();
   await expect(page.getByText("Chosen by you", { exact: true })).toHaveCount(0);
 });
+
+test("skills added by code say which ones you have and which are adjacent", async ({ page }) => {
+  const skills = {
+    ...first, id: "paragraph:9", category: "SKILLS_ADDED", section_label: "Skills",
+    title: "1. Skills · SQL, Excel → SQL, Excel, Tableau, PostgreSQL",
+    original: "SQL, Excel", proposed: "SQL, Excel, Tableau, PostgreSQL",
+    added_skills: [
+      { term: "Tableau", level: 2, reason: "Your experience shows Tableau (Data Analyst at Acme, bullet 1), but your skills line doesn't list it." },
+      { term: "PostgreSQL", level: 3, reason: "You have SQL; the job asks for PostgreSQL, a closely related skill." },
+    ],
+  };
+  const withSkills = { ...review, status: "PASS", status_text: "Passed validation", status_tone: "verified", findings: [],
+                       next_undecided: skills.id, changes: [skills] };
+  await page.route("**/api/backend/tailor", (route) => route.fulfill({ json: pageData(withSkills as typeof review) }));
+  await page.goto("/tailor");
+  const added = page.getByRole("list", { name: "Skills added to your skills line" });
+  await expect(added.getByText("Added skill: you have it", { exact: true })).toBeVisible();
+  await expect(added.getByText("Added skill: adjacent", { exact: true })).toBeVisible();
+  await expect(added.getByText("You have SQL; the job asks for PostgreSQL, a closely related skill.")).toBeVisible();
+  await expectAccessible(page, "tailor added skills");
+});

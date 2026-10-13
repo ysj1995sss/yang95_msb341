@@ -485,3 +485,29 @@ def test_a_decision_for_a_change_outside_the_review_is_refused(tailor_client):
     assert _run(tailor_client)["status"] == "done"
     response = tailor_client.post("/v2/tailor/decisions", json={"change_id": "paragraph:999", "decision": "ACCEPTED"})
     assert response.status_code in (400, 404) and "change" in response.json()["detail"].lower()
+
+
+def test_a_skill_shown_in_experience_is_added_to_the_skills_line_and_explained(tailor_client):
+    # Spec 022: change level 2. The bullet shows Tableau; the skills line doesn't list it.
+    import io
+    from docx import Document
+
+    doc = Document()
+    for line in ("Riley Park", "riley@example.com | 555-0100 | Denver, CO", "EXPERIENCE", "Data Analyst",
+                 "Acme Analytics | Denver, CO | 2021 - Present"):
+        doc.add_paragraph(line)
+    doc.add_paragraph("• Built SQL and Tableau dashboards used by 40 managers")
+    for line in ("EDUCATION", "BS Economics, State University, 2019", "SKILLS", "SQL, Excel"):
+        doc.add_paragraph(line)
+    out = io.BytesIO()
+    doc.save(out)
+    tailor_client.post("/v2/profile/resume", files={"file": ("r.docx", out.getvalue(), "application/octet-stream")})
+    tailor_client.post("/v2/profile/confirm")
+    tailor_client.post("/v2/jobs/search", json={"job_title": "Data Analyst"})
+    tailor_client.post("/v2/jobs/greenhouse_101/action", json={"action": "apply"})
+    assert _run(tailor_client)["status"] == "done"
+    review = tailor_client.get("/v2/tailor").json()["review"]
+    added = next(c for c in review["changes"] if c["category"] == "SKILLS_ADDED")
+    assert added["proposed"].startswith("SQL, Excel, ") and "Tableau" in added["proposed"]
+    assert {"term": "Tableau", "level": 2} in [{k: a[k] for k in ("term", "level")} for a in added["added_skills"]]
+    assert all(a["reason"] for a in added["added_skills"])

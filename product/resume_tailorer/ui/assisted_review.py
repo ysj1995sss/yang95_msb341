@@ -46,6 +46,15 @@ def recommend_decisions(
     for change, key in zip(candidates, keys):
         if change.change_id in blocked_ids or key in repeated:
             continue
+        if (change.category is ChangeCategory.SKILLS_ADDED and change.validation_status is ValidationStatus.PASS
+                and change.added_skills
+                and change.proposed_text.startswith(change.original_text.rstrip().rstrip("."))):
+            # Spec 022, the builder's choice: assistance accepts change levels 2-3 and lists them.
+            entries.append((change.change_id, "ACCEPTED"))
+            reasons[change.change_id] = "Added skills accepted automatically: " + "; ".join(
+                f"{term} ({'you have it' if level == 2 else 'adjacent skill'})"
+                for term, level, _reason in change.added_skills) + "."
+            continue
         if change.validation_status is ValidationStatus.FAIL:
             entries.append((change.change_id, "REJECTED"))
             reasons[change.change_id] = "The proposed wording did not pass its individual truth check; original kept."

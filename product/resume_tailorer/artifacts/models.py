@@ -43,6 +43,7 @@ class ChangeCategory(_StringEnum):
     REORDERED = "REORDERED"
     CONDENSED = "CONDENSED"
     COMPETENCY_CHANGED = "COMPETENCY_CHANGED"
+    SKILLS_ADDED = "SKILLS_ADDED"  # spec 022: change levels 2-3 on the skills line
     UNCHANGED = "UNCHANGED"
     REJECTED = "REJECTED"
 
@@ -118,6 +119,8 @@ class ResumeChange:
     # None keeps format-2/legacy bullet reviews on their original behavior.
     baseline_span: tuple[int, int] | None = None
     scope_issues: tuple[str, ...] = ()  # spec 016; additive for saved format-2 reviews
+    # Spec 022: (term, change level 2 or 3, reason) for a SKILLS_ADDED change; additive.
+    added_skills: tuple[tuple[str, int, str], ...] = ()
 
 
 @dataclass(frozen=True)
