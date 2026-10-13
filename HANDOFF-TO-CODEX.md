@@ -10,6 +10,55 @@ decisions 001, 006, 009, 012, 014, 015, 016, or 017 unless new evidence forces i
 
 ---
 
+## START HERE (2026-10-12, later) — Claude Code session: review fix, Word fix, direction, Streamlit retired
+
+Branch `codex/truthful-tailoring-sources-publication`, **not merged or pushed**. Preserve
+`.claude/settings.local.json`. The builder does not read code: explain in plain English and put
+decisions to them as numbered questions, each with a recommended answer.
+
+- **Product direction changed (decision 043, read it first).**
+  - **Auto-apply replaces "never submit"** (decision 016), with guardrails: checks must pass,
+    a daily cap of 10, a pause button, a sent log, and an opt-in preview.
+  - **Tailoring may add** unlisted and adjacent skills (levels 1–3), never invented facts.
+  - **Online:** free tier with sign-in, for 3 testers first.
+  - **The website is the product.** Nothing in 043 is built yet; each item needs a spec.
+- **Glossary:** `CONTEXT.md` is a draft the builder is reviewing. Use its words.
+- **Engineering skills:** issues go to GitHub Issues, and `decisions/` stands in for an ADR
+  folder. See `docs/agents/`.
+- **Spec 019 review fix (`fa06a33`):** change IDs are positional, and each new run reset
+  `review_revision` to 0. A stale tab's batch or single decision could therefore land on a
+  different proposal. Now:
+  - new runs start at `new_review_revision()` (a millisecond timestamp);
+  - single decisions accept `expected_revision`;
+  - "Edit manually" with no text keeps the saved wording.
+
+  This was a review by Claude, not the independent review, which remains outstanding.
+- **Spec 020 Word conversion (`c243839`):** Windows conversions use a private Word instance
+  (`DispatchEx`), open read-only, and always close and quit only their own instance. The
+  two-process reproduction went from 2 failures in 12, with a stray Word process left behind,
+  to 12 of 12 passing with no Word left over. Not yet checked with the builder's own Word open.
+- **Playwright hang:** not reproduced. Several full runs exited 0 in about 1.5 minutes, so no
+  cause is claimed.
+- **Bug hunt** (`discovery/bug-hunt-2026-10-12.md`, real model, synthetic data): the importer
+  misread one-line education, two one-line degrees, and a title written below
+  "Company | City | Dates". Fixed in `93c190a`. Also, the model proposed 0 changes for the
+  fixture resume; open.
+- **Spec 021, Streamlit retired:**
+  - **Removed:** `app.py`, `pages/`, the Streamlit-only `ui/` screens, `streamlit_views.py`,
+    `code_freshness.py`, `llm/ui.py`, `.streamlit/`, the Streamlit stylesheet in
+    `ui/design_system.py`, the `streamlit` requirement, and 67 Streamlit-only test cases (1,364 → 1,297).
+  - **Correction:** `ui/__init__.py` used to import the Streamlit shell, so the backend *did*
+    load Streamlit until now.
+  - **Checked:** the backend and every product module load with Streamlit blocked.
+  - **Kept:** `packages.txt`, because CI installs LibreOffice from it.
+  - **The old app** is at the tag `ui-streamlit-v1`. The live streamlit.app demo breaks when
+    this reaches `main`; that's the builder's account to switch off.
+- **Verification (sequential, synthetic):** product **1,297 passed, 1 skipped**; API **157 passed**; web lint and types exit 0; Playwright **29 passed, exit 0** (92 s). One earlier browser failure was from two overlapping runs sharing `test-results`; the clean solo rerun passed.
+- **Next, in the builder's order (Q19):** make tailoring visibly do more (Q9 levels 2–3, needs a
+  spec); then an auto-apply pilot on one platform (spec); then online hosting with sign-in
+  (spec, plus the builder's accounts). Human testers: 0.
+
+
 ## START HERE (2026-10-12) — spec 019 local Tailor review redesign
 
 This section supersedes older review UI notes. Current branch is

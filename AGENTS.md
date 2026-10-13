@@ -13,6 +13,11 @@ a brand new session act like a colleague who already knows what you are working 
 
 ## Current state
 
+> **Newest (2026-10-12, later, Claude Code):** read the top "START HERE" section of either handoff
+> first. Decision 043 changed the product direction (auto-apply, levels 1–3 tailoring, online,
+> website only). Streamlit is retired (spec 021, tag `ui-streamlit-v1`); ignore older notes about
+> keeping both frontends. Glossary: `CONTEXT.md`. The builder doesn't read code; explain plainly.
+
 > **Newest local work (2026-10-12, spec 019):** the Tailor review redesign is
 > implemented on `codex/truthful-tailoring-sources-publication`, not merged or
 > pushed. Read `specs/019-tailor-review-clarity-batch-and-ai-assisted-decisions.md`,

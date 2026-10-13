@@ -1,6 +1,5 @@
 from resume_tailorer.ui.design_system import (
     DESTINATIONS,
-    THEME_CSS,
     TOKENS,
     display_optional,
     progress_steps,
@@ -36,11 +35,6 @@ def test_text_tokens_meet_aa_on_canvas_with_the_darker_amber():
     assert _contrast(TOKENS["review"], TOKENS["canvas"]) < 4.5  # the reason review_on_canvas exists
 
 
-def test_css_respects_reduced_motion_and_has_no_global_ribbon():
-    assert "prefers-reduced-motion" in THEME_CSS
-    assert "jc-ribbon" not in THEME_CSS
-
-
 def test_progress_marks_first_unfinished_step_current():
     steps = progress_steps(("a", "b", "c"), (True, False, False))
     assert [s.state for s in steps] == ["complete", "current", "pending"]
@@ -58,8 +52,3 @@ def test_unknown_value_is_not_zero():
     assert display_optional(None, "Not assessed") == "Not assessed"
     assert display_optional("", "Not stated") == "Not stated"
     assert display_optional(0, "Not assessed") == "0"
-
-
-def test_primary_buttons_use_white_text_on_action_blue():
-    assert _contrast("#FFFFFF", TOKENS["action"]) >= 4.5
-    assert 'stBaseButton-primary"] * { color: #FFFFFF' in THEME_CSS.replace("\n", " ") or "color: #FFFFFF !important" in THEME_CSS

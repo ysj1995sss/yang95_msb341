@@ -13,6 +13,11 @@ a brand new session act like a colleague who already knows what you are working 
 
 ## Current state
 
+> **Newest (2026-10-12, later, Claude Code):** read the top "START HERE" section of either handoff
+> first. Decision 043 changed the product direction (auto-apply, levels 1–3 tailoring, online,
+> website only). Streamlit is retired (spec 021, tag `ui-streamlit-v1`); ignore older notes about
+> keeping both frontends. Glossary: `CONTEXT.md`. The builder doesn't read code; explain plainly.
+
 - **New frontend (2026-10-05, spec 009 / decisions 028–029):** `apps/web` (Next.js 16, Tailwind)
   on the workspace API `apps/api/app/workspace/` (`/v2`), all six destinations built and
   verified locally, not deployed yet. It shares the Streamlit app's data folders and Python

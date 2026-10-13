@@ -73,36 +73,3 @@ def test_moving_backwards_is_flagged():
     assert not read_email(SCREEN, APPS).moves_backwards(S.APPLIED)
 
 
-def test_tracker_applies_a_pasted_email_only_after_confirmation(tmp_path, monkeypatch):
-    from pathlib import Path
-
-    from streamlit.testing.v1 import AppTest
-
-    from resume_tailorer.applications.database import ApplicationDatabase
-    from resume_tailorer.applications.models import ApplicationMode, ApplicationSubmission, StatusSource
-    from resume_tailorer.identity import applications_db_path
-
-    monkeypatch.setenv("JOB_COPILOT_DATA_DIR", str(tmp_path / "data"))
-    db = ApplicationDatabase(applications_db_path("local"))
-    db.create_tables()
-    app_id = db.save_submission(ApplicationSubmission(
-        job_posting_id="greenhouse_1", mode=ApplicationMode.MANUAL, resume_used="r.pdf", candidate_fit_score=None,
-        resume_match_score=80.0, form_fields_submitted={}, custom_answers={}, ats_platform="Greenhouse",
-        form_url="https://example.com", job_snapshot={"company": "Acme Analytics", "title": "Senior Data Analyst"}))
-    db.update_status(app_id, S.APPLIED, "", StatusSource.USER)
-
-    at = AppTest.from_file(str(Path(__file__).resolve().parent.parent / "resume_tailorer" / "app.py"), default_timeout=60)
-    at.switch_page("pages/4_Application_Tracker.py")
-    at.run()
-    at.text_area(key="tracker_email_text").input(REJECTION)
-    at.run()
-    assert not at.exception, at.exception
-    assert db.get_current_status(app_id) == S.APPLIED  # a suggestion changes nothing
-    assert at.selectbox(key="tracker_email_app").value == app_id
-    [b for b in at.button if b.key == "tracker_email_confirm"][0].click()
-    at.run()
-    assert not at.exception, at.exception
-    assert db.get_current_status(app_id) == S.REJECTED
-    latest = db.get_status_history(app_id)[-1]
-    assert latest.source == StatusSource.EMAIL_INTEGRATION and "Oct 01, 2026" in latest.notes
-    assert at.text_area(key="tracker_email_text").value == ""

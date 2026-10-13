@@ -1,7 +1,6 @@
 from pathlib import Path
 
 import pytest
-from streamlit.testing.v1 import AppTest
 
 from resume_tailorer.identity import (
     LOCAL_OWNER, applications_db_path, job_db_path, resolve_identity, user_dir,
@@ -54,33 +53,3 @@ def test_owner_ids_cannot_escape_the_data_directory(bad):
         user_dir(bad)
 
 
-def test_pages_require_sign_in_when_auth_is_configured():
-    at = AppTest.from_file(APP, default_timeout=60)
-    at.secrets["auth"] = {"google": {"client_id": "x"}}
-    at.switch_page("pages/2_Job_Search.py")
-    at.run()
-    assert not at.exception, at.exception
-    assert [b.label for b in at.button] == ["Sign in with Google"]
-    assert not any(t.label == "Job title" for t in at.text_input)
-
-
-def test_local_mode_warns_not_to_share_the_link():
-    at = AppTest.from_file(APP, default_timeout=60)
-    at.switch_page("pages/4_Application_Tracker.py")
-    at.run()
-    assert not at.exception, at.exception
-    status = [m.value for m in at.sidebar.markdown if "Local demo" in m.value]
-    assert status and "Don't share this link" in status[0] and "<details" in status[0]
-
-
-def test_apply_and_tracker_empty_states_offer_one_next_step(tmp_path, monkeypatch):
-    monkeypatch.setenv("JOB_COPILOT_DATA_DIR", str(tmp_path / "data"))
-    for page, heading in (("pages/3_Applications.py", "To prepare an application"),
-                          ("pages/4_Application_Tracker.py", "Nothing tracked yet")):
-        at = AppTest.from_file(APP, default_timeout=60)
-        at.switch_page(page)
-        at.run()
-        assert not at.exception, at.exception
-        assert any(heading in m.value for m in at.markdown), page
-        primary = [b for b in at.button if b.label == "Find a job"]
-        assert primary, page

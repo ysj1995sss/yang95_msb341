@@ -1,6 +1,6 @@
 # Spec 021: Retire the Streamlit app
 
-**Status:** Draft for review (2026-10-12).
+**Status:** Approved and implemented (2026-10-12). Correction to the facts below: `ui/__init__.py` imported the Streamlit shell, so the backend did load Streamlit indirectly until this change. Also removed: the Streamlit stylesheet in `ui/design_system.py` and its tests. Kept: `packages.txt` (CI installs LibreOffice from it). 67 test cases removed; all suites pass.
 **Builds on:** decision 043 (the website is the product; Streamlit retired now).
 
 ## Goal

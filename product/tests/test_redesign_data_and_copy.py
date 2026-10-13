@@ -10,8 +10,7 @@ from resume_tailorer.job_search.database import JobDatabase
 from resume_tailorer.job_search.models import JobPosting, JobSource, UserSelection
 
 ROOT = Path(__file__).resolve().parent.parent / "resume_tailorer"
-USER_FACING = [ROOT / "app.py", *sorted((ROOT / "pages").glob("*.py")), *sorted((ROOT / "ui").glob("*.py")),
-               ROOT / "applications" / "streamlit_views.py"]
+USER_FACING = sorted((ROOT / "ui").glob("*.py"))  # shared copy the website shows (spec 021)
 
 
 def _job(i):
