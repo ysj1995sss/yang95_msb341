@@ -232,21 +232,14 @@ class PDFValidator:
                         f"Visual validation could not complete: {exc}",
                     )
                 )
-        else:
-            findings.append(
-                ValidationFinding(
-                    "VISUAL_CHECK_SKIPPED",
-                    FindingSeverity.WARNING,
-                    FindingCategory.VISUAL,
-                    "No original PDF was available for render comparison.",
-                )
-            )
-
+        # Without an original there's nothing to compare pictures against (a rebuilt free-form PDF
+        # has a new layout), so the check doesn't apply and isn't reported as skipped (2026-10-13).
         return ArtifactValidation.from_findings(
             findings,
             tailored_page_count=legacy.page_count,
             extracted_text=legacy.extracted_text,
-            checks_run=("pdf_open", "text_extraction", "content", "visual", "readability"),
+            checks_run=("pdf_open", "text_extraction", "content", "readability")
+            + (("visual",) if original_pdf_path else ()),
         )
 
 

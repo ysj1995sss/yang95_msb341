@@ -303,7 +303,10 @@ def test_validate_artifact_returns_structured_failure_for_missing_contact(genera
     assert result.has_code("CONTACT_MISSING")
 
 
-def test_validate_artifact_marks_skipped_visual_check_as_warning(generated_pdf_path):
+def test_a_rebuilt_pdf_is_not_warned_about_a_picture_comparison_that_cannot_apply(generated_pdf_path):
+    """Dogfood, 2026-10-13: free-form PDFs are rebuilt in a new layout and no caller has an original
+    to compare pictures against, so "No original PDF was available" made every PDF run "passed with
+    warnings" and Apply say "Needs a look"."""
     profile = CareerTruthProfile(
         contact_info={}, education=[], work_experience=[], skills=[], tools=[],
         certifications=[], accomplishments=[]
@@ -311,4 +314,5 @@ def test_validate_artifact_marks_skipped_visual_check_as_warning(generated_pdf_p
     result = PDFValidator().validate_artifact(
         generated_pdf_path, profile=profile, expected_page_count=1, accepted_changes=[]
     )
-    assert result.has_code("VISUAL_CHECK_SKIPPED")
+    assert not result.has_code("VISUAL_CHECK_SKIPPED")
+    assert "visual" not in result.checks_run

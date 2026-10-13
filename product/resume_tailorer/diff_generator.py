@@ -381,6 +381,7 @@ class DiffGenerator:
         "distilled", "adopted", "targeting", "targeted", "identifying",
         "identified", "synthesizing", "synthesized", "crafting", "crafted",
         "refined", "diagnosed", "resulting", "leading", "driving", "recognized",
+        "serving", "served",  # "serving 50k users" restates "with 50k users" (2026-10-13)
     }
 
     @classmethod

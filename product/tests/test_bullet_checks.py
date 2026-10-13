@@ -232,3 +232,35 @@ class TestCheckSemanticDrift:
         original = "Launched the partner portal in 2019, serving 2,000,000."
         new = "Launched the partner portal serving 2,000,000 requests in 2019"
         assert DiffGenerator().check_semantic_drift(original, new) == []
+
+
+class TestInflectionsAreNotNewTerms:
+    """Dogfood, 2026-10-13: "pipeline" -> "pipelines" was flagged "POSSIBLY UNVERIFIED: new term(s)
+    ['pipelines']" (the stemmer made "pipelin" from one and "pipeline" from the other), so ordinary
+    rewrites failed their check and couldn't be accepted."""
+
+    def test_the_same_word_in_another_form_is_grounded(self):
+        from resume_tailorer.utils.stemming import stem
+
+        for a, b in (("pipeline", "pipelines"), ("serve", "serving"), ("manage", "managed"),
+                     ("service", "services"), ("box", "boxes"), ("class", "classes")):
+            assert stem(a) == stem(b), (a, b)
+
+    def test_a_plural_rewrite_passes_the_unverified_term_check(self):
+        from resume_tailorer.models import CareerTruthProfile
+
+        person = CareerTruthProfile(contact_info={}, education=[], work_experience=[], skills=[], tools=[],
+                                    certifications=[], accomplishments=[])
+        issues = DiffGenerator().check_bullet_pair_fabrication_risk(
+            "Implemented CI/CD pipeline using Docker and Jenkins",
+            "Implemented CI/CD pipelines using Docker and Jenkins", person)
+        assert issues == []
+
+    def test_serving_is_a_safe_way_to_say_with(self):
+        from resume_tailorer.models import CareerTruthProfile
+
+        person = CareerTruthProfile(contact_info={}, education=[], work_experience=[], skills=[], tools=[],
+                                    certifications=[], accomplishments=[])
+        assert DiffGenerator().check_bullet_pair_fabrication_risk(
+            "Developed React frontend for customer portal with 50k+ monthly users",
+            "Developed React frontends for a customer portal serving 50k+ monthly users", person) == []

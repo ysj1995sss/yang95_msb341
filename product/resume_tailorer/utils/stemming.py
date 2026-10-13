@@ -20,6 +20,17 @@ _SUFFIXES = ("ing", "edly", "ed", "ies", "es", "s")
 def stem(word: str) -> str:
     for suffix in _SUFFIXES:
         if word.endswith(suffix) and len(word) - len(suffix) >= 3:
+            if suffix == "s" and word.endswith(("ss", "is", "us")):
+                break  # "class", "analysis", "status" aren't plurals
             stripped = word[: -len(suffix)]
-            return stripped + "y" if suffix == "ies" else stripped
+            if suffix == "ies":
+                return stripped + "y"
+            if suffix == "es" and not stripped.endswith(("s", "x", "z", "ch", "sh")):
+                stripped = word[:-1]  # "pipelines" is "pipeline" + s, not "pipelin" + es
+            word = stripped
+            break
+    # A final "e" goes too, so "serve"/"serving", "manage"/"managed" and "pipeline"/"pipelines" meet:
+    # these were read as new, unverified words and blocked ordinary rewrites (2026-10-13).
+    if word.endswith("e") and len(word) >= 4:
+        word = word[:-1]
     return word
