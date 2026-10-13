@@ -439,3 +439,23 @@ def test_an_edited_two_line_education_entry_still_blocks_rather_than_guessing(tm
     profile = ResumeParser().parse(str(path))
     edited = replace(profile, education=[replace(profile.education[0], field="Economics")])
     assert sync_docx_to_profile(path.read_bytes(), edited).has_blockers
+
+
+def test_a_job_line_near_the_top_is_not_a_second_contact_location():
+    """Once imports read the contact location (2026-10-13), a short resume whose first job line sat in
+    the top five paragraphs ("Acme | Denver, CO | 2021 - Present") made the location "ambiguous",
+    which blocked tailoring entirely. Only the contact block above the first section counts."""
+    from resume_tailorer.docx_export.profile_fields import sync_simple_fields
+
+    for heading in ("EXPERIENCE", "PROFESSIONAL EXPERIENCE"):
+        doc = Document()
+        for line in ("Riley Park", "riley@example.com | 555-0100 | Denver, CO", heading, "Data Analyst",
+                     "Acme Analytics | Denver, CO | 2021 - Present"):
+            doc.add_paragraph(line)
+        profile = CareerTruthProfile(contact_info={"name": "Riley Park", "email": "riley@example.com",
+                                                   "location": "Boulder, CO"}, education=[], work_experience=[],
+                                     skills=[], tools=[], certifications=[], accomplishments=[])
+        fields = [f for f in sync_simple_fields(doc, profile) if f.field == "contact.location"]
+        assert [(f.outcome, f.blocking) for f in fields] == [("updated", False)]
+        assert doc.paragraphs[1].text == "riley@example.com | 555-0100 | Boulder, CO"
+        assert doc.paragraphs[4].text == "Acme Analytics | Denver, CO | 2021 - Present"

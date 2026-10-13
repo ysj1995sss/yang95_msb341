@@ -339,6 +339,18 @@ class ResumeParser:
                 contact_info["name"] = line.strip()
                 break
 
+        # Location: a "City, ST" piece of a contact line above the first section. It was never read,
+        # so profiles had none and a generated PDF printed "N/A" in its place (2026-10-13).
+        for line in lines[:NAME_SEARCH_LINES + 2]:
+            if _is_heading_line(line):
+                break
+            for piece in re.split(r"[|•·]", line):
+                if re.fullmatch(r"[A-Z][A-Za-z .'-]+,\s*[A-Z]{2}(?:\s+\d{5})?", piece.strip()):
+                    contact_info["location"] = piece.strip()
+                    break
+            if "location" in contact_info:
+                break
+
         contact_info.setdefault("name", "Unknown")
         return contact_info
 
@@ -375,6 +387,16 @@ class ResumeParser:
             for i, line in enumerate(lines)
             if self._YEAR_PATTERN.search(line) and not line.strip().startswith(("•", "-"))
         ]
+        degree_word = re.compile(r"\b(MBA|Ph\.?D\.?|B\.?S\.?|M\.?S\.?|B\.?A\.?|M\.?A\.?)(?![a-zA-Z])", re.IGNORECASE)
+
+        def degree_like(line: str) -> bool:
+            line = line.strip()
+            return bool(line) and not line.startswith(("•", "-")) and bool(_DEGREE_PART.match(line) or degree_word.match(line))
+
+        # Some resumes put the degree on the line ABOVE the school line ("BS Computer Science" then
+        # "University … | 2016"). Decided once per section, from the first entry: reading below in that
+        # layout gave each school the next school's degree, or none (2026-10-13).
+        degree_above = bool(anchor_idxs) and anchor_idxs[0] > 0 and degree_like(lines[anchor_idxs[0] - 1])
 
         for a, idx in enumerate(anchor_idxs):
             institution_line = lines[idx].strip()
@@ -393,7 +415,10 @@ class ResumeParser:
             # line, as long as it isn't a bullet (unless this line already holds it).
             degree_text = ""
             after_degree_idx = idx + 1
-            for j in range(idx + 1, end_idx if one_line is None else idx + 1):
+            if degree_above and one_line is None:
+                above = lines[idx - 1] if idx > 0 and idx - 1 not in anchor_idxs else ""
+                degree_text = above.strip() if degree_like(above) else ""
+            for j in range(idx + 1, end_idx if one_line is None and not degree_above else idx + 1):
                 candidate = lines[j].strip()
                 if not candidate:
                     continue
@@ -415,7 +440,7 @@ class ResumeParser:
                 degree, field, institution = one_line
             elif degree_match:
                 degree = degree_match.group(1).strip()
-                field = degree_match.group(2).strip()
+                field = degree_match.group(2).strip().lstrip(",;:- ").strip()  # "MBA, Finance"
             else:
                 degree = degree_text
                 field = ""
@@ -617,7 +642,7 @@ class ResumeParser:
         # Path 1: a dedicated "Skills" section.
         if "skills" in text.lower():
             skills_section = re.search(
-                r"(?:technical\s+)?skills?[:]*\s*\n(.*?)(?:\n(?:TOOLS?|CERTIFICATIONS?|LANGUAGES?|EDUCATION|EXPERIENCE|WORK|[A-Z]{2,}[\s:]*$)|\Z)",
+                r"(?:technical\s+)?skills?[:]*\s*\n(.*?)(?:\n(?:(?:TOOLS?|CERTIFICATIONS?|LANGUAGES?|EDUCATION|EXPERIENCE|WORK)[\s:]*$|[A-Z]{2,}[\s:]*$)|\Z)",
                 text,
                 re.IGNORECASE | re.DOTALL | re.MULTILINE,
             )
@@ -626,8 +651,11 @@ class ResumeParser:
                 lines = items.split('\n')
                 for line in lines:
                     if line.strip():
-                        # Split each line by comma or colon (for "Languages: Python, Java, etc.")
-                        line_items = re.split(r'[:,]', line)
+                        # "Languages: Python, Java": the label names the group, it isn't a skill. A
+                        # heading only ends the section when it stands alone, so "Tools: …" is read too
+                        # (both lost skills, 2026-10-13).
+                        label = re.match(r"\s*[•\-]?\s*[A-Za-z][A-Za-z &/]{0,30}:\s*", line)
+                        line_items = re.split(r'[:,]', line[label.end():] if label else line)
                         for item in line_items:
                             clean_item = item.strip().lstrip('•-').strip()
                             if clean_item and len(clean_item) > 1:  # Skip single characters

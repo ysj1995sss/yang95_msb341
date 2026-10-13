@@ -505,7 +505,8 @@ def test_a_skill_shown_in_experience_is_added_to_the_skills_line_and_explained(t
     tailor_client.post("/v2/profile/confirm")
     tailor_client.post("/v2/jobs/search", json={"job_title": "Data Analyst"})
     tailor_client.post("/v2/jobs/greenhouse_101/action", json={"action": "apply"})
-    assert _run(tailor_client)["status"] == "done"
+    status = _run(tailor_client)
+    assert status["status"] == "done", status
     review = tailor_client.get("/v2/tailor").json()["review"]
     added = next(c for c in review["changes"] if c["category"] == "SKILLS_ADDED")
     assert added["proposed"].startswith("SQL, Excel, ") and "Tableau" in added["proposed"]

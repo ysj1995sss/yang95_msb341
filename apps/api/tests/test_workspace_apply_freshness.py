@@ -105,3 +105,12 @@ def test_retailoring_in_a_batch_does_not_make_the_old_active_pdf_current(tailor_
     # Opening the saved review publishes that review's artifact instead of the old active one.
     assert tailor_client.post("/v2/batch/open", json={"job_id": "greenhouse_101"}).status_code == 200
     assert tailor_client.get("/v2/apply/resume").content == state["pdf_bytes"]
+
+
+def test_a_stale_review_is_not_called_ready_for_apply(tailor_client, monkeypatch):  # noqa: F811
+    """Dogfood, 2026-10-13: after a profile edit Tailor still said "Your resume is ready for Apply" and
+    offered Continue, while Apply refused the old resume. Tailor uses the same freshness rule."""
+    _reviewed_resume(tailor_client, monkeypatch)
+    _edit_profile(tailor_client)
+    progress = tailor_client.get("/v2/tailor").json()["review"]["progress"]
+    assert progress["can_continue"] is False and "changed after this was tailored" in progress["blocker"]

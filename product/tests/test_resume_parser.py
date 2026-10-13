@@ -553,3 +553,56 @@ def test_a_summary_heading_after_a_multi_line_contact_block_is_not_part_of_the_s
     text = ("Sam Example\nsam@example.com\n(555) 010-0100\nPortland, OR\n\nSUMMARY\n"
             "Analyst with five years of reporting experience.\nEXPERIENCE\nData Analyst | Acme | 2021 - Present\n")
     assert ResumeParser()._extract_summary(text) == "Analyst with five years of reporting experience."
+
+
+class TestContactLocation:
+    """Dogfood, 2026-10-13: a location on the contact line was never read, so the profile had none
+    (and a generated PDF printed "N/A" in its place)."""
+
+    def test_city_and_state_on_the_contact_line(self):
+        text = "John Smith\njohn@example.com | (555) 123-4567 | San Francisco, CA\nPROFESSIONAL SUMMARY\nEngineer.\n"
+        assert ResumeParser()._extract_contact_info(text)["location"] == "San Francisco, CA"
+
+    def test_no_location_is_not_invented(self):
+        text = "John Smith\njohn@example.com | (555) 123-4567\nEXPERIENCE\nAcme | Austin, TX | 2020 - 2024\n"
+        assert "location" not in ResumeParser()._extract_contact_info(text)
+
+
+class TestDegreeAboveTheSchoolLine:
+    """Dogfood, 2026-10-13: "BS Computer Science" above "University … | 2016" lost the degree, so
+    Career Profile said it wasn't recognized and the tailored resume had no degree at all."""
+
+    def test_degree_line_above_the_school_line(self):
+        text = ("EDUCATION\nBS Computer Science\nUniversity of California, Berkeley | 2016\n"
+                "TECHNICAL SKILLS\nLanguages: Python\n")
+        [entry] = ResumeParser()._extract_education(text)
+        assert (entry.degree, entry.field, entry.institution, entry.year) == (
+            "BS", "Computer Science", "University of California, Berkeley", 2016)
+
+    def test_two_entries_each_with_the_degree_above(self):
+        text = ("EDUCATION\nMBA, Finance\nState University | 2022\nBA Economics\nCity College | 2016\n"
+                "SKILLS\nExcel\n")
+        entries = ResumeParser()._extract_education(text)
+        assert [(e.degree, e.field, e.institution) for e in entries] == [
+            ("MBA", "Finance", "State University"), ("BA", "Economics", "City College")]
+
+    def test_the_degree_below_still_wins(self):
+        text = "EDUCATION\nState University | 2016\nB.S. Economics\nSKILLS\nExcel\n"
+        [entry] = ResumeParser()._extract_education(text)
+        assert (entry.degree, entry.field) == ("B.S.", "Economics")
+
+
+class TestLabelledSkillLines:
+    """Dogfood, 2026-10-13: a "Tools: …" line ended the skills section early, so the "Frameworks:"
+    line after it was lost, and each line's label ("Languages") was kept as a skill."""
+
+    def test_every_labelled_line_is_read_without_its_label(self):
+        text = ("TECHNICAL SKILLS\nLanguages: Python, JavaScript, Java, SQL\nTools: Docker, Kubernetes, Git\n"
+                "Frameworks: Flask, React, Django\nCERTIFICATIONS\nPMP\n")
+        skills = ResumeParser()._extract_skills(text)
+        assert {"Python", "SQL", "Docker", "Git", "Flask", "React", "Django"} <= set(skills)
+        assert not {"Languages", "Tools", "Frameworks", "PMP"} & set(skills)
+
+    def test_a_tools_heading_on_its_own_still_ends_the_skills_section(self):
+        text = "SKILLS\nPython, SQL\nTOOLS\nJira\n"
+        assert ResumeParser()._extract_skills(text)[:2] == ["Python", "SQL"] and "Jira" not in ResumeParser()._extract_skills(text)

@@ -10,6 +10,7 @@ from docx.text.paragraph import Paragraph
 
 from resume_tailorer.models import CareerTruthProfile
 from resume_tailorer.parsers.docx_structure import extract_docx_structure
+from resume_tailorer.parsers.section_headings import SECTION_BOUNDARY_RE
 
 
 @dataclass(frozen=True)
@@ -99,7 +100,13 @@ def sync_simple_fields(doc: DocxDocument, profile: CareerTruthProfile) -> list[S
 
     desired_location = str(contact.get("location") or "").strip()
     if desired_location:
-        contact_paragraphs = doc.paragraphs[:5]
+        # The contact block ends at the first section heading: a job line near the top
+        # ("Acme | Denver, CO | 2021 - Present") is not a second contact location (2026-10-13).
+        contact_paragraphs = []
+        for paragraph in doc.paragraphs[:5]:
+            if _SECTION.fullmatch(paragraph.text.strip()) or SECTION_BOUNDARY_RE.match(paragraph.text):
+                break
+            contact_paragraphs.append(paragraph)
         for section in doc.sections:
             contact_paragraphs.extend(section.header.paragraphs)
             contact_paragraphs.extend(section.footer.paragraphs)

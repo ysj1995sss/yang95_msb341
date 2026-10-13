@@ -214,7 +214,7 @@ def _review_view(ws: Workspace, state: dict, show_all: bool = False) -> dict:
         "sync_summary": state.get("sync_summary") or "",
         "pages_before_after": [report.original_page_count, report.tailored_page_count],
         "unsupported_claims": list(report.unsupported_claims or ()),
-        "progress": {**jsonable(progress), "label": progress.label},
+        "progress": _with_freshness({**jsonable(progress), "label": progress.label}, _stale_message(ws, state)),
         "next_undecided": next_undecided(groups.reviewable, decided),
         "changes": [change_view(c, i) for i, c in enumerate(groups.reviewable, 1)],
         "empty_message": empty_queue_message(state["changes"]),
@@ -234,6 +234,12 @@ def _run_status(owner_id: str) -> dict:
         data = _read_run(owner_id)
     data.pop("boot", None)
     return data
+
+
+def _with_freshness(progress: dict, stale_message: str) -> dict:
+    """A review tailored from an older Career Profile isn't ready, whatever its decisions say: Apply
+    refuses it, so Tailor must not offer Continue (dogfood, 2026-10-13)."""
+    return {**progress, "can_continue": False, "blocker": stale_message} if stale_message else progress
 
 
 def _stale_message(ws: Workspace, state) -> str:

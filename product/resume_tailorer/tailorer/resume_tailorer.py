@@ -237,11 +237,12 @@ def profile_to_string(profile: CareerTruthProfile) -> str:
     lines = []
 
     # Contact info
+    # A missing detail is left out: written as "N/A", the model printed it on the resume (2026-10-13).
     lines.append("CONTACT INFORMATION:")
-    lines.append(f"  Name: {profile.contact_info.get('name', 'N/A')}")
-    lines.append(f"  Email: {profile.contact_info.get('email', 'N/A')}")
-    lines.append(f"  Phone: {profile.contact_info.get('phone', 'N/A')}")
-    lines.append(f"  Location: {profile.contact_info.get('location', 'N/A')}")
+    for label, key in (("Name", "name"), ("Email", "email"), ("Phone", "phone"), ("Location", "location")):
+        value = str(profile.contact_info.get(key) or "").strip()
+        if value:
+            lines.append(f"  {label}: {value}")
     lines.append("")
 
     # Professional summary (if the original resume had one)

@@ -408,3 +408,15 @@ def test_the_summary_never_gains_tool_names():
     for prompt in (tailorer._build_system_prompt(), tailorer._build_refinement_system_prompt()):
         assert "SUMMARY TOOLS" in prompt
         assert "Never add a tool" in prompt
+
+
+def test_missing_contact_details_are_left_out_not_written_as_n_a():
+    """Dogfood, 2026-10-13: "Location: N/A" went to the model, which printed "N/A" as the person's
+    location in a generated PDF."""
+    from resume_tailorer.tailorer.resume_tailorer import profile_to_string
+
+    profile = CareerTruthProfile(contact_info={"name": "Sam Example", "email": "sam@example.com"}, education=[],
+                                 work_experience=[], skills=[], tools=[], certifications=[], accomplishments=[])
+    text = profile_to_string(profile)
+    assert "N/A" not in text and "Location" not in text and "Phone" not in text
+    assert "Name: Sam Example" in text and "Email: sam@example.com" in text
