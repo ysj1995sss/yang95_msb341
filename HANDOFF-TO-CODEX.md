@@ -59,6 +59,44 @@ decisions to them as numbered questions, each with a recommended answer.
   (spec, plus the builder's accounts). Human testers: 0.
 
 
+## START HERE (2026-10-13) — handoff from Claude: online test is live, known 502s open
+
+**Branch:** `codex/truthful-tailoring-sources-publication` at `246dd76` (51 commits ahead of `main`). Pushed to GitHub. Working tree clean. **`main` is not merged and must not be deployed from.** Preserve `.claude/settings.local.json`.
+
+**Builder preferences (read first):** the builder does not read code. Explain in plain English, ask numbered questions with a recommended answer, never print or commit secrets or real data, and never create accounts or press deploy buttons on their behalf. Use synthetic data for tests (`apps/web/e2e/fixtures/resume.docx`, scratch data folders). Never use `D:\Yang\Vibe Coding\job-copilot-local-data`.
+
+### Decisions this session (read before changing these areas)
+- **043** Product direction: auto-apply replaces "never submit" (not built); tailoring may add levels 1-3 (never invented facts); website is the product; Streamlit retired (spec 021, tag `ui-streamlit-v1`).
+- **044** Level 2-3 skills additions on the Word skills line; tools kept out of summaries (the check stays, the model is told); unconfirmed facts warning with two buttons.
+- **045** **Shared test workspace, no sign-in** (builder's explicit choice, against recommendation). `SHARED_TEST_WORKSPACE=yes` on the website, only when Google sign-in is not configured. Anyone with the address shares one workspace and can spend the model key. Backend still refuses unsigned requests in production.
+- Specs: 022 (levels 2-3, step 5 instructions done, PDF path NOT done), 023 (free deployment guide, updated for 045).
+
+### Hosting state (all verified by the builder unless marked)
+- **Backend:** Render, service `yang95-msb341` (URL `https://yang95-msb341.onrender.com`, `/health` returns ok), Docker, free plan, no disk. Env: `WORKSPACE_TOKEN_SECRET`, `LLM_MODEL=gemini/gemini-2.5-flash`, `LLM_API_KEY`. `render.yaml` is the free-plan blueprint.
+- **Website:** Vercel project `yang95-msb341` (`https://yang95-msb341.vercel.app`), root `apps/web`, Production branch set to the codex branch, Vercel Deployment Protection "Require Log In" turned off. Env: `API_URL` (Config type, not Secret, since Secret values are write-only), `AUTH_SECRET`, `WORKSPACE_TOKEN_SECRET` (must equal Render's), `SHARED_TEST_WORKSPACE=yes`. Env changes only apply after a redeploy (Deploy Hook named `test` exists on Settings > Git; the Redeploy menu only rebuilds `main`).
+- **Builder's secrets:** two secrets were pasted into chat once and replaced. Assume the originals are compromised. Don't ask for secret values; ask for length and first 4 characters only.
+- **Open risk:** the Vercel site has returned **502** on Jobs and Home when the Render service restarts (free plan sleeps after 15 min; restarts observed in logs). Likely memory (Word/LibreOffice and job search), not confirmed. Next step: read Render Metrics > Memory and logs at the moment of 502, then either lighten the job search or upgrade plan (builder decides cost).
+- **Not verified:** Word-to-PDF on Render (LibreOffice memory); the backend image size vs. 512 MB; PDF-path tailoring end to end on Render.
+
+### Product state
+- Tests at `246dd76`: product **1338 passed, 1 skipped**; API **166 passed**; web lint and types clean; Playwright **31 passed**. Run suites sequentially, one at a time (overlapping runs caused a false browser failure).
+- Fixed this session (see `discovery/bug-hunt-2026-10-12.md`, bugs 1-16 and later): education and title parsing, PDF bullet glyphs, table headers, Word phone pattern (dates looked like phones), duplicate-key and finding labels, unconfirmed facts warning, accented names in PDFs (Unicode font), two-line education blocking Word sync, a fake "2027 M" metric, PDF fit-to-page (tighter spacing before failing).
+- **Still failing for the builder's own resume (PDF path):** page-length (dry run: fits only at "2 pages"), and two proposed changes that add tools not in the profile (they must be kept as originals). The builder now has a 2-page setting and a dry-run result that passes with warnings after keeping originals.
+- **Open product work:** level 2-3 additions are not yet on the PDF path (needs narrow exemptions in `content_validator.py` and `find_unsupported_claims`); `Select all unreviewed` should skip failed-check changes (builder asked for it, not confirmed); Tailor should explain the 2-page option inside the review, not only at Start over (offered, not confirmed).
+
+### Next steps in order
+1. Read Render Metrics (memory) and logs at a 502; report to the builder in plain English.
+2. Confirm with the builder: upgrade Render (about $7/mo) or lighten search. Don't change plans without a yes.
+3. Builder's Word resume re-import + batch run on the live site (one tester at a time, shared data).
+4. Spec 022 PDF path, with tests first, after the builder approves.
+5. Human testers: 3 required for the finish line. None done yet.
+
+### Rules that bit us this session
+- Vercel `Secret` env values can't be read back; use `Config` for non-secret values.
+- Vercel Git branch tracking: a branch needs one deployment before it can be set as production.
+- Render Blueprint form: env keys must not contain a slash; the model value goes in the value box.
+- Run any test suite that uses ports 3100/8100 alone.
+
 ## START HERE (2026-10-12) — spec 019 local Tailor review redesign
 
 This section supersedes older review UI notes. Current branch is
