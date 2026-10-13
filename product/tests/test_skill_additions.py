@@ -75,3 +75,25 @@ def test_level_2_needs_a_confirmed_passage_that_names_the_skill():
                             "experience", True)
     review = _review(_row("r1", [("Tableau", DIRECT)], DIRECT, evidence=(unrelated,)))
     assert propose_skill_additions(review, "SQL") == []
+
+
+def test_a_term_inside_a_longer_added_term_is_not_added_twice():
+    """Live run, 2026-10-13: "APIs" beside "REST APIs" and "CI" beside "CI/CD" filled the cap with
+    repeats, so MySQL (adjacent to the listed SQL) was left out."""
+    def shown(term, i):
+        return EvidenceRef(f"Built {term} for 2 million daily requests", f"Engineer at Beta, bullet {i}",
+                           "work_experience[0]", "experience", True)
+
+    rows = [_row(f"r{i}", [(t, DIRECT)], DIRECT, evidence=(shown(t, i),))
+            for i, t in enumerate(["APIs", "REST APIs", "CI/CD", "CI"])]
+    rows.append(_row("db", [("MySQL", NONE)], NONE))
+    assert [a.term for a in propose_skill_additions(_review(*rows), "Python")] == ["REST APIs", "CI/CD", "MySQL"]
+
+
+def test_level_3_counts_an_adjacent_skill_on_the_skills_line_the_posting_never_names():
+    """Live run, 2026-10-13: "You list PostgreSQL" didn't count when the posting itself never named
+    PostgreSQL, so MySQL was never offered. Spec 022: "a listed adjacent skill"."""
+    review = _review(_row("db", [("MySQL", NONE)], NONE), listed=())
+    [added] = propose_skill_additions(review, "Python, PostgreSQL, Redis")
+    assert (added.term, added.level) == ("MySQL", 3) and "PostgreSQL" in added.reason
+    assert propose_skill_additions(review, "Python, Redis") == []

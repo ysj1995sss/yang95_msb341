@@ -74,7 +74,8 @@ def propose_skill_additions(review: RequirementReview | None, skills_text: str,
                 found.append(SkillAddition(term, 2, row.id,
                                            f"Your experience shows {term} ({source}), but your skills line doesn't list it."))
             elif status == NONE:
-                near = next((n for n in adjacent_to(term) if n.lower() in has), None)
+                # Listed means on the person's own skills line too, even if the posting never names it.
+                near = next((n for n in adjacent_to(term) if n.lower() in has or mentions(n, skills_text or "")), None)
                 if near is None:
                     continue
                 found.append(SkillAddition(term, 3, row.id,
@@ -82,6 +83,9 @@ def propose_skill_additions(review: RequirementReview | None, skills_text: str,
             else:
                 continue
             seen.add(key)
+    # A term inside a longer one also added ("APIs" in "REST APIs", "CI" in "CI/CD") says nothing
+    # new and would take a place under the cap (live run, 2026-10-13).
+    found = [a for a in found if not any(b.term != a.term and mentions(a.term, b.term) for b in found)]
     return found[:cap]
 
 
