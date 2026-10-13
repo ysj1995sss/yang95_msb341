@@ -20,6 +20,8 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Optional
 
+from resume_tailorer.utils.files import read_text_retrying
+
 SCHEMA_VERSION = 1
 
 # Provenance of a fact. "missing" is derived, never stored.
@@ -71,8 +73,7 @@ class ProfileStore:
     def load(self) -> dict:
         record = empty_record()
         if self.path.exists():
-            with open(self.path, encoding="utf-8") as f:
-                stored = json.load(f)
+            stored = json.loads(read_text_retrying(self.path))  # a save may be replacing it now
             record.update(stored)
             for key in ("links", "authorization"):
                 merged = empty_record()[key]

@@ -347,3 +347,28 @@ def test_tailor_again_redoes_one_job_and_keeps_the_batch(tmp_path):
     assert done2 == ["b"] and [i["job_id"] for i in data["items"]] == ["a", "b", "c"]
     assert all(i["status"] == "done" for i in data["items"]) and data["options"]["length"] == "2_page"
     assert br.redo(tmp_path, "zzz", hooks2, background=False) is None  # not in the batch
+
+
+def test_a_batch_never_reads_as_gone_while_it_is_being_replaced(tmp_path):
+    import threading
+    from resume_tailorer import batch_runner
+
+    data = {"batch_id": "b1", "status": "done", "items": [], "options": {}}
+    batch_runner.write_batch(tmp_path, data)
+    write = batch_runner.write_batch
+    stop, gone = threading.Event(), []
+
+    def writer():
+        while not stop.is_set():
+            write(tmp_path, data)
+
+    thread = threading.Thread(target=writer)
+    thread.start()
+    try:
+        for _ in range(2000):
+            if batch_runner._read_batch_file(tmp_path) is None:
+                gone.append(1)
+    finally:
+        stop.set()
+        thread.join(10)
+    assert gone == []

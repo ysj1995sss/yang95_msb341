@@ -190,3 +190,33 @@ def test_tailored_resume_handoff_is_restored_only_if_the_exact_file_is_there(tmp
     assert restore_handoff({PENDING_TAILOR_JOB_KEY: {"job_id": "greenhouse_1"}}, record) is None
     failed = dict(record, active_handoff=dict(record["active_handoff"], validation_status="FAIL"))
     assert restore_handoff({PENDING_TAILOR_JOB_KEY: {"job_id": "greenhouse_1"}}, failed) is None
+
+
+def test_reading_while_another_thread_saves_never_fails(tmp_path):
+    # Found in a full API run (2026-10-12): a status check read career_profile.json at the moment
+    # a tailoring worker replaced it, and Windows raised PermissionError (a server error).
+    import threading
+    from resume_tailorer.profile_store import ProfileStore
+
+    store = ProfileStore(tmp_path)
+    store.save({"profile": {"skills": ["SQL"]}})
+    stop, errors = threading.Event(), []
+
+    def writer():
+        i = 0
+        while not stop.is_set():
+            store.save({"profile": {"skills": ["SQL", str(i)]}})
+            i += 1
+
+    thread = threading.Thread(target=writer)
+    thread.start()
+    try:
+        for _ in range(3000):
+            try:
+                assert "profile" in store.load()
+            except PermissionError as exc:
+                errors.append(exc)
+    finally:
+        stop.set()
+        thread.join(10)
+    assert errors == []

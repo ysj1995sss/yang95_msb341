@@ -51,9 +51,11 @@ def _write_run(owner_id: str, data: dict) -> None:
 
 
 def _read_run(owner_id: str) -> dict:
+    from resume_tailorer.utils.files import read_text_retrying
+
     path = _user_file(owner_id, "tailor", "run.json")
     try:
-        data = json.loads(path.read_text(encoding="utf-8"))
+        data = json.loads(read_text_retrying(path))
     except (OSError, ValueError):
         return {"status": "idle"}
     if data.get("status") == "running" and data.get("boot") != BOOT_ID:

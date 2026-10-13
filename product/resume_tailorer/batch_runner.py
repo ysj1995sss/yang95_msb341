@@ -25,6 +25,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable, Iterator, Optional
 
+from resume_tailorer.utils.files import read_text_retrying
+
 MAX_BATCH = 10
 PROCESS_ID = uuid.uuid4().hex  # this process; the API's run status uses the same id
 HEARTBEAT_SECONDS = 30
@@ -192,7 +194,7 @@ def _is_stale(data: dict, now: float) -> bool:
 
 def _read_batch_file(user_dir: Path) -> Optional[dict]:
     try:
-        data = json.loads(_path(user_dir).read_text(encoding="utf-8"))
+        data = json.loads(read_text_retrying(_path(user_dir)))
     except (OSError, ValueError):
         return None
     if not isinstance(data, dict) or not isinstance(data.get("items"), list):

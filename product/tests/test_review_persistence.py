@@ -215,3 +215,29 @@ def test_accepting_a_failed_change_names_it_so_the_person_can_unselect_it(select
     message = str(raised.value)
     assert "Led customer surveys" in message and "2." in message
     assert "batch" not in message.lower()
+
+
+def test_a_saved_review_never_reads_as_missing_while_it_is_being_replaced(tmp_path):
+    # Windows: reading a file at the instant os.replace swaps it raises PermissionError, which
+    # load_review treated as "no review" (the Tailor page could briefly lose the review).
+    import threading
+
+    folder = str(tmp_path / "artifacts")
+    state = _state()
+    assert save_review(folder, "job-a", state)
+    stop, missing = threading.Event(), []
+
+    def writer():
+        while not stop.is_set():
+            save_review(folder, "job-a", state)
+
+    thread = threading.Thread(target=writer)
+    thread.start()
+    try:
+        for _ in range(400):
+            if load_review(folder, "job-a") is None:
+                missing.append(1)
+    finally:
+        stop.set()
+        thread.join(10)
+    assert missing == []

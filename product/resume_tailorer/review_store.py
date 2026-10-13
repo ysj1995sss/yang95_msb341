@@ -21,6 +21,8 @@ from datetime import date, datetime
 from pathlib import Path
 from typing import Any, Optional
 
+from resume_tailorer.utils.files import read_text_retrying
+
 FORMAT = 2  # 1 was pickle (never loaded any more)
 _PACKAGE = "resume_tailorer."
 
@@ -157,7 +159,7 @@ def load_review(folder: Optional[str], job_id: Optional[str]) -> Optional[dict[s
     if not path.is_file():
         return None
     try:
-        payload = json.loads(path.read_text(encoding="utf-8"))
+        payload = json.loads(read_text_retrying(path))
         if not isinstance(payload, dict) or payload.get("format") != FORMAT or payload.get("job_id") != job_id:
             return None
         state = decode(payload.get("state"))
