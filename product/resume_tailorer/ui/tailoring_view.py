@@ -58,7 +58,11 @@ def build_tailoring_summary(state: Mapping[str, Any]) -> TailoringSummary:
 def group_changes(
     changes: Iterable[ResumeChange], true_gaps: Iterable[str] = ()
 ) -> ChangeGroups:
-    """Keep unsupported requirements out of the proposed-change deck."""
+    """Keep unsupported requirements out of the proposed-change deck, except the skills the code
+    adds to the skills line (spec 022 levels 2-3), which are proposed as computed."""
+    from resume_tailorer.analyzers.skill_additions import without_computed_skills
+
+    changes = tuple(changes)
     gaps = tuple(str(gap) for gap in true_gaps if display_optional(gap, "") != "")
     gap_report = GapReport(
         items=[GapItem(requirement=gap, category=GapCategory.E, reason="UI safety gate") for gap in gaps],
@@ -67,7 +71,7 @@ def group_changes(
     blocked = tuple(
         change
         for change in changes
-        if find_unsupported_claims(gap_report, change.proposed_text)
+        if find_unsupported_claims(without_computed_skills(gap_report, [change]), change.proposed_text)
     )
     blocked_ids = {change.change_id for change in blocked}
     reviewable = tuple(change for change in changes if change.change_id not in blocked_ids)

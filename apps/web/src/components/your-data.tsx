@@ -2,14 +2,19 @@
 
 import { Download, LogOut, Trash2 } from "lucide-react";
 import { useState } from "react";
+import { useSharedTest } from "@/components/app-shell";
 import { Alert, Button, Card, TextField, useToast } from "@/components/ui";
 import { api } from "@/lib/api";
 
 /** Download everything, sign out on every device, delete everything (decision 030). */
-export function YourData({ signedIn }: { signedIn: boolean }) {
+export function YourData({ signedIn: tokenSignedIn }: { signedIn: boolean }) {
   const toast = useToast();
   const [confirm, setConfirm] = useState("");
   const [busy, setBusy] = useState<string | null>(null);
+  // The shared test's one owner carries a signed token but nobody signed in (decision 045):
+  // "sign out everywhere" there would lock every visitor out, and deleting clears it for everyone.
+  const shared = useSharedTest();
+  const signedIn = tokenSignedIn && !shared;
 
   async function signOutEverywhere() {
     setBusy("signout");
@@ -54,9 +59,15 @@ export function YourData({ signedIn }: { signedIn: boolean }) {
         )}
       </div>
       <details className="mt-5 rounded-[var(--radius-card)] border border-blocked/30 p-4">
-        <summary className="cursor-pointer font-semibold text-blocked">Delete my account and data</summary>
+        <summary className="cursor-pointer font-semibold text-blocked">
+          {shared ? "Delete everything in this shared test" : "Delete my account and data"}
+        </summary>
         <div className="mt-3 flex flex-col gap-3">
-          <Alert tone="blocked">This permanently deletes everything above. It can&apos;t be undone. Download your data first if you want a copy.</Alert>
+          <Alert tone="blocked">
+            {shared
+              ? "This permanently deletes everything above for everyone using this address, so the next tester starts empty. It can't be undone."
+              : "This permanently deletes everything above. It can't be undone. Download your data first if you want a copy."}
+          </Alert>
           <TextField label="Type DELETE to confirm" value={confirm} onChange={(e) => setConfirm(e.target.value)} autoComplete="off" />
           <Button variant="danger" className="self-start" disabled={confirm !== "DELETE"} busy={busy === "delete"} onClick={deleteEverything}>
             <Trash2 aria-hidden className="size-4" /> Delete everything

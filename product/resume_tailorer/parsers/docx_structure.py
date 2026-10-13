@@ -79,11 +79,18 @@ def _is_heading(paragraph: Paragraph) -> bool:
     return bool(text) and not is_bullet_paragraph(paragraph) and bool(SECTION_BOUNDARY_RE.match(text))
 
 
+_PHONE_LIKE = re.compile(r"\+?\(?\d[\d().\s-]{6,}\d")
+
+
 def _looks_like_contact_line(text: str) -> bool:
+    """Email, web or phone details, or short "|"-separated pieces (city, work mode). A sentence that
+    mentions a number or a parenthesis ("6 years of experience (Python)") is a summary, not contact
+    details (any digit used to count, so most Word summaries were never found, 2026-10-13)."""
     lowered = text.lower()
-    return any(token in lowered for token in ("@", "http", "linkedin", "(")) or any(
-        ch.isdigit() for ch in text
-    )
+    if any(token in lowered for token in ("@", "http", "www.", "linkedin", "github.com")) or _PHONE_LIKE.search(text):
+        return True
+    pieces = [piece.strip() for piece in re.split(r"[|•·]", text) if piece.strip()]
+    return len(pieces) > 1 and all(len(piece.split()) <= 5 for piece in pieces)
 
 
 @dataclass

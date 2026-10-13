@@ -66,11 +66,12 @@ def _is_grounded(original: str, tailored: str, candidate: str, profile: CareerTr
 def condense_grown_changes(
     changes: Sequence[ResumeChange], profile: CareerTruthProfile, llm=None
 ) -> list[ResumeChange]:
-    """Shorten every change whose proposal grew past its original text."""
+    """Shorten every change whose proposal grew past its original text. A skills line with added
+    skills (spec 022) is never reworded to fit: its additions are dropped whole, before this pass."""
     condensed = []
     for change in changes:
         grew = change.original_text and change.proposed_text and len(change.proposed_text) > len(change.original_text)
-        if not grew:
+        if not grew or change.category is ChangeCategory.SKILLS_ADDED:
             condensed.append(change)
             continue
         shorter = condense_bullet(change.original_text, change.proposed_text, profile, llm)
@@ -151,7 +152,12 @@ def correct_docx_length_once(
     from resume_tailorer.artifacts.regeneration import regenerate_docx_artifact
 
     condensed = condense_grown_changes(docx_result.changes, profile, llm)
-    return regenerate_docx_artifact(
+    result = regenerate_docx_artifact(
         original_docx_bytes=original_docx_bytes, changes=condensed, profile=profile,
         gap_report=gap_report, convert_to_pdf=True,
     )
+    # The rebuild only sees bare paragraph edits, so it can't rebuild each change's reason, the
+    # proposals the checks turned down, or a skills line computed by code. The reviewed list is the
+    # one the file was built from.
+    result.changes = list(condensed)
+    return result

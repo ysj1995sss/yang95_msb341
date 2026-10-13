@@ -179,6 +179,8 @@ export type ResumeSourceInfo = {
 export type Review = {
     source_info?: ResumeSourceInfo | null;
     review_revision: number; review_mode: "manual" | "assisted"; assisted_note: string;
+    /** Spec 022 step 6: added skills left out to keep the page count (absent on older servers). */
+    skills_note?: string;
   version: number; status: "PASS" | "WARNING" | "FAIL"; status_text: string; status_tone: string; findings: string[];
   fidelity: string; page_count: number | null; preview_pages: number; has_pdf: boolean; has_docx: boolean;
   tailored_text: string; alignment: { before: number | null; after: number | null }; overlap_note: string; sync_summary: string;

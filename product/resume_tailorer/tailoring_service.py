@@ -20,6 +20,7 @@ from typing import Any, Callable, MutableMapping, Optional
 
 from resume_tailorer.analyzers import GapAnalyzer, JobAnalyzer, ResumeBenchmarker
 from resume_tailorer.analyzers.gap_analyzer import find_unsupported_claims
+from resume_tailorer.analyzers.skill_additions import is_computed_skills_line, without_computed_skills
 from resume_tailorer.analyzers.requirement_review import build_review, with_resume
 from resume_tailorer.artifacts.changes import build_freeform_changes
 from resume_tailorer.resume_source import resolve_fact_context, source_details
@@ -28,7 +29,7 @@ from resume_tailorer.artifacts.length_control import (
     correct_docx_length_once,
     max_pages_label,
 )
-from resume_tailorer.artifacts.models import ChangeCategory, ChangeDisposition, FidelityMode
+from resume_tailorer.artifacts.models import ChangeDisposition, FidelityMode
 from resume_tailorer.artifacts.regeneration import (
     regenerate_docx_artifact,
     regenerate_freeform_artifact,
@@ -122,12 +123,14 @@ def run_tailoring(
         progress("Writing and checking changes (about a minute)")
         baseline_text = ""
         target_notes: dict = {}
+        skills_note = ""  # spec 022 step 6: added skills left out to keep the page count
         if is_docx:
             docx_result = run_docx_tailoring_pipeline(
                 original_bytes, profile, job_analysis, gap_report,
                 bullet_tailorer=DocxBulletTailorer(llm=llm), convert_to_pdf=True, review=review,
             )
             target_notes = dict(docx_result.target_notes)  # kept across the length correction
+            skills_note = docx_result.skills_note
             docx_result = correct_docx_length_once(
                 original_docx_bytes=original_bytes, docx_result=docx_result,
                 profile=profile, gap_report=gap_report, llm=llm,
@@ -179,7 +182,8 @@ def run_tailoring(
         company=pending.get("company", ""),
         role=pending.get("title") or "Target Role",
         fidelity_mode=fidelity_mode,
-        unsupported_claims=find_unsupported_claims(gap_report, tailored_text),
+        unsupported_claims=find_unsupported_claims(without_computed_skills(gap_report, changes, in_document=True),
+                                                   tailored_text),
     )
     state = {
         "source_kind": "DOCX" if is_docx else "PDF",
@@ -194,6 +198,7 @@ def run_tailoring(
         "requirement_review": with_resume(review, tailored_text),
         "sync_summary": sync_summary,
         "target_notes": target_notes,
+        "skills_note": skills_note,
         "candidate_fit": candidate_fit,
         "company": pending.get("company", ""),
         "role": pending.get("title", ""),
@@ -251,8 +256,7 @@ def regenerate(session: MutableMapping[str, Any], state: dict) -> None:
         # Spec 022: skills added by code (change levels 2-3) claim familiarity on the skills line, not
         # use in one job, so the job-scope check doesn't apply when they're used exactly as computed.
         # A person's own wording for that line gets every normal check.
-        computed_skills = (change.category is ChangeCategory.SKILLS_ADDED and final_text == change.proposed_text
-                           and disposition is not ChangeDisposition.MANUALLY_EDITED)
+        computed_skills = is_computed_skills_line(selected)
         scoped = [] if computed_skills else introduced_unscoped_tools(
             change.original_text, final_text, state["profile"], section=change.section,
             review=state.get("requirement_review"))
@@ -292,7 +296,8 @@ def regenerate(session: MutableMapping[str, Any], state: dict) -> None:
             os.remove(tmp_path)
         docx_bytes = None
 
-    unsupported_claims = find_unsupported_claims(gap_report, tailored_text)
+    unsupported_claims = find_unsupported_claims(without_computed_skills(gap_report, updated_changes, in_document=True),
+                                                 tailored_text)
     tailored_alignment, _matched, _missing = ResumeTailoringOptimizer._score_resume(
         tailored_text, state["job_analysis"], profile
     )

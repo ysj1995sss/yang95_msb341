@@ -70,6 +70,8 @@ class DocxTailoringResult:
         default_factory=lambda: ArtifactValidation.from_findings([])
     )
     target_notes: dict[str, str] = field(default_factory=dict)
+    # Spec 022 step 6: which added skills were left out to keep the page count, said in the review.
+    skills_note: str = ""
 
 
 def _skills_change(edit: BulletEdit, bullet, additions) -> ResumeChange:
@@ -254,23 +256,38 @@ def run_docx_tailoring_pipeline(
         tailoring_seems_shallow=tailoring_seems_shallow,
     )
     # Spec 022: change levels 2-3 go on the skills line, computed by code after the model answered,
-    # so the model never edits the skills line itself.
+    # so the model never edits the skills line itself. Additions that push the resume onto another
+    # page are dropped one at a time, lowest priority first, and the review says which (step 6).
     skills_bullet, skills_edit, additions = _skills_line_edit(doc, review)
-    result = None
-    if skills_edit is not None:
-        result = finalize_docx_edits(
+    kept, result = list(additions), None
+    while kept and result is None:
+        attempt = finalize_docx_edits(
             doc=Document(io.BytesIO(original_docx_bytes)), bullets=bullets + [skills_bullet],
-            edits=tailoring_result.edits + [skills_edit], extra_warnings=list(warnings),
-            skill_additions=additions, **finalize_kwargs,
+            edits=tailoring_result.edits + [_with_skills(skills_edit, kept)], extra_warnings=list(warnings),
+            skill_additions=kept, **finalize_kwargs,
         )
-        if result.page_count_preserved is False:
-            warnings.append("Added skills were left out: they pushed your resume onto another page.")
-            result = None
+        if attempt.page_count_preserved is False:
+            kept = kept[:-1]
+        else:
+            result = attempt
     if result is None:
         result = finalize_docx_edits(doc=doc, bullets=bullets, edits=tailoring_result.edits,
                                      extra_warnings=warnings, **finalize_kwargs)
+    dropped = [a.term for a in additions[len(kept):]]
+    if dropped:
+        why = ("adding them pushed your resume onto another page" if result.page_count_preserved is not False
+               else "your resume was already longer than the original")
+        result.skills_note = f"Left out of your skills line: {', '.join(dropped)}, because {why}."
+        result.bullet_warnings.append(result.skills_note)
     result.target_notes = dict(tailoring_result.target_notes)  # spec 011
     return result
+
+
+def _with_skills(edit: BulletEdit, additions) -> BulletEdit:
+    """The skills-line edit carrying exactly these additions."""
+    from resume_tailorer.docx_export.skills_line import append_skills
+
+    return replace(edit, new_text=append_skills(edit.original_text, [a.term for a in additions]))
 
 
 def _skills_line_edit(doc, review: RequirementReview | None):
@@ -401,7 +418,12 @@ def finalize_docx_edits(
             )
         )
 
-    scoring_text = _synthesize_scoring_text(profile, structure, edits)
+    from resume_tailorer.docx_export.skills_line import find_skills_paragraph_index
+
+    skills_index = find_skills_paragraph_index(spliced_doc.paragraphs)
+    skills_edit = next((e for e in edits if e.paragraph_index == skills_index and e.changed), None)
+    scoring_text = _synthesize_scoring_text(profile, structure, edits,
+                                            skills_line=skills_edit.new_text if skills_edit else None)
 
     return DocxTailoringResult(
         docx_bytes=docx_bytes,
@@ -510,7 +532,7 @@ def _underrepresented_strong_evidence(
 
 
 def _synthesize_scoring_text(
-    profile: CareerTruthProfile, structure: DocxStructure, edits: list[BulletEdit]
+    profile: CareerTruthProfile, structure: DocxStructure, edits: list[BulletEdit], skills_line: str | None = None
 ) -> str:
     """
     Build a flat resume-shaped text string purely so the EXISTING
@@ -569,7 +591,11 @@ def _synthesize_scoring_text(
                 lines.append(f"- {acc}")
             lines.append("")
 
-    if profile.skills:
+    if skills_line:
+        # Spec 022: skills the code added (levels 2-3) count as the file now reads, so the keyword
+        # report, the requirement review and the final checks all see them.
+        lines.extend(["SKILLS", skills_line, ""])
+    elif profile.skills:
         lines.append("SKILLS")
         lines.append(", ".join(profile.skills))
         lines.append("")

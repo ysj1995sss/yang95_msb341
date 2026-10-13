@@ -3,8 +3,15 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Briefcase, ClipboardList, FileText, Home, Send, UserRound, Wand2 } from "lucide-react";
-import type { ReactNode } from "react";
+import { createContext, useContext, type ReactNode } from "react";
 import { ToastProvider, cx } from "@/components/ui";
+
+const SharedTest = createContext(false);
+
+/** True in the shared test workspace (decision 045): one owner for every visitor, no sign-in. */
+export function useSharedTest(): boolean {
+  return useContext(SharedTest);
+}
 
 const DESTINATIONS = [
   { href: "/", label: "Home", icon: Home },
@@ -85,7 +92,9 @@ export function AppShell({ children, signInEnabled, sharedTest = false, userName
         </div>
       </header>
 
-      <main id="main" className="mx-auto max-w-6xl px-4 pt-6 pb-6">{children}</main>
+      <main id="main" className="mx-auto max-w-6xl px-4 pt-6 pb-6">
+        <SharedTest.Provider value={sharedTest}>{children}</SharedTest.Provider>
+      </main>
       <footer className="mx-auto max-w-6xl px-4 pb-28 text-[14px] text-muted md:pb-12">
         <Link href="/privacy" className="underline underline-offset-2 hover:text-ink">Privacy</Link>
       </footer>

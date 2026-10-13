@@ -21,7 +21,7 @@ from app.workspace import limits
 from app.workspace.context import Workspace, jsonable, workspace
 from resume_tailorer.ui import ats_explainer
 from resume_tailorer.ui.requirement_review_view import (
-    keyword_report_view, missing_list, readability_view, review_for_state, review_view,
+    adjacent_additions, keyword_report_view, missing_list, readability_view, review_for_state, review_view,
 )
 
 router = APIRouter(prefix="/v2", tags=["workspace"])
@@ -156,6 +156,7 @@ def _review_view(ws: Workspace, state: dict, show_all: bool = False) -> dict:
     report = state["report"]
     groups = _groups(state, show_all)
     review = review_for_state(state, ws.record.get("provenance"))
+    adjacent = adjacent_additions(state["changes"])  # spec 022: shown as added, never as evidence
     decided = state.get("decided") or set()
     progress = review_progress(groups.reviewable, decided, state.get("dirty", False), report.validation.status)
     status = report.validation.status
@@ -192,6 +193,7 @@ def _review_view(ws: Workspace, state: dict, show_all: bool = False) -> dict:
         "review_revision": int(state.get("review_revision", 0)),
         "review_mode": state.get("review_mode", "manual"),
         "assisted_note": state.get("assisted_note", ""),
+        "skills_note": state.get("skills_note", ""),  # spec 022 step 6
         "source_info": state.get("source_info"),
         "status": status.value,
         "status_text": artifact_status_text(status),
@@ -204,7 +206,7 @@ def _review_view(ws: Workspace, state: dict, show_all: bool = False) -> dict:
         "has_docx": bool(state.get("docx_bytes")) and status.value != "FAIL",
         "tailored_text": state.get("tailored_text") or "",
         "alignment": {"before": report.original_alignment, "after": report.tailored_alignment},
-        "requirement_review": review_view(review) if review is not None else None,
+        "requirement_review": review_view(review, adjacent) if review is not None else None,
         "keyword_report": keyword_report_view(review, state) if review is not None else None,
         "readability": readability_view(report.validation.findings, state.get("source_kind", ""),
                                         getattr(report.validation, "checks_run", ())),
@@ -219,7 +221,7 @@ def _review_view(ws: Workspace, state: dict, show_all: bool = False) -> dict:
         "turned_down": [{"original": c.original_text, "reason": c.reason or "did not pass the checks"}
                         for c in rejected_by_checks(state["changes"])],
         # Spec 011: one gap system on every screen; the requirement review decides what's missing.
-        "true_gaps": (missing_list(review) if review is not None else
+        "true_gaps": (missing_list(review, adjacent) if review is not None else
                       [{"label": short_requirement(g), "full": g} for g in displayable_gaps(groups.true_gaps)]),
         "blocked": [c.job_requirement or "an unsupported requirement" for c in groups.blocked],
         "show_all": show_all,

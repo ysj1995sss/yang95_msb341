@@ -83,3 +83,30 @@ def propose_skill_additions(review: RequirementReview | None, skills_text: str,
                 continue
             seen.add(key)
     return found[:cap]
+
+
+
+def is_computed_skills_line(change) -> bool:
+    """A skills change computed by code (levels 2-3) whose line still says exactly what was computed:
+    not turned down, not kept original, not reworded by the person (spec 022 step 4)."""
+    from resume_tailorer.artifacts.models import ChangeCategory, ChangeDisposition
+    from resume_tailorer.artifacts.regeneration import final_text_for_change
+
+    return (change.category is ChangeCategory.SKILLS_ADDED and change.disposition is not ChangeDisposition.MANUALLY_EDITED
+            and final_text_for_change(change) == change.proposed_text)
+
+
+def without_computed_skills(gap_report, changes, *, in_document: bool = False):
+    """The gap report minus the terms that computed skills lines add: the one place a term without
+    evidence may appear. A proposal is judged as computed; with in_document, only lines that still
+    say what was computed count. Bullets, summaries and a person's own wording meet every check."""
+    from dataclasses import replace
+
+    from resume_tailorer.artifacts.models import ChangeCategory
+
+    added = {term.casefold() for change in changes
+             if change.category is ChangeCategory.SKILLS_ADDED and (not in_document or is_computed_skills_line(change))
+             for term, _level, _reason in change.added_skills}
+    if not added:
+        return gap_report
+    return replace(gap_report, items=[item for item in gap_report.items if item.requirement.casefold() not in added])

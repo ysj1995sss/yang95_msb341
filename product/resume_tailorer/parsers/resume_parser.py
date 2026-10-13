@@ -252,7 +252,10 @@ class ResumeParser:
 
         # Extract skills, tools, certifications
         skills = self._extract_skills(text)
-        tools = self._extract_tools(text)
+        # A tool already on the skills line is listed once; in both lists, Career Profile flagged
+        # each one as a problem right after import (2026-10-13).
+        listed = {skill.casefold() for skill in skills}
+        tools = [tool for tool in self._extract_tools(text) if tool.casefold() not in listed]
         certifications = self._extract_certifications(text)
 
         # Extract the professional summary paragraph, if there is one --
@@ -890,10 +893,13 @@ class ResumeParser:
     def _extract_certifications(self, text: str) -> list[str]:
         """Extract certifications."""
         certifications = []
-        # Look for patterns like "AWS Solutions Architect", "CPA", etc.
+        # Look for patterns like "AWS Certified Solutions Architect", "CPA", etc. A vendor name counts
+        # only with a certification word, and "Certified" only before a name: "Migrated workloads to
+        # AWS Lambda" and "Certified 40 vendors" are bullets, not credentials (2026-10-13).
         # Use explicit allowlist of known certification acronyms to avoid false positives
+        cert_word = r"(?:Certified|Certification|Certificate|Associate|Professional|Practitioner|Specialty|Fundamentals|Administrator)"
         patterns = [
-            r"((?:AWS|Azure|Google Cloud|Kubernetes|Docker|Certified)\s+[^,\n]+)",
+            rf"((?:(?:AWS|Azure|Google Cloud|Kubernetes|Docker)\s+[^,\n]*?\b{cert_word}\b|Certified\s+[A-Z])[^,\n]*)",
             # Known certification acronyms (CPA, PMP, CISSP, CCNA, etc.)
             r"\b(CPA|CFA|CFP|PMP|CISSP|CCNA|CCNP|CHES|CAPM|CSM|ACP|ITIL)\b",
         ]

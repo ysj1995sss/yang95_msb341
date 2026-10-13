@@ -28,6 +28,7 @@ def _compute_job(job, *, artifacts_dir: str, original_bytes: bytes, filename: st
                conservative: bool = False, progress: Callable[[str], None] = lambda m: None) -> dict:
     """Tailor one stored job in a private session and save its review. Returns the review state."""
     from resume_tailorer.job_search.job_service import build_tailor_snapshot
+    from resume_tailorer.review_decisions import new_review_revision
     from resume_tailorer.tailoring_service import regenerate, run_tailoring
     from resume_tailorer.tailoring_session import ACTIVE_JOB_KEY
     from resume_tailorer.ui.tailoring_view import safe_default_dispositions
@@ -41,6 +42,10 @@ def _compute_job(job, *, artifacts_dir: str, original_bytes: bytes, filename: st
                           job_description=job.description or "", pending=pending, llm=llm,
                           target_length=target_length, conservative=conservative, progress=progress,
                           provenance=provenance, career_profile=career_profile)
+    # Like a single run, a new review never reuses an older one's revision, so a tab still open on
+    # the older review can't decide changes in this one.
+    state["review_mode"] = "manual"
+    state["review_revision"] = new_review_revision()
     # The same first step as a single run: changes that claim a missing requirement start rejected.
     safe = safe_default_dispositions(state["changes"], state["report"].true_gaps)
     if safe:

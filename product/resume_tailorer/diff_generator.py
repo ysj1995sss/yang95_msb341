@@ -7,6 +7,7 @@ import re
 
 from .models import CareerTruthProfile
 from .analyzers.competency_map import COMPETENCY_EVIDENCE_PATTERNS
+from .analyzers.metrics import metric_tokens
 from .utils.length_check import bullet_length_delta
 from .utils.stemming import stem as _stem
 
@@ -407,10 +408,8 @@ class DiffGenerator:
     # The word-based check below (_content_words, `[a-zA-Z']+`) is
     # entirely blind to these -- "15+", "100%", "$120M", "10-person",
     # "60s", "42s", "3x"/"3×" contain no run of 4+ letters -- so this is a
-    # real gap it closes, not just a restatement of the word check.
-    _METRIC_TOKEN_RE = re.compile(
-        r"\$?\d[\d,.]*(?:%|[kmb](?![a-z])|x(?![a-z])|×|\+|-person|-year|s\b)?", re.IGNORECASE
-    )
+    # real gap it closes, not just a restatement of the word check. They are
+    # read by analyzers/metrics.py, shared with the finished-PDF check.
 
     # A bullet's CORE clause (who/what/how-much) is where a word swap
     # changes the underlying claim (the "growth"->"acquisition" bug); the
@@ -462,8 +461,8 @@ class DiffGenerator:
         leading verb (e.g. "Developed" -> "Led") changes HOW something is
         described, not WHAT was accomplished.
         """
-        original_metrics = set(m.group().strip() for m in self._METRIC_TOKEN_RE.finditer(original) if m.group().strip())
-        new_metrics = set(m.group().strip() for m in self._METRIC_TOKEN_RE.finditer(new) if m.group().strip())
+        original_metrics = metric_tokens(original)
+        new_metrics = metric_tokens(new)
         dropped_metrics = original_metrics - new_metrics
         if dropped_metrics:
             return [

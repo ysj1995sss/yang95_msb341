@@ -114,9 +114,11 @@ def test_freeform_non_length_failure_is_not_repaired(monkeypatch):
 def test_docx_page_growth_is_rebuilt_once_with_shortened_bullets(monkeypatch):
     seen = {}
 
+    rebuilt = SimpleNamespace(changes=["paired again from bare edits"])
+
     def fake_regenerate(**kwargs):
         seen.update(kwargs)
-        return "rebuilt"
+        return rebuilt
 
     monkeypatch.setattr("resume_tailorer.artifacts.regeneration.regenerate_docx_artifact", fake_regenerate)
     grown = SimpleNamespace(
@@ -125,8 +127,9 @@ def test_docx_page_growth_is_rebuilt_once_with_shortened_bullets(monkeypatch):
     )
     assert correct_docx_length_once(
         original_docx_bytes=b"docx", docx_result=grown, profile=PROFILE, gap_report=None
-    ) == "rebuilt"
+    ) is rebuilt
     assert seen["changes"][0].proposed_text == ORIGINAL
+    assert rebuilt.changes == seen["changes"]  # the reviewed list, with its reasons, not a re-pairing
 
     fine = SimpleNamespace(validation=ArtifactValidation.from_findings([]), changes=[])
     assert correct_docx_length_once(

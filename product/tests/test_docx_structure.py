@@ -73,6 +73,26 @@ class TestExtractDocxStructure:
         structure = extract_docx_structure(doc)
         assert structure.summary_paragraph_indices == [2]
 
+    def test_a_summary_that_mentions_a_number_is_still_the_summary(self):
+        """Found 2026-10-13: any digit made a line "contact details", so a summary saying "6 years of
+        experience" was never found: Word resumes' summaries were never tailored, and every run said
+        the summary couldn't be synced. Contact lines are still skipped."""
+        doc = Document()
+        for line in ("Alex Rivera", "alex@example.com | (555) 010-0100 | Anytown, ST",
+                     "Backend engineer with 6 years of experience scaling REST APIs (Python, Flask).",
+                     "PROFESSIONAL EXPERIENCE", "Senior Software Engineer", "Northwind Analytics | Remote | 2021-2024"):
+            doc.add_paragraph(line)
+        _add_bullet_paragraph(doc, "Reduced API latency by 35%")
+        assert extract_docx_structure(doc).summary_paragraph_indices == [2]
+
+    def test_contact_lines_without_an_email_are_not_the_summary(self):
+        doc = Document()
+        for line in ("Alex Rivera", "Senior Software Engineer", "Anytown, ST | Remote | Open to relocation",
+                     "+1 555 010 0100", "linkedin.com/in/example-person",
+                     "Backend engineer who ships reliable services for growing teams.", "EXPERIENCE"):
+            doc.add_paragraph(line)
+        assert extract_docx_structure(doc).summary_paragraph_indices == [5]
+
     def test_finds_two_jobs_with_correct_bullets(self):
         doc = _build_sample_resume()
         structure = extract_docx_structure(doc)

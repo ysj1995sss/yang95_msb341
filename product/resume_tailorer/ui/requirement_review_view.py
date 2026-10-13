@@ -15,19 +15,40 @@ TONES = {DIRECT: "verified", TRANSFERABLE: "primary", PARTIAL: "review", MENTION
          CHECK: "review", NONE: "blocked"}
 COMPUTED_NOW = ("This review was worked out now from your current Career Profile, because this tailoring run "
                 "is from before reviews were saved.")
+ADDED_TO_SKILLS = "Added to skills (adjacent)"
 
 
-def review_view(review: RequirementReview) -> dict:
+def adjacent_additions(changes: Iterable) -> set[str]:
+    """Spec 022: the adjacent skills (level 3) a computed skills line puts in the finished resume,
+    casefolded. They have no evidence, so the review shows them as added, never as evidence."""
+    from resume_tailorer.analyzers.skill_additions import is_computed_skills_line
+
+    return {term.casefold() for change in changes or () if is_computed_skills_line(change)
+            for term, level, _reason in change.added_skills if level == 3}
+
+
+def _all_added(row, adjacent: set[str]) -> bool:
+    return row.status == NONE and bool(row.terms) and all(term.casefold() in adjacent for term in row.terms)
+
+
+def review_view(review: RequirementReview, adjacent: set[str] = frozenset()) -> dict:
+    def term_view(term: str, status: str) -> dict:
+        if status == NONE and term.casefold() in adjacent:
+            return {"term": term, "status": status, "label": ADDED_TO_SKILLS, "tone": "review"}
+        return {"term": term, "status": status, "label": STATUS_LABELS[status], "tone": TONES[status]}
+
     groups = []
     for section, label in (("required", "Required"), ("preferred", "Preferred")):
         rows = [r for r in review.rows if r.section == section]
         if not rows:
             continue
         groups.append({"section": section, "label": label, "rows": [{
-            "id": r.id, "text": r.text, "status": r.status, "label": r.label, "tone": TONES[r.status],
+            "id": r.id, "text": r.text, "status": r.status,
+            "label": ADDED_TO_SKILLS if _all_added(r, adjacent) else r.label,
+            "tone": "review" if _all_added(r, adjacent) else TONES[r.status],
             "reason": r.reason, "hard_gate": r.hard_gate, "shown_in_resume": r.shown_in_resume,
             "evidence": [{"text": e.text, "source": e.source, "confirmed": e.confirmed} for e in r.evidence],
-            "terms": [{"term": t, "status": st, "label": STATUS_LABELS[st], "tone": TONES[st]} for t, st in r.term_status],
+            "terms": [term_view(t, st) for t, st in r.term_status],
         } for r in rows]})
     return {"summary": review.summary, "computed_from": review.computed_from,
             "note": COMPUTED_NOW if review.computed_from == "now" else "", "groups": groups}
@@ -125,17 +146,19 @@ def _names(term: str, text: str) -> bool:
     return _mentions_any(term, text)
 
 
-def missing_list(review: Optional[RequirementReview]) -> list[dict]:
+def missing_list(review: Optional[RequirementReview], adjacent: set[str] = frozenset()) -> list[dict]:
     """Tailor's "Missing, never added" list, from the requirement review (spec 011): requirements
-    with no evidence, then each missing named term of a partly supported requirement."""
+    with no evidence, then each missing named term of a partly supported requirement. Adjacent
+    skills the skills line now names (spec 022) aren't listed as never added."""
     from resume_tailorer.analyzers.term_match import short_requirement
 
     if review is None:
         return []
-    items = [{"label": short_requirement(r.text), "full": r.text} for r in review.rows if r.status == NONE]
+    items = [{"label": short_requirement(r.text), "full": r.text} for r in review.rows
+             if r.status == NONE and not _all_added(r, adjacent)]
     for r in review.rows:
         if r.status == PARTIAL:
             for term, state in r.term_status:
-                if state == NONE:
+                if state == NONE and term.casefold() not in adjacent:
                     items.append({"label": f"{term} (part of “{short_requirement(r.text)}”)", "full": r.text})
     return items

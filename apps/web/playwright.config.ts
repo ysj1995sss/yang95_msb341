@@ -8,6 +8,9 @@ import { join } from "node:path";
 
 const dataDir = process.env.E2E_DATA_DIR ?? mkdtempSync(join(tmpdir(), "jc-e2e-"));
 process.env.E2E_DATA_DIR = dataDir; // the same folder for every worker
+const sharedDataDir = process.env.E2E_SHARED_DATA_DIR ?? mkdtempSync(join(tmpdir(), "jc-e2e-shared-"));
+process.env.E2E_SHARED_DATA_DIR = sharedDataDir;
+const sharedSecret = "e2e-only-shared-test-secret-not-used-anywhere-else";
 const python = process.env.PYTHON ?? "python";
 
 export default defineConfig({
@@ -35,6 +38,23 @@ export default defineConfig({
       url: "http://127.0.0.1:3100/api/backend/me",
       env: { API_URL: "http://127.0.0.1:8100" },
       timeout: 300_000,
+      reuseExistingServer: false,
+    },
+    // The shared test workspace (decision 045, e2e/shared-test.spec.ts): its own API and data, and
+    // the same build as above (servers start in order) with no sign-in and one owner for everyone.
+    {
+      command: `${python} ../api/tests/e2e_server.py "${sharedDataDir}" 8101`,
+      url: "http://127.0.0.1:8101/health",
+      env: { E2E_WORKSPACE_TOKEN_SECRET: sharedSecret },
+      timeout: 60_000,
+      reuseExistingServer: false,
+    },
+    {
+      command: "npx next start -p 3101",
+      url: "http://127.0.0.1:3101/api/backend/me",
+      env: { API_URL: "http://127.0.0.1:8101", SHARED_TEST_WORKSPACE: "yes", AUTH_SECRET: sharedSecret,
+             WORKSPACE_TOKEN_SECRET: sharedSecret },
+      timeout: 120_000,
       reuseExistingServer: false,
     },
   ],

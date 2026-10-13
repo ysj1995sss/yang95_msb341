@@ -158,6 +158,42 @@ class TestInlineLabeledSkills:
         assert "Market Research" in skills
 
 
+class TestToolsAreNotRepeatedFromTheSkillsLine:
+    """Found 2026-10-13: a fresh import put Docker, AWS and other tools on the skills line into
+    tools as well, so Career Profile opened with "5 to review" problems the person never made and
+    every Word run said the tools couldn't be synced."""
+
+    def test_a_tool_on_the_skills_line_is_listed_once(self):
+        text = (
+            "Alex Rivera\nalex.rivera.demo@example.com\n\n"
+            "EXPERIENCE\nSoftware Engineer\nBeacon Software Co. | Austin, TX | 2018-2021\n"
+            "• Deployed services with Docker and Terraform\n\n"
+            "SKILLS\nPython, Docker, aws\n"
+        )
+        profile = ResumeParser()._parse_text(text)
+        assert {"Python", "Docker", "aws"} <= set(profile.skills)
+        assert "Docker" not in profile.tools and "AWS" not in profile.tools
+        assert profile.tools == ["Terraform"]  # named only in a bullet, so it's still a tool
+
+
+class TestCertificationsNeedACertificationWord:
+    """Found 2026-10-13: any phrase starting with AWS, Azure, Docker or Kubernetes became a
+    certification, so "Migrated workloads to AWS Lambda and ECS" was imported as a credential the
+    person doesn't hold (and could be printed in a generated resume's certifications)."""
+
+    def test_a_tool_named_in_a_bullet_is_not_a_certification(self):
+        text = ("EXPERIENCE\n• Deployed services with Docker and Terraform\n"
+                "• Migrated workloads to AWS Lambda and ECS\n• Certified 40 vendors for compliance\n")
+        assert ResumeParser()._extract_certifications(text) == []
+
+    def test_real_certifications_are_still_found(self):
+        text = ("CERTIFICATIONS\n• AWS Certified Solutions Architect – Associate\n"
+                "• Kubernetes Administrator (CKA)\n• Certified Scrum Master\n• PMP\n")
+        found = set(ResumeParser()._extract_certifications(text))
+        assert {"AWS Certified Solutions Architect – Associate", "Kubernetes Administrator (CKA)",
+                "Certified Scrum Master", "PMP"} <= found
+
+
 def test_extract_style_hints_detects_bullet_dash():
     """Detects '-' as the dominant bullet character."""
     parser = ResumeParser()

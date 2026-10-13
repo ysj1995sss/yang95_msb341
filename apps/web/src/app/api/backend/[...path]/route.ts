@@ -19,6 +19,11 @@ async function forward(request: NextRequest, context: { params: Promise<{ path: 
     if (!session) return Response.json({ detail: "Sign in to continue." }, { status: 401 });
     headers.set("authorization", `Bearer ${await apiToken(session)}`);
   } else if (sharedTestWorkspace()) {
+    // Every visitor is the same owner (decision 045), so "sign out everywhere" would refuse every
+    // later request from everyone, and with no sign-in nobody could get back in.
+    if (path.join("/") === "account/sign-out-everywhere") {
+      return Response.json({ detail: "This shared test has no sign-in, so there's nothing to sign out of." }, { status: 400 });
+    }
     headers.set("authorization", `Bearer ${await apiToken(SHARED_SESSION)}`);
   }
   const target = `${API_URL}/v2/${path.map(encodeURIComponent).join("/")}${request.nextUrl.search}`;

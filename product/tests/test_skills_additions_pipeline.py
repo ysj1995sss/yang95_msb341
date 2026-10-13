@@ -6,7 +6,7 @@ import io
 import pytest
 from docx import Document
 
-from resume_tailorer.analyzers.gap_analyzer import GapReport
+from resume_tailorer.analyzers.gap_analyzer import GapCategory, GapItem, GapReport
 from resume_tailorer.analyzers.job_analyzer import JobAnalyzer
 from resume_tailorer.analyzers.requirement_review import DIRECT, NONE, EvidenceRef, RequirementReview, RequirementRow
 from resume_tailorer.artifacts.models import ChangeCategory
@@ -65,10 +65,16 @@ def _profile():
                               skills=["SQL", "Excel"], tools=[], certifications=[], accomplishments=[])
 
 
-def _run(docx_bytes, review):
+def _run(docx_bytes, review, gaps=None):
     return run_docx_tailoring_pipeline(docx_bytes, _profile(), JobAnalyzer().analyze("Tableau and PostgreSQL."),
-                                       GapReport(items=[], summary=""), bullet_tailorer=_KeepAll(),
+                                       gaps or GapReport(items=[], summary=""), bullet_tailorer=_KeepAll(),
                                        convert_to_pdf=True, review=review)
+
+
+def _gaps():
+    """What a live gap report says about an unevidenced job term: truly missing, never add."""
+    return GapReport(items=[GapItem(requirement="PostgreSQL", category=GapCategory.E,
+                                    reason="Skill not found; do not add", candidate_evidence="None")], summary="")
 
 
 def test_levels_2_and_3_are_one_reviewable_skills_change(no_word):
@@ -98,16 +104,35 @@ def test_additions_that_push_the_resume_onto_another_page_are_dropped(no_word, m
 
     monkeypatch.setattr(pipeline_module, "finalize_docx_edits", finalize)
     result = _run(_docx(), _review())
+    # Spec 022 step 6: only what doesn't fit goes, lowest priority first, and the review says which.
+    [change] = [c for c in result.changes if c.category is ChangeCategory.SKILLS_ADDED]
+    assert [term for term, _level, _reason in change.added_skills] == ["Tableau"]
+    assert change.proposed_text == "SQL, Excel, Tableau"
+    assert result.skills_note == ("Left out of your skills line: PostgreSQL, because adding them pushed your "
+                                  "resume onto another page.")
+
+
+def test_additions_are_not_blamed_when_the_resume_was_already_too_long(no_word, monkeypatch):
+    real = pipeline_module.finalize_docx_edits
+
+    def finalize(**kwargs):
+        result = real(**kwargs)
+        result.page_count_preserved = False  # the rewrites alone already add a page
+        return result
+
+    monkeypatch.setattr(pipeline_module, "finalize_docx_edits", finalize)
+    result = _run(_docx(), _review())
     assert not [c for c in result.changes if c.category is ChangeCategory.SKILLS_ADDED]
-    assert any("onto another page" in w for w in result.bullet_warnings)
+    assert result.skills_note == ("Left out of your skills line: Tableau, PostgreSQL, because your resume was "
+                                  "already longer than the original.")
 
 
-def _review_state(result, dispositions, manual_texts=None):
+def _review_state(result, dispositions, manual_texts=None, gaps=None):
     from resume_tailorer.artifacts.models import FidelityMode
 
     return {"source_kind": "DOCX", "original_bytes": _docx(), "changes": list(result.changes),
             "dispositions": dispositions, "manual_texts": manual_texts or {}, "profile": _profile(),
-            "requirement_review": _review(), "gap_report": GapReport(items=[], summary=""),
+            "requirement_review": _review(), "gap_report": gaps or GapReport(items=[], summary=""),
             "job_analysis": JobAnalyzer().analyze("Tableau and PostgreSQL."), "original_alignment": 0.5,
             "candidate_fit": None, "company": "Acme", "role": "Data Analyst",
             "fidelity_mode": FidelityMode.PRESERVED, "version": 1}
@@ -127,3 +152,98 @@ def test_an_accepted_addition_rebuilds_and_a_persons_own_edit_is_still_checked(n
                            {change.change_id: "SQL, Excel, Kubernetes"})
     with pytest.raises(TailoringError):
         regenerate({}, edited)
+
+
+def test_a_computed_adjacent_skill_reaches_review_though_the_gap_report_calls_it_missing(no_word):
+    """Spec 022 step 4: only the computed additions may pass the missing-requirement gate. Live gap
+    reports list an unevidenced job term as truly missing, which used to reject the whole skills
+    change (its level-2 terms too) before anyone saw it (code review, 2026-10-13)."""
+    from resume_tailorer.ui.tailoring_view import group_changes, safe_default_dispositions
+
+    result = _run(_docx(), _review(), gaps=_gaps())
+    [change] = [c for c in result.changes if c.category is ChangeCategory.SKILLS_ADDED]
+    assert change in group_changes(result.changes, ["PostgreSQL"]).reviewable
+    assert change.change_id not in safe_default_dispositions(result.changes, ["PostgreSQL"])
+    assert "PostgreSQL" in result.tailored_scoring_text  # scored as the file reads...
+    assert "PostgreSQL" not in result_unsupported(result)  # ...and still not an unsupported claim
+
+
+def result_unsupported(result):
+    from resume_tailorer.analyzers.skill_additions import without_computed_skills
+    from resume_tailorer.analyzers.gap_analyzer import find_unsupported_claims
+
+    return find_unsupported_claims(without_computed_skills(_gaps(), result.changes, in_document=True),
+                                   result.tailored_scoring_text)
+
+
+def test_the_same_term_written_anywhere_else_is_still_blocked(no_word):
+    """The exemption is the computed skills line only: a bullet, or a person's own skills wording,
+    that adds the missing term is still kept out."""
+    from dataclasses import replace
+
+    from resume_tailorer.artifacts.models import ChangeDisposition
+    from resume_tailorer.analyzers.skill_additions import without_computed_skills
+    from resume_tailorer.ui.tailoring_view import group_changes
+
+    result = _run(_docx(), _review(), gaps=_gaps())
+    [skills] = [c for c in result.changes if c.category is ChangeCategory.SKILLS_ADDED]
+    bullet = replace(skills, change_id="paragraph:5", section="work_experience", category=ChangeCategory.REPHRASED,
+                     original_text=_BULLET, proposed_text=_BULLET + " on PostgreSQL", added_skills=())
+    assert bullet in group_changes([skills, bullet], ["PostgreSQL"]).blocked
+    edited = replace(skills, disposition=ChangeDisposition.MANUALLY_EDITED, manual_text="SQL, Excel, PostgreSQL")
+    rejected = replace(skills, disposition=ChangeDisposition.REJECTED)
+    for change in (edited, rejected):
+        # A proposal is still judged as computed, but the finished document doesn't carry it.
+        assert change in group_changes([change], ["PostgreSQL"]).reviewable
+        assert [i.requirement for i in without_computed_skills(_gaps(), [change], in_document=True).items] == ["PostgreSQL"]
+
+
+def test_an_accepted_adjacent_skill_is_not_reported_as_an_unsupported_claim(no_word):
+    from resume_tailorer.tailoring_service import regenerate
+
+    result = _run(_docx(), _review(), gaps=_gaps())
+    [change] = [c for c in result.changes if c.category is ChangeCategory.SKILLS_ADDED]
+    state = _review_state(result, {change.change_id: "ACCEPTED"}, gaps=_gaps())
+    regenerate({}, state)
+    assert "SQL, Excel, Tableau, PostgreSQL" in [p.text for p in Document(io.BytesIO(state["docx_bytes"])).paragraphs]
+    assert "PostgreSQL" in state["tailored_text"] and "PostgreSQL" not in state["report"].unsupported_claims
+
+
+def test_the_requirement_review_shows_an_added_adjacent_skill_as_added_not_missing(no_word):
+    """Spec 022 step 5: the requirement review "shows the requirement as 'added to skills (adjacent)',
+    not as evidence", and "Missing, never added" stops listing a term that was added."""
+    from dataclasses import replace
+
+    from resume_tailorer.artifacts.models import ChangeDisposition
+    from resume_tailorer.ui.requirement_review_view import adjacent_additions, missing_list, review_view
+
+    result = _run(_docx(), _review(), gaps=_gaps())
+    adjacent = adjacent_additions(result.changes)
+    assert adjacent == {"postgresql"}  # Tableau is level 2: the review already shows its evidence
+    rows = {row["text"]: row for group in review_view(_review(), adjacent)["groups"] for row in group["rows"]}
+    assert rows["PostgreSQL"]["label"] == "Added to skills (adjacent)"
+    assert rows["PostgreSQL"]["terms"][0]["label"] == "Added to skills (adjacent)"
+    assert rows["Tableau dashboards"]["status"] == "direct"
+    assert missing_list(_review(), adjacent) == []
+    assert [m["label"] for m in missing_list(_review())] == ["PostgreSQL"]
+    # Kept original: the file no longer names it, so it's missing again.
+    assert adjacent_additions([replace(c, disposition=ChangeDisposition.REJECTED) for c in result.changes]) == set()
+
+
+def test_a_length_correction_keeps_the_changes_the_file_still_contains(no_word, monkeypatch):
+    """The correction rebuild paired bare edits again, so reviewed changes lost their reasons and a
+    skills change vanished from the review while the file kept its added skills (2026-10-13). The
+    skills line is never reworded to fit: additions are dropped, not condensed (spec 022 step 6)."""
+    from resume_tailorer.artifacts import length_control
+
+    result = _run(_docx(), _review())
+    monkeypatch.setattr(length_control, "needs_length_correction", lambda validation: True)
+    corrected = length_control.correct_docx_length_once(original_docx_bytes=_docx(), docx_result=result,
+                                                         profile=_profile(), gap_report=GapReport(items=[], summary=""))
+    [change] = [c for c in corrected.changes if c.category is ChangeCategory.SKILLS_ADDED]
+    assert change.proposed_text == "SQL, Excel, Tableau, PostgreSQL" and change.reason == _skills(result).reason
+    assert "SQL, Excel, Tableau, PostgreSQL" in [p.text for p in Document(io.BytesIO(corrected.docx_bytes)).paragraphs]
+
+
+def _skills(result):
+    return next(c for c in result.changes if c.category is ChangeCategory.SKILLS_ADDED)

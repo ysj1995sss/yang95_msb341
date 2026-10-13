@@ -225,3 +225,10 @@ class TestCheckSemanticDrift:
         original = "Managed a team of 15+ people to deliver on-time results"
         new = "Managed a team of 15+ people, delivering measurable on-time outcomes"
         assert DiffGenerator().check_semantic_drift(original, new) == []
+
+    def test_a_metric_that_no_longer_ends_a_clause_is_not_dropped(self):
+        """Code review, 2026-10-13: "2019," and "2,000,000." kept their punctuation, so a rewrite that
+        only moved them was rejected as dropping a number (the PDF check already ignored it)."""
+        original = "Launched the partner portal in 2019, serving 2,000,000."
+        new = "Launched the partner portal serving 2,000,000 requests in 2019"
+        assert DiffGenerator().check_semantic_drift(original, new) == []

@@ -77,6 +77,18 @@ def test_each_job_is_tailored_in_a_private_session_and_saved(setup):
         assert state and state["role"] == job.title
 
 
+def test_every_batch_review_gets_a_new_revision(setup):
+    """A tab still open on an older review must never decide changes in a newer one at the same
+    position: batch reviews used to be saved at revision 0 every time (code review, 2026-10-13)."""
+    service, jobs, artifacts = setup
+    revisions = []
+    for _ in range(2):
+        tailor_job(jobs[0], artifacts_dir=artifacts, original_bytes=_docx(), filename="r.docx",
+                   llm=RewritesTheSqlBullet(), career_profile=_profile([A1, A2, A3]))
+        revisions.append(load_review(artifacts, "greenhouse_1")["review_revision"])
+    assert 0 < revisions[0] < revisions[1]
+
+
 def test_prepare_tracks_only_reviewed_jobs_and_never_submits(setup):
     service, jobs, artifacts = setup
     profile = _profile([A1, A2, A3])

@@ -84,6 +84,10 @@ if __name__ == "__main__":
                       LLM_API_KEY="stub-key", LLM_FALLBACK_MODELS="none", LEGACY_ROUTES="false",
                       DATABASE_URL=f"sqlite+pysqlite:///{Path(data_dir).as_posix()}/legacy.db")
     os.environ.pop("WORKSPACE_TOKEN_SECRET", None)
+    # The shared test workspace's API (decision 045) checks the web app's tokens, so it gets a secret.
+    shared_secret = os.environ.pop("E2E_WORKSPACE_TOKEN_SECRET", "")
+    if shared_secret:
+        os.environ["WORKSPACE_TOKEN_SECRET"] = shared_secret
 
     import logging
 
