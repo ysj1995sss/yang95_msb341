@@ -431,12 +431,16 @@ def finalize_docx_edits(
 
     from resume_tailorer.docx_export.skills_line import find_skills_paragraph_index
 
-    skills_index = find_skills_paragraph_index(spliced_doc.paragraphs)
-    if skills_index is None:
-        skills_index = structure.competency_paragraph_index  # where additions go without a skills line
-    skills_edit = next((e for e in edits if e.paragraph_index == skills_index and e.changed), None)
-    scoring_text = _synthesize_scoring_text(profile, structure, edits,
-                                            skills_line=skills_edit.new_text if skills_edit else None)
+    def changed_text(index):
+        edit = next((e for e in edits if index is not None and e.paragraph_index == index and e.changed), None)
+        return edit.new_text if edit else None
+
+    # The skills line replaces the profile's skills in the scoring text (it holds them, plus any
+    # additions). A "Core Competencies:" line is scored beside them, never instead: a reorder alone
+    # used to drop every profile skill from the keyword report (code review, 2026-10-13).
+    scoring_text = _synthesize_scoring_text(
+        profile, structure, edits, skills_line=changed_text(find_skills_paragraph_index(spliced_doc.paragraphs)),
+        competencies_line=changed_text(structure.competency_paragraph_index))
 
     return DocxTailoringResult(
         docx_bytes=docx_bytes,
@@ -545,7 +549,8 @@ def _underrepresented_strong_evidence(
 
 
 def _synthesize_scoring_text(
-    profile: CareerTruthProfile, structure: DocxStructure, edits: list[BulletEdit], skills_line: str | None = None
+    profile: CareerTruthProfile, structure: DocxStructure, edits: list[BulletEdit], skills_line: str | None = None,
+    competencies_line: str | None = None,
 ) -> str:
     """
     Build a flat resume-shaped text string purely so the EXISTING
@@ -612,6 +617,8 @@ def _synthesize_scoring_text(
         lines.append("SKILLS")
         lines.append(", ".join(profile.skills))
         lines.append("")
+    if competencies_line:
+        lines.extend(["CORE COMPETENCIES", competencies_line, ""])
 
     if profile.tools:
         lines.append("TOOLS & PLATFORMS")

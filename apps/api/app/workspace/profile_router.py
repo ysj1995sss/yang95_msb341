@@ -93,8 +93,8 @@ async def import_resume_file(file: UploadFile = File(...), ws: Workspace = Depen
     try:
         import_resume(ws.store(), name, data)
     except Exception as exc:
-        # The reader's own error names server temp files, so it goes to the log, not the person.
-        logging.getLogger("job_copilot.api").warning("Resume import failed: %s", type(exc).__name__)
+        # The reader's own error names server temp files, so it goes to the log (in full), not the person.
+        logging.getLogger("job_copilot.api").warning("Resume import failed: %s", type(exc).__name__, exc_info=True)
         if name.lower().endswith(".docx"):
             message = ("This Word file looks damaged, or isn't really a .docx. Open it in Word, save it again "
                        "as a Word document, and import it, or import a PDF instead.")

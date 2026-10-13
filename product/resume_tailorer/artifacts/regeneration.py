@@ -212,6 +212,10 @@ def explain_edit_problems(issues: Sequence[str]) -> list[str]:
         if term.casefold() not in bucket or term != term.lower():
             bucket[term.casefold()] = term
 
+    def items(listed: str) -> list[str]:
+        """The checker's "['a', 'b']" list as plain terms."""
+        return [term.strip().strip("'\"") for term in listed.split(",") if term.strip().strip("'\"")]
+
     added: dict[str, str] = {}     # nowhere in the Career Profile
     in_role: dict[str, str] = {}   # in the profile, but not shown in this role
     listed_only: dict[str, str] = {}
@@ -220,14 +224,17 @@ def explain_edit_problems(issues: Sequence[str]) -> list[str]:
         found = re.search(r"'([^']+)' mentioned in", issue) or re.search(r"adds “([^”]+)”", issue)
         if found:
             remember(added, found.group(1).strip())
+        elif (new_terms := re.search(r"new term\(s\) \[(.*?)\]", issue)):
+            for term in items(new_terms.group(1)):
+                remember(added, term)
         elif (scoped := re.match(r"(.+?) appears elsewhere or is newly added", issue)):
             remember(in_role, scoped.group(1).strip())
         elif (listed := re.search(r"turns “([^”]+)” from a listed skill", issue)):
             remember(listed_only, listed.group(1).strip())
         elif (numbers := re.search(r"dropped metric\(s\) \[(.*?)\]", issue)):
-            plain.append(f"leaves out {numbers.group(1)} from the original")
+            plain.append(f"leaves out {', '.join(items(numbers.group(1)))} from the original")
         elif (words := re.search(r"dropped word\(s\) \[(.*?)\]", issue)):
-            plain.append(f"leaves out {words.group(1)}, which changes what the original says")
+            plain.append(f"leaves out “{'”, “'.join(items(words.group(1)))}”, which changes what the original says")
         else:
             plain.append(issue)
     # One sentence per term, the most serious reason first, in the best spelling any check gave.

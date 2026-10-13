@@ -63,7 +63,7 @@ def tracker(view: Optional[str] = None, q: str = "", ws: Workspace = Depends(wor
     if needle:
         shown = [r for r in shown if needle in r.company.lower() or needle in r.role.lower()]
     week = build_weekly_summary([(r.status, r.applied) for r in rows], today,
-                                saved_jobs=len(ws.service.db.get_jobs_by_latest_action("save", limit=10000)))
+                                saved_jobs=ws.service.db.count_jobs_by_latest_action("save"))
     return {
         "total": len(rows),
         "views": [{"name": v, "count": counts[v]} for v in VIEWS],

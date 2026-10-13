@@ -114,3 +114,15 @@ def test_a_stale_review_is_not_called_ready_for_apply(tailor_client, monkeypatch
     _edit_profile(tailor_client)
     progress = tailor_client.get("/v2/tailor").json()["review"]["progress"]
     assert progress["can_continue"] is False and "changed after this was tailored" in progress["blocker"]
+
+
+def test_the_tailor_page_checks_freshness_once(tailor_client, monkeypatch):  # noqa: F811
+    # Code review, 2026-10-13: the page and its review each loaded the profile to check freshness.
+    import resume_tailorer.freshness as freshness
+
+    _reviewed_resume(tailor_client, monkeypatch)
+    calls = []
+    real = freshness.review_freshness
+    monkeypatch.setattr(freshness, "review_freshness", lambda *a, **k: calls.append(1) or real(*a, **k))
+    tailor_client.get("/v2/tailor")
+    assert len(calls) == 1

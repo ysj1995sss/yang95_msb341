@@ -154,6 +154,37 @@ def _is_heading_line(line: str) -> bool:
     return line.strip().rstrip(":").lower() in _HEADING_LINES or bool(SECTION_BOUNDARY_RE.match(line))
 
 
+# Where a Skills section ends: a known heading alone on its line, or a capitals heading of two or more
+# words. One word is never enough: "SQL" or "MATLAB" listed one per line are skills. The old pattern
+# was case-insensitive, so any one-word line ended the section (code review, 2026-10-13).
+_SKILLS_SECTION_END = re.compile(
+    r"^[ \t]*(?:(?:technical[ \t]+)?skills?|tools?|certifications?|certificates?|licen[cs]es?|languages?|education|"
+    r"(?:work[ \t]+|professional[ \t]+|relevant[ \t]+)?experience|employment|projects?|awards?|honou?rs?|publications?|"
+    r"volunteer\w*|interests?|references?|additional(?:[ \t]+information)?|summary|profile|activities|leadership|"
+    r"achievements?|coursework|training)[ \t:]*$"
+    r"|^(?-i:[ \t]*[A-Z][A-Z&/]+(?:[ \t]+[A-Z&/]+)+[ \t:]*)$",
+    re.IGNORECASE | re.MULTILINE,
+)
+# Words that name a group of skills ("Languages:", "Tools & Platforms:") rather than a skill. A label
+# made of anything else ("Tableau: dashboards") is itself a skill and is kept (code review, 2026-10-13).
+_SKILL_GROUP_WORDS = {
+    "languages", "language", "programming", "tools", "tool", "frameworks", "framework", "libraries", "library",
+    "platforms", "platform", "databases", "database", "technologies", "technology", "tech", "software", "skills",
+    "skill", "technical", "soft", "cloud", "devops", "methodologies", "methodology", "methods", "data", "analytics",
+    "bi", "visualization", "certifications", "certification", "other", "operating", "systems", "system", "os",
+    "testing", "web", "frontend", "backend", "front", "back", "end", "mobile", "design", "business", "competencies",
+    "competency", "core", "expertise", "proficient", "proficiencies", "proficiency", "familiar", "knowledge", "key",
+    "additional", "infrastructure", "engineering", "development", "version", "control", "management", "project",
+    "applications", "application", "stack", "and", "in", "with", "of", "strong", "working", "advanced",
+    "intermediate", "basic",
+}
+
+
+def _is_skill_group_label(label: str) -> bool:
+    words = re.findall(r"[a-z]+", label.lower())
+    return bool(words) and all(word in _SKILL_GROUP_WORDS for word in words)
+
+
 class ResumeParser:
     """
     Parses PDF/DOCX resumes and extracts a CareerTruthProfile.
@@ -641,21 +672,20 @@ class ResumeParser:
 
         # Path 1: a dedicated "Skills" section.
         if "skills" in text.lower():
-            skills_section = re.search(
-                r"(?:technical\s+)?skills?[:]*\s*\n(.*?)(?:\n(?:(?:TOOLS?|CERTIFICATIONS?|LANGUAGES?|EDUCATION|EXPERIENCE|WORK)[\s:]*$|[A-Z]{2,}[\s:]*$)|\Z)",
-                text,
-                re.IGNORECASE | re.DOTALL | re.MULTILINE,
-            )
+            skills_section = re.search(r"(?:technical\s+)?skills?[:]*\s*\n", text, re.IGNORECASE)
             if skills_section:
-                items = skills_section.group(1)
+                rest = text[skills_section.end():]
+                end = _SKILLS_SECTION_END.search(rest)
+                items = rest[:end.start()] if end else rest
                 lines = items.split('\n')
                 for line in lines:
                     if line.strip():
-                        # "Languages: Python, Java": the label names the group, it isn't a skill. A
-                        # heading only ends the section when it stands alone, so "Tools: …" is read too
-                        # (both lost skills, 2026-10-13).
-                        label = re.match(r"\s*[•\-]?\s*[A-Za-z][A-Za-z &/]{0,30}:\s*", line)
-                        line_items = re.split(r'[:,]', line[label.end():] if label else line)
+                        # "Languages: Python, Java": a group label isn't a skill, but "Tableau: ..."
+                        # names one, so only group labels are dropped (2026-10-13).
+                        label = re.match(r"\s*[•\-]?\s*([A-Za-z][A-Za-z &/]{0,30}):\s*", line)
+                        if label and _is_skill_group_label(label.group(1)):
+                            line = line[label.end():]
+                        line_items = re.split(r'[:,]', line)
                         for item in line_items:
                             clean_item = item.strip().lstrip('•-').strip()
                             if clean_item and len(clean_item) > 1:  # Skip single characters

@@ -89,3 +89,13 @@ def test_a_proposal_that_failed_its_truth_check_starts_as_original_kept():
     failed = replace(_change("Built reliable APIs and led platform work"), validation_status=ValidationStatus.FAIL)
     assert safe_default_dispositions([failed], ()) == {"c1": "REJECTED"}
     assert safe_default_dispositions([_change("Built reliable, tested APIs")], ()) == {}
+
+
+def test_a_proposal_the_model_checks_already_turned_down_needs_no_default():
+    """Code review, 2026-10-13: a REJECTED-category change (the tailorer's own checks restored the
+    original) also has a FAIL status; defaulting it forced a needless rebuild on most runs."""
+    from dataclasses import replace
+
+    turned_down = replace(_change("Built reliable APIs"), category=ChangeCategory.REJECTED,
+                          validation_status=ValidationStatus.FAIL)
+    assert safe_default_dispositions([turned_down], ()) == {}

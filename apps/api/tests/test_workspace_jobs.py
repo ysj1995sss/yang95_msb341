@@ -111,7 +111,7 @@ def test_times_reach_the_browser_with_their_utc_offset():
     assert jsonable({"d": date(2026, 10, 5), "t": aware}) == {"d": "2026-10-05", "t": "2026-10-05T18:29:00+00:00"}
 
 
-def test_a_failed_search_says_so_without_internal_details(jobs_client, monkeypatch):
+def test_a_failed_search_says_so_without_internal_details(jobs_client, monkeypatch, caplog):
     # Dogfood, 2026-10-13: any error inside the search was pasted into the message people see.
     from resume_tailorer.job_search.job_service import JobService
 
@@ -122,6 +122,7 @@ def test_a_failed_search_says_so_without_internal_details(jobs_client, monkeypat
     response = jobs_client.post("/v2/jobs/search", json={"job_title": "Data Analyst"})
     assert response.status_code == 502
     assert "didn't finish" in response.json()["detail"] and "jobs.db" not in response.json()["detail"]
+    assert any(r.exc_info and "jobs.db" in str(r.exc_info[1]) for r in caplog.records)  # kept for diagnosis
 
 
 def test_saving_a_job_counts_as_saved_on_home_and_tracker(jobs_client):

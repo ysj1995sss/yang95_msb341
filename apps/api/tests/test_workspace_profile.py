@@ -80,7 +80,7 @@ def test_saved_answers(workspace_client):
     assert workspace_client.delete(f"/v2/answers/{key}").json()["answers"] == []
 
 
-def test_a_damaged_file_gets_a_plain_message_without_server_details(workspace_client):
+def test_a_damaged_file_gets_a_plain_message_without_server_details(workspace_client, caplog):
     """Dogfood, 2026-10-13: a broken .docx showed the server's temporary file path in the error."""
     for name, data, says in (("r.docx", b"PK not really a word file", "Word file"),
                              ("r.pdf", b"%PDF-1.4 broken", "PDF")):
@@ -88,6 +88,8 @@ def test_a_damaged_file_gets_a_plain_message_without_server_details(workspace_cl
         detail = response.json()["detail"]
         assert response.status_code == 422 and says in detail
         assert "Temp" not in detail and ":\\" not in detail and "Package" not in detail and "/" not in detail
+    # The full error stays in the server log for diagnosis (code review, 2026-10-13).
+    assert any(r.exc_info for r in caplog.records if "Resume import failed" in r.getMessage())
 
 
 def test_a_negative_salary_or_weekly_goal_is_refused(workspace_client):

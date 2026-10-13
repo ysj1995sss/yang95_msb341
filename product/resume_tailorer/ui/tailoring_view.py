@@ -11,7 +11,7 @@ from resume_tailorer.analyzers.gap_analyzer import (
     GapReport,
     find_unsupported_claims,
 )
-from resume_tailorer.artifacts.models import ResumeChange
+from resume_tailorer.artifacts.models import ChangeCategory, ResumeChange, ValidationStatus
 from resume_tailorer.ui.design_system import SemanticStatus, display_optional, semantic_status
 
 
@@ -86,6 +86,9 @@ def safe_default_dispositions(
     whole resume "not usable" until the person turned it down (dogfood, 2026-10-13)."""
     changes = tuple(changes)
     defaults = {change.change_id: "REJECTED" for change in group_changes(changes, true_gaps).blocked}
+    # A proposal the tailorer's own checks turned down already reads as the original, so defaulting it
+    # would only force a rebuild that changes nothing.
     defaults.update({change.change_id: "REJECTED" for change in changes
-                     if str(getattr(change.validation_status, "value", change.validation_status)).upper() == "FAIL"})
+                     if change.validation_status is ValidationStatus.FAIL
+                     and change.category is not ChangeCategory.REJECTED and change.proposed_text != change.original_text})
     return defaults

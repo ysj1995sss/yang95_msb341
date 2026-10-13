@@ -153,3 +153,24 @@ def test_home_lists_every_batch_resume_awaiting_decisions(tailor_client, monkeyp
     drafts = tailor_client.get("/v2/home").json()["view"]["drafts"]
     titles = [d["title"] for d in drafts]
     assert "Senior Data Analyst" in titles and "Marketing Analyst" in titles and len(titles) == len(set(titles))
+
+
+def test_home_keeps_two_batch_resumes_with_the_same_title(tailor_client, monkeypatch):  # noqa: F811
+    # Code review, 2026-10-13: Home's batch list skipped a resume whose title was already shown, so the
+    # same role at two companies appeared once.
+    from resume_tailorer.docx_export import pipeline
+
+    from tests.e2e_server import fake_pdf
+
+    monkeypatch.setattr(pipeline, "convert_docx_to_pdf", fake_pdf)
+    _setup(tailor_client)
+    pasted = tailor_client.post("/v2/tailor/pasted", json={
+        "title": "Senior Data Analyst", "company": "Bluebird Goods",
+        "description": ("Senior Data Analyst at Bluebird Goods. Requirements: SQL and dashboard reporting for business "
+                        "partners, weekly KPI reporting, partnering with sales leaders, explaining trends to executives, "
+                        "and keeping data definitions consistent across teams in a fast-growing company. You will also "
+                        "own the quarterly business review deck and work closely with finance on forecasting.")}).json()
+    tailor_client.post("/v2/batch/tailor", json={"job_ids": ["greenhouse_101", pasted["job"]["job_id"]]})
+    assert all(i["status"] == "done" for i in _wait(tailor_client)["items"])
+    drafts = tailor_client.get("/v2/home").json()["view"]["drafts"]
+    assert [d["title"] for d in drafts].count("Senior Data Analyst") == 2, drafts

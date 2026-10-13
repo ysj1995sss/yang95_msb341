@@ -143,7 +143,7 @@ def _finding_text(finding, reviewable) -> str:
     return finding.message
 
 
-def _review_view(ws: Workspace, state: dict, show_all: bool = False) -> dict:
+def _review_view(ws: Workspace, state: dict, show_all: bool = False, stale_message: str | None = None) -> dict:
     from resume_tailorer.analyzers.term_match import displayable_gaps, short_requirement
     from resume_tailorer.artifacts.models import FidelityMode
     from resume_tailorer.ui.pdf_preview import pdf_page_images
@@ -214,7 +214,8 @@ def _review_view(ws: Workspace, state: dict, show_all: bool = False) -> dict:
         "sync_summary": state.get("sync_summary") or "",
         "pages_before_after": [report.original_page_count, report.tailored_page_count],
         "unsupported_claims": list(report.unsupported_claims or ()),
-        "progress": _with_freshness({**jsonable(progress), "label": progress.label}, _stale_message(ws, state)),
+        "progress": _with_freshness({**jsonable(progress), "label": progress.label},
+                                    _stale_message(ws, state) if stale_message is None else stale_message),
         "next_undecided": next_undecided(groups.reviewable, decided),
         "changes": [change_view(c, i) for i, c in enumerate(groups.reviewable, 1)],
         "empty_message": empty_queue_message(state["changes"]),
@@ -269,6 +270,7 @@ def tailor_page(show_all: bool = False, ws: Workspace = Depends(workspace)):
     except ValueError:
         model_ready = False
     state = _review(ws, pending.get("job_id"))
+    stale = _stale_message(ws, state)  # once: the page and its review both show it
     fit = (pending.get("candidate_fit") or {}).get("overall_fit")
     from resume_tailorer.tailoring_session import HANDOFF_KEY
 
@@ -284,9 +286,9 @@ def tailor_page(show_all: bool = False, ws: Workspace = Depends(workspace)):
         "custom_api_base_allowed": not ws.owner.signed_in,
         "ats_explainer": ats_explainer.as_dict(),
         "run": run,
-        "review": _review_view(ws, state, show_all) if state else None,
+        "review": _review_view(ws, state, show_all, stale) if state else None,
         # Spec 014: the open review was tailored from an older Career Profile.
-        "stale_message": _stale_message(ws, state),
+        "stale_message": stale,
         "existing": {"version": handoff.get("version"), "status": handoff.get("validation_status"),
                      "review_complete": bool(handoff.get("review_complete"))}
         if handoff and handoff.get("job_id") == pending.get("job_id") and not state else None,

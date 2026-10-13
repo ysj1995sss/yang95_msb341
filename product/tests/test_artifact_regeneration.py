@@ -197,3 +197,36 @@ class TestRegenerateDocxArtifact:
         spliced = Document(io.BytesIO(result.docx_bytes))
         assert any(p.text == "Did a thing" for p in spliced.paragraphs)
         assert not any(p.text == "Did a rewritten thing" for p in spliced.paragraphs)
+
+
+def test_every_check_message_is_explained_in_plain_words():
+    """Code review, 2026-10-13: the "POSSIBLY UNVERIFIED" message (the commonest refusal for a person's
+    edit) was shown raw, and dropped words and numbers kept the checker's list brackets."""
+    from resume_tailorer.artifacts.regeneration import explain_edit_problems
+
+    issues = [
+        "SEMANTIC DRIFT: dropped metric(s) ['40%'] from the original bullet 'x' -- a number/scale disappearing changes the claim",
+        "SEMANTIC DRIFT: dropped word(s) ['growth'] from the original bullet's core claim 'x' -- rewrite changes what was claimed",
+        "⚠️ FABRICATION RISK: metric '25%' mentioned in 'x' but not in the original bullet or profile",
+        "⚠️ FABRICATION RISK: 'kafka' mentioned in 'x' but not in the original bullet or profile",
+        "⚠️ POSSIBLY UNVERIFIED: new term(s) ['loyalty', 'premium'] in 'x' not grounded in the original bullet or profile -- review before using",
+        "adds “Kafka”, which you haven't shown evidence for",
+        "turns “Tableau” from a listed skill into a claim; it's only listed in your profile",
+        "Looker appears elsewhere or is newly added, but we can't verify that you used it in this project. Keep the original.",
+    ]
+    plain = " ".join(explain_edit_problems(issues))
+    for jargon in ("⚠", "FABRICATION", "POSSIBLY", "SEMANTIC", "[", "]", "'x'", "project"):
+        assert jargon not in plain, jargon
+    for term in ("40%", "growth", "25%", "Kafka", "loyalty", "premium", "Tableau", "Looker"):
+        assert term in plain, term
+    assert plain.lower().count("kafka") == 1
+
+
+def test_a_new_unbacked_word_in_an_edit_is_explained_plainly():
+    from resume_tailorer.artifacts.regeneration import explain_edit_problems, validate_manual_text
+    from resume_tailorer.models import CareerTruthProfile
+
+    person = CareerTruthProfile(contact_info={}, education=[], work_experience=[], skills=[], tools=[],
+                                certifications=[], accomplishments=[])
+    issues = validate_manual_text("Built weekly reports for managers", "Built weekly loyalty reports for managers", person)
+    assert explain_edit_problems(issues) == ["adds loyalty, which your Career Profile doesn't show"]

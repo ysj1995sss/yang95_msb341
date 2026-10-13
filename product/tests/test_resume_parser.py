@@ -606,3 +606,23 @@ class TestLabelledSkillLines:
     def test_a_tools_heading_on_its_own_still_ends_the_skills_section(self):
         text = "SKILLS\nPython, SQL\nTOOLS\nJira\n"
         assert ResumeParser()._extract_skills(text)[:2] == ["Python", "SQL"] and "Jira" not in ResumeParser()._extract_skills(text)
+
+
+class TestSkillsSectionEdges:
+    """Code review, 2026-10-13."""
+
+    def test_one_skill_per_line_is_read_whole(self):
+        # The section's end pattern matched any one-word line (case-insensitive), so "SQL" ended it.
+        text = "SKILLS\nPython\nSQL\nMATLAB\nTableau\nPROJECTS\nInventory dashboard\n"
+        assert ResumeParser()._extract_skills(text) == ["Python", "SQL", "MATLAB", "Tableau"]
+
+    def test_a_multi_word_capitals_heading_still_ends_the_section(self):
+        text = "SKILLS\nPython\nSQL\nVOLUNTEER WORK\nFood bank driver\n"
+        assert ResumeParser()._extract_skills(text) == ["Python", "SQL"]
+
+    def test_a_skill_used_as_a_line_label_is_kept(self):
+        # "Tableau: dashboards" names a skill; "Languages:" only names a group.
+        text = "SKILLS\nTableau: dashboards, LOD expressions\nTools & Platforms: Docker, Git\nLanguages: Python\n"
+        skills = ResumeParser()._extract_skills(text)
+        assert {"Tableau", "Docker", "Git", "Python"} <= set(skills)
+        assert not {"Tools & Platforms", "Languages"} & set(skills)

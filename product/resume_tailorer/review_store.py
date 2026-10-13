@@ -168,6 +168,23 @@ def load_review(folder: Optional[str], job_id: Optional[str]) -> Optional[dict[s
     return state if isinstance(state, dict) and "changes" in state else None
 
 
+def review_awaits_decisions(folder: Optional[str], job_id: Optional[str]) -> bool:
+    """True when a saved review exists and isn't finished (not reviewed, or changed since). Reads only
+    the review's top-level flags, not its stored files, so Home can ask this for a whole batch."""
+    if not folder or not job_id:
+        return False
+    path = _path(folder, job_id)
+    if not path.is_file():
+        return False
+    try:
+        payload = json.loads(read_text_retrying(path))
+        pairs = payload["state"]["$dict"] if payload.get("job_id") == job_id else []
+        flags = {key: value for key, value in pairs if key in ("reviewed", "dirty")}
+    except Exception:
+        return False
+    return not (flags.get("reviewed") and not flags.get("dirty"))
+
+
 def discard_review(folder: Optional[str], job_id: Optional[str]) -> None:
     if folder and job_id:
         _remove_old_pickle(folder, job_id)

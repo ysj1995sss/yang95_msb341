@@ -168,3 +168,17 @@ def test_reviews_without_a_profile_version_claim_nothing(tmp_path):
     assert review_freshness(legacy, _profile([A1])).stale is None
     assert review_freshness({"profile_version": None}, _profile([A1])).stale is None  # a one-off file run
     assert review_freshness(None, _profile([A1])).stale is None
+
+
+def test_review_awaits_decisions_reads_only_the_flags(tmp_path):
+    # Home asks this for every batch resume, so it mustn't decode the stored files (code review, 2026-10-13).
+    from resume_tailorer.review_store import review_awaits_decisions
+
+    folder = str(tmp_path)
+    assert review_awaits_decisions(folder, "missing_job") is False
+    save_review(folder, "job_1", {"changes": [], "reviewed": False, "original_bytes": b"x" * 1000})
+    assert review_awaits_decisions(folder, "job_1") is True
+    save_review(folder, "job_1", {"changes": [], "reviewed": True, "dirty": False})
+    assert review_awaits_decisions(folder, "job_1") is False
+    save_review(folder, "job_1", {"changes": [], "reviewed": True, "dirty": True})
+    assert review_awaits_decisions(folder, "job_1") is True

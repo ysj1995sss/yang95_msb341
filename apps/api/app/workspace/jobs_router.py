@@ -177,8 +177,8 @@ def search(body: SearchForm, ws: Workspace = Depends(workspace)):
     try:
         summary = ws.service.search_and_store(goals, sources, custom_boards=boards)
     except Exception as exc:
-        # The underlying error can name server files, so it's logged rather than shown.
-        logger.warning("Job search failed: %s", type(exc).__name__)
+        # The underlying error can name server files, so it's logged (in full) rather than shown.
+        logger.warning("Job search failed: %s", type(exc).__name__, exc_info=True)
         raise HTTPException(502, "The search didn't finish. Your previous results are still here; try again in "
                                  "a minute.") from exc
     record = ws.record

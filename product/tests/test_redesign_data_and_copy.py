@@ -28,6 +28,8 @@ def test_jobs_by_latest_action_uses_only_the_newest_choice(tmp_path):
     db.record_user_selection(UserSelection("greenhouse_2", "pass", timestamp=datetime(2026, 10, 2)))
     assert [j.company for j in db.get_jobs_by_latest_action("save")] == ["Co1"]
     assert [j.company for j in db.get_jobs_by_latest_action("pass")] == ["Co2"]
+    # Counted without loading the postings (Home and Tracker count saved jobs on every visit).
+    assert db.count_jobs_by_latest_action("save") == 1 and db.count_jobs_by_latest_action("apply") == 0
 
 
 def test_latest_seen_is_none_before_any_search(tmp_path):

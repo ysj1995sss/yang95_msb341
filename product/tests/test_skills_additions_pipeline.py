@@ -311,3 +311,16 @@ def test_a_core_competencies_line_takes_the_additions_when_there_is_no_skills_li
     assert len(lines) == 1 and lines[0].category is ChangeCategory.SKILLS_ADDED and lines[0].proposed_text == line
     assert line in [p.text for p in Document(io.BytesIO(result.docx_bytes)).paragraphs]
     assert "PostgreSQL" in result.tailored_scoring_text  # the review reads the line as the file has it
+
+
+def test_a_reordered_competencies_line_does_not_replace_the_profile_skills_in_scoring(no_word):
+    """Code review, 2026-10-13: with no skills line, a model reorder of "Core Competencies:" became the
+    scoring text's whole skills list, so skills only in the profile dropped out of the keyword report."""
+    from dataclasses import replace as replace_profile
+
+    person = replace_profile(_profile(), skills=["SQL", "Excel", "Python"])
+    result = run_docx_tailoring_pipeline(_competencies_docx(), person, JobAnalyzer().analyze("Python and SQL."),
+                                         GapReport(items=[], summary=""), bullet_tailorer=_ReordersCompetencies(),
+                                         convert_to_pdf=True, review=None)
+    assert "Python" in result.tailored_scoring_text
+    assert "Core Competencies: Excel | SQL" in result.tailored_scoring_text
