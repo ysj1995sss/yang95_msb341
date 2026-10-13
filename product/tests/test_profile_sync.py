@@ -357,3 +357,44 @@ def test_a_profile_edit_reaches_the_tailored_resume_and_closes_the_dead_end(monk
     from resume_tailorer.session_profile import get_career_profile
 
     assert [j.employer for j in get_career_profile(session).work_experience] == ["Bluebird Goods", "Acme Retail"]
+
+
+# Spec 022 measurement runs, 2026-10-12: an ordinary Word resume could not be tailored at all.
+
+def _contact_doc(*extra_lines):
+    from docx import Document
+
+    doc = Document()
+    doc.add_paragraph("Sam Example")
+    doc.add_paragraph("sam@example.com | (555) 010-0100 | Portland, OR")
+    for line in extra_lines:
+        doc.add_paragraph(line)
+    return doc
+
+
+def _contact_profile(phone):
+    from resume_tailorer.models import CareerTruthProfile
+
+    return CareerTruthProfile(contact_info={"name": "Sam Example", "email": "sam@example.com", "phone": phone},
+                              education=[], work_experience=[], skills=[], tools=[], certifications=[],
+                              accomplishments=[])
+
+
+def test_a_date_range_is_not_a_second_phone_number():
+    from resume_tailorer.docx_export.profile_fields import sync_simple_fields
+
+    doc = _contact_doc("Business Analyst | Beta Health | 2018 - 2020", "Data Analyst | Acme | 2021 - 2024")
+    fields = sync_simple_fields(doc, _contact_profile("(555) 010-0199"))
+    assert not any(f.blocking for f in fields)
+    assert doc.paragraphs[1].text == "sam@example.com | (555) 010-0199 | Portland, OR"
+
+
+def test_a_phone_in_brackets_never_gets_a_second_bracket():
+    from resume_tailorer.docx_export.profile_fields import sync_simple_fields
+
+    unchanged = _contact_doc()
+    sync_simple_fields(unchanged, _contact_profile("(555) 010-0100"))
+    assert unchanged.paragraphs[1].text == "sam@example.com | (555) 010-0100 | Portland, OR"
+    edited = _contact_doc()
+    sync_simple_fields(edited, _contact_profile("(555) 010-0199"))
+    assert edited.paragraphs[1].text == "sam@example.com | (555) 010-0199 | Portland, OR"

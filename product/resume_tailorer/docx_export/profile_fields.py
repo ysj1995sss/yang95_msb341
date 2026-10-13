@@ -22,7 +22,10 @@ class SyncField:
 
 
 _EMAIL = re.compile(r"\b[\w.+-]+@[\w.-]+\.[A-Za-z]{2,}\b")
-_PHONE = re.compile(r"(?:\+?\d[\d(). -]{7,}\d)")
+# At least 10 digits, so a date range like "2018 - 2020" is never a phone (it made ordinary Word
+# resumes "ambiguous" and untailorable), and an opening bracket belongs to the number so syncing
+# "(555) 010-0100" never writes "((555)" (spec 022 measurement runs, 2026-10-12).
+_PHONE = re.compile(r"\+?\(?\d(?=(?:[(). -]*\d){9})[\d(). -]{7,}\d")
 _LOCATION = re.compile(r"[A-Za-z][A-Za-z .'-]+,\s*[A-Z]{2}")
 _SECTION = re.compile(r"^(?:SUMMARY|PROFESSIONAL SUMMARY|EXPERIENCE|WORK EXPERIENCE|EDUCATION|SKILLS|TECHNICAL SKILLS|CORE COMPETENCIES|TOOLS|CERTIFICATIONS|ADDITIONAL)$", re.I)
 
