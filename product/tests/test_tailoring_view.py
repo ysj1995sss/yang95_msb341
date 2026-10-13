@@ -78,3 +78,14 @@ def test_gap_containing_proposal_is_rejected_before_regeneration():
 def test_short_gap_does_not_reject_a_substring_inside_a_real_word():
     assert safe_default_dispositions([_change("Built reliable APIs")], ("R",)) == {}
     assert safe_default_dispositions([_change("Led governance reviews")], ("Go",)) == {}
+
+
+def test_a_proposal_that_failed_its_truth_check_starts_as_original_kept():
+    """Dogfood, 2026-10-13: a summary rewrite that failed its check was built into the first resume,
+    so the whole resume read "Failed validation: not usable" and couldn't be downloaded, though a
+    failed change can't even be accepted. It starts kept-original, like a missing-requirement claim."""
+    from dataclasses import replace
+
+    failed = replace(_change("Built reliable APIs and led platform work"), validation_status=ValidationStatus.FAIL)
+    assert safe_default_dispositions([failed], ()) == {"c1": "REJECTED"}
+    assert safe_default_dispositions([_change("Built reliable, tested APIs")], ()) == {}

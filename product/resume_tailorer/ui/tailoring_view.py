@@ -81,8 +81,11 @@ def group_changes(
 def safe_default_dispositions(
     changes: Iterable[ResumeChange], true_gaps: Iterable[str] = ()
 ) -> dict[str, str]:
-    """Default any proposal that introduces a true gap to keeping the original."""
-    return {
-        change.change_id: "REJECTED"
-        for change in group_changes(changes, true_gaps).blocked
-    }
+    """Default any proposal that introduces a true gap, or that failed its truth check, to keeping the
+    original. A failed change can't be accepted, so building it into the first resume only made the
+    whole resume "not usable" until the person turned it down (dogfood, 2026-10-13)."""
+    changes = tuple(changes)
+    defaults = {change.change_id: "REJECTED" for change in group_changes(changes, true_gaps).blocked}
+    defaults.update({change.change_id: "REJECTED" for change in changes
+                     if str(getattr(change.validation_status, "value", change.validation_status)).upper() == "FAIL"})
+    return defaults
