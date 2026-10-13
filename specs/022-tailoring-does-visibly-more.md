@@ -1,6 +1,16 @@
 # Spec 022: Tailoring that visibly does more (change levels 1–3)
 
-**Status:** Approved (2026-10-12) with the recommended answers: a reviewed adjacency list; levels 2–3 on the skills line only; at most 5 additions; manual review proposes them, while AI-assisted review and auto-apply accept levels 2 and 3 automatically and list them. Not started.
+**Status:** Approved (2026-10-12) with the recommended answers: a reviewed adjacency list; levels 2–3 on the skills line only; at most 5 additions; manual review proposes them, while AI-assisted review and auto-apply accept levels 2 and 3 automatically and list them.
+**Progress (2026-10-13):** steps 1–5 are built for **Word resumes**:
+- the measurement;
+- the adjacency list and level 2–3 computation;
+- the narrow guard exemptions (the gap gate and the final check);
+- the skills line, or a "Core Competencies:" line when there is no skills line;
+- the review marks and "Added to skills (adjacent)" in the requirement review;
+- the level-1 prompt rewrite;
+- dropping additions lowest-priority first when they add a page.
+
+**Not built:** free-form (PDF) resumes don't get additions yet. Auto-apply has its own spec.
 **Builds on:** decision 043 (levels 1–3 allowed, level 4 never), spec 010 / decision 032
 (requirement review), spec 011 / decision 033, decisions 038–041 (truth guards).
 **Glossary:** `CONTEXT.md` (Change level, Proposed change, Checks, Sent log).

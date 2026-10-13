@@ -13,6 +13,10 @@ a brand new session act like a colleague who already knows what you are working 
 
 ## Current state
 
+> **Newest (2026-10-13, evening, Claude Code):** live on Vercel + Google Cloud Run with Groq (spec 023).
+> Read the top "START HERE (2026-10-13, evening)" section of `HANDOFF-TO-CODEX.md` first: today's code
+> review, dogfood fixes, what is open, and that the backend still needs redeploying.
+
 > **Newest (2026-10-12, later, Claude Code):** read the top "START HERE" section of either handoff
 > first. Decision 043 changed the product direction (auto-apply, levels 1–3 tailoring, online,
 > website only). Streamlit is retired (spec 021, tag `ui-streamlit-v1`); ignore older notes about
@@ -100,9 +104,9 @@ a brand new session act like a colleague who already knows what you are working 
   - **Length:** one bounded length-correction pass, and a hard page limit on freeform.
   - **Custom application answers** come only from the user's approved answer bank.
   - **Sign-in:** Google sign-in (when `[auth]` is configured) and per-user data folders.
-- **Deployed:** https://yang95msb341-epxbfpbdegytjwcajjthay.streamlit.app runs in *local
-  single-user mode* (no `[auth]` secrets, no durable disk). It is for supervised demos only;
-  don't share it as a multi-user product. The deployment checklist is in `decisions/023`.
+- **Deployed (2026-10-13):** website on Vercel, backend on Google Cloud Run, model Groq, for a
+  supervised test with no sign-in and one shared workspace (decision 045). Setup and the backend
+  update commands: `specs/023-free-test-deployment.md`. The old Streamlit demo is deleted.
 - **Not built (specs only):**
   - status sync (`specs/005`);
   - browser Assist mode (`specs/006`) — Assist/Auto still can't fill real JavaScript ATS
@@ -110,9 +114,9 @@ a brand new session act like a colleague who already knows what you are working 
   - LinkedIn, Indeed and Handshake are demo data only.
 - **Biggest open risk:** nobody other than the builder has used the full search → tailor → apply
   loop. Next: supervised tests with 2–3 people, then the Sprint 2 review.
-- **Where to see it:** `product/resume_tailorer/app.py` (Home) and
-  `product/resume_tailorer/pages/` (Career Profile, Jobs, Tailor, Apply, Tracker). View logic
-  lives in pure, tested modules under `product/resume_tailorer/ui/`.
+- **Where to see it:** the website `apps/web/src/app/` (Home, Career Profile, Jobs, Tailor, Apply,
+  Tracker) on the workspace API `apps/api/app/workspace/`. Engine logic lives in tested modules
+  under `product/resume_tailorer/` (view logic in `ui/`).
 - **Handoff docs:** `HANDOFF-TO-CLAUDE-CODE.md` and `HANDOFF-TO-CODEX.md`, both pointing at the
   same `decisions/` history.
 
@@ -126,10 +130,16 @@ a brand new session act like a colleague who already knows what you are working 
 
 ## Tools and conventions
 
-- **Stack:** Python (resume_tailorer package), Streamlit for UI, an LLM API for tailoring (see `product/resume_tailorer/llm/`), pytest for testing, reportlab for PDF generation, python-docx + docx2pdf for the DOCX splice pipeline, multiple job board scrapers (Greenhouse live; LinkedIn/Indeed/Handshake limited/demo).
+- **Stack:** Python (`resume_tailorer` engine), FastAPI workspace API (`apps/api`), Next.js 16 website (`apps/web`), an LLM through LiteLLM (`product/resume_tailorer/llm/`), pytest and Playwright, reportlab for PDF generation, python-docx for the Word splice pipeline, live job search on Greenhouse, Lever, Ashby and SmartRecruiters.
 - **Two separate venvs:** `product/.venv` (core engine + Streamlit) and `apps/api/.venv` (FastAPI backend). Set `PYTHONPATH` to include `product/` when running Streamlit or product tests directly.
-- **How work ships:** push to `main` → Streamlit Community Cloud redeploys `product/resume_tailorer/app.py`. Multi-user deployment needs the `decisions/023` checklist first (Google OAuth secrets, durable `JOB_COPILOT_DATA_DIR`).
-- **Testing and style:** pytest; CI (`.github/workflows/tests.yml`) runs both suites on every push, on Python 3.14 with the pinned versions in `product/requirements.txt`. Final local specs-016–018/review verification: `product/` 1329 passed (1 skipped), `apps/api/` 148 passed (282 warnings); web lint/types clean and all 23 Playwright cases passed with exit 0. No new remote/Linux CI is claimed for this unpushed branch. Run fresh checks before claiming later changes are done. On Windows the runner may linger after all cases report `ok`; distinguish that from a clean exit.
+- **How work ships:** push to `main` and Vercel redeploys the website. The backend is rebuilt by
+  hand on Cloud Run (`cloudbuild.yaml`, then the deploy command in spec 023).
+- **Testing and style:** pytest; CI (`.github/workflows/tests.yml`) runs every suite on each push,
+  on Python 3.14 with the pinned versions in `product/requirements.txt`. Last full local run
+  (2026-10-13): `product/` 1372 passed (1 skipped), `apps/api/` 169 passed, web lint and types clean,
+  33 Playwright cases passed. Run fresh checks before claiming anything is done. Web:
+  `cd apps/web && npx eslint src e2e && npx tsc --noEmit`; browser tests `npm run test:e2e` (starts its
+  own stubbed API and web servers; stop any local dev server in `apps/web` first).
 - **Builder runtime:** Node is now `D:/Yang/Software/cursor/NodeJs/node.exe`; the older `_bak/NodeJs` path is absent. Use synthetic scratch data for tests, never `job-copilot-local-data` or the default personal data folder. Preserve `.claude/settings.local.json`.
 
 ## Working with me

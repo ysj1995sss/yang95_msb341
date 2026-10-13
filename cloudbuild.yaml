@@ -1,0 +1,9 @@
+# Builds the workspace API image for Google Cloud Run (spec 023). From the repository root in
+# Cloud Shell:
+#   gcloud builds submit --config cloudbuild.yaml .
+# then deploy it (the full command is in specs/023-free-test-deployment.md, "Update the backend").
+steps:
+  - name: gcr.io/cloud-builders/docker
+    args: ["build", "-f", "apps/api/Dockerfile", "-t", "us-west1-docker.pkg.dev/$PROJECT_ID/job-copilot/api:latest", "."]
+images:
+  - us-west1-docker.pkg.dev/$PROJECT_ID/job-copilot/api:latest

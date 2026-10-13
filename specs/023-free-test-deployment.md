@@ -1,134 +1,85 @@
 # Spec 023: Free online deployment for supervised testing
 
-**Status:** Draft (2026-10-12), updated for decision 045: **no sign-in, one shared workspace.** Nothing is
-deployed. No account has been created or touched.
-**Builds on:** decision 043 (online, free, 3 testers first), decision 045 (no sign-in), decision 044 (free hosting,
-data may be wiped, the model provider may train on resumes), spec 009 ("Deploying").
+**Status:** Deployed (2026-10-13), for supervised testing only, with no sign-in and one shared
+workspace (decision 045).
+- **Website:** Vercel.
+- **Backend:** Google Cloud Run.
+- **Model:** Groq.
 
-## Goal and limits
+The first plan was Render (the free plan restarted the backend and kept returning 502 errors). It
+was replaced by Cloud Run on 2026-10-13, so the old Render service can be turned off.
+**Builds on:** decision 043 (online, free, 3 testers first), decision 044 (free hosting, data may be
+wiped, the provider may train on resumes), decision 045 (no sign-in), spec 009 ("Deploying").
 
-Put the website online for **3 supervised testers**, at no cost. The goal is that each of them
-finishes search → tailor → apply once, in one sitting.
+## What runs where
 
-**Free-plan limits, checked on 2026-10-12:**
-
-| What | Limit | Effect on testers |
+| Part | Where | Settings (names only; values live in the hosts, never in this repo) |
 |---|---|---|
-| Render free service | Sleeps after 15 idle minutes (wake-up about 1 minute); **no persistent disk**, so files are wiped on sleep, restart and redeploy. [Render docs](https://render.com/docs/free) | Their profile and tailored resumes can vanish between visits. They must finish in one sitting. |
-| Memory | The backend alone uses about **285 MB** (measured on the builder's PC). One third-party source says free Render has 512 MB; unverified. LibreOffice, which turns **Word** files into PDFs, needs more and wasn't measured. | **Word resumes may fail with an out-of-memory error. Testers should upload PDF resumes.** |
-| Vercel Hobby | Personal, non-commercial use only. [Vercel docs](https://vercel.com/docs/plans/hobby) | Fine for testing; charging money later needs the Pro plan. |
-| Gemini free tier | Google may use prompts and responses to improve its products, and human reviewers may read them. [Google forum](https://discuss.ai.google.dev/t/clarification-on-gemini-api-free-tier-vs-paid-tier-after-billing-activation/96995) | Testers must be told before they upload a resume (note at the end). |
-| The app | 15 tailoring runs per person per day | Plenty for one sitting. |
+| Website (`apps/web`) | Vercel project `yang95-msb341`; root directory `apps/web` | `API_URL` (the Cloud Run address, Config type), `AUTH_SECRET`, `WORKSPACE_TOKEN_SECRET`, `SHARED_TEST_WORKSPACE=yes` |
+| Backend (`apps/api`) | Google Cloud Run service `job-copilot-api`, region `us-west1`, project `job-copilot-511505` | env `APP_ENV=production`, `LEGACY_ROUTES=false`, `LLM_MODEL=groq/openai/gpt-oss-120b`, `TAILOR_RUNS_PER_DAY`; secrets `WORKSPACE_TOKEN_SECRET`, `LLM_API_KEY` (Secret Manager, `:latest`) |
+| Backend image | Artifact Registry `us-west1-docker.pkg.dev/job-copilot-511505/job-copilot/api:latest`, built by `cloudbuild.yaml` | |
 
-**Not tested here:** Docker isn't installed on the builder's PC, so the backend image has not been
-built. Render's first build is the first real test.
+- **The secrets:** `WORKSPACE_TOKEN_SECRET` must be the same value on Vercel and Cloud Run.
+- **Production branch:** Vercel deploys whatever branch is set as its Production Branch. Set it to
+  `main` so there is one branch.
 
-## What changed in the repo
+## Free-plan limits
 
-`render.yaml` is now the **free** plan with no disk (the paid variant is in its comments).
-Nothing else changed; the Dockerfile already runs production mode, which refuses to start
-without a private `WORKSPACE_TOKEN_SECRET`.
+| What | Effect on testers |
+|---|---|
+| Cloud Run scales to zero when idle (`--min-instances 0`), and the container has no disk | **Everything is wiped** when the backend has been idle for a while (roughly 15 minutes) or is redeployed. Testers finish in one sitting. The first request after idle takes about 20–30 seconds. |
+| One shared workspace (decision 045) | Everyone using the address sees and overwrites the same data. **Test one person at a time.** "Delete everything in this shared test" on Career Profile resets it between testers. |
+| `TAILOR_RUNS_PER_DAY` (default 15) | The limit is shared by all testers because they're one owner. Set about 60. |
+| The model provider's free tier | It may keep or use what is sent, including resume text (decision 044). Testers are told before they upload. |
+| Vercel Hobby | Personal, non-commercial use. Charging money later needs the Pro plan. |
 
-## How to deploy (step by step)
+## Update the backend (after pushing code)
 
-Do these in order. Anything marked **YOU** needs your hands. I can't create accounts, sign in, or
-see your passwords and keys. **Never paste a key or secret into chat or into any file in this
-repository: it is public.**
-
-### A. Accounts and keys (all free)
-
-**A1. YOU: a GitHub account that can see the repo.** It's public (`ysj1995sss/yang95_msb341`), so
-Vercel and Render can read it. Use the same GitHub login for both sites below.
-
-**A2. YOU: make two private random secrets.** On your PC, in a terminal, run this twice:
+In Google Cloud Shell:
 
 ```bash
-python -c "import secrets; print(secrets.token_hex(32))"
+cd ~/yang95_msb341 && git pull
 ```
 
-Save the two results in a password manager or a private note. First = `AUTH_SECRET`; second =
-`WORKSPACE_TOKEN_SECRET`. Each is 64 characters. **Use fresh values; never paste them into chat.**
+```bash
+gcloud builds submit --config cloudbuild.yaml .
+```
 
-**A3. YOU: a model key.** Go to **aistudio.google.com**, sign in with a Google account, choose
-**Get API key → Create API key**, and save it privately. This is the free tier (see the limits
-above). The app is already set up for Gemini, so `LLM_MODEL` will be `gemini/gemini-2.5-flash`
-(the app's own fallback list uses this name; if Google has retired it, the first tailoring run
-will say so and we pick the current name).
+```bash
+gcloud run deploy job-copilot-api --image us-west1-docker.pkg.dev/job-copilot-511505/job-copilot/api:latest --region us-west1 --memory 2Gi --cpu 1 --max-instances 1 --min-instances 0 --allow-unauthenticated --set-env-vars APP_ENV=production,LEGACY_ROUTES=false,LLM_MODEL=groq/openai/gpt-oss-120b,TAILOR_RUNS_PER_DAY=60 --set-secrets WORKSPACE_TOKEN_SECRET=WORKSPACE_TOKEN_SECRET:latest,LLM_API_KEY=LLM_API_KEY:latest
+```
 
-**A4. Skipped:** no Google sign-in (decision 045). There is no Google Cloud step.
+**Check:**
+1. Open `<service address>/health`. It should say `{"status":"ok"}`.
+2. Tailor one job on the website.
 
-### B. The backend on Render
+**Never paste a key or secret into chat or into this repository: it is public.**
 
-**B1. YOU: Render → New → Blueprint.** Connect GitHub, choose the repo, and choose the branch
-**`codex/truthful-tailoring-sources-publication`** (you don't need to merge into `main`).
+## The website
 
-**B2. YOU:** Render reads `render.yaml` and shows `job-copilot-api` on the **Free** plan. It asks
-for the secret values:
-- `WORKSPACE_TOKEN_SECRET` = your second secret from A2;
-- `LLM_MODEL` = `gemini/gemini-2.5-flash`;
-- `LLM_API_KEY` = your key from A3;
-- leave `LLM_FALLBACK_MODELS`, `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` and `ERROR_WEBHOOK_URL`
-  empty.
-- optional: add `TAILOR_RUNS_PER_DAY` = `40`. The shared workspace is one owner, so the default
-  of 15 runs a day is shared by all testers together.
+Vercel deploys on every push to its production branch. If you change a setting, use **Redeploy**
+on the newest deployment.
 
-**B3. YOU:** click **Apply**. The first build takes several minutes (it installs LibreOffice).
-When it says **Live**, copy the service address (like `https://job-copilot-api-xxxx.onrender.com`).
-Open `<that address>/health` in a browser. You should see a short "ok".
-
-**B4.** If the build fails, or the service crashes with a memory error, copy the last 30 lines
-of the Render log to me (they contain no secrets) and I fix it.
-
-### C. The website on Vercel
-
-**C1. YOU: Vercel → Add New → Project,** import the same repo.
-- **Root Directory:** `apps/web`. Framework should show **Next.js**.
-- Open **Settings → Git → Production Branch** afterwards and set it to
-  `codex/truthful-tailoring-sources-publication`, so it deploys from that branch.
-- Project name: pick something simple; the site address will be `https://<name>.vercel.app`.
-
-**C2. YOU:** before the first deploy, open **Environment Variables** and add:
-- `API_URL` = the Render address from B3, with no slash at the end;
-- `AUTH_SECRET` = your first secret from A2;
-- `WORKSPACE_TOKEN_SECRET` = your **second** secret (the same one as on Render);
-- `SHARED_TEST_WORKSPACE` = `yes` (this turns on the no-sign-in shared workspace);
-- do **not** add `AUTH_GOOGLE_ID` or `AUTH_GOOGLE_SECRET`.
-
-**C3. YOU:** click **Deploy** and copy the site address.
-
-### D. Skipped (Google sign-in)
-
-Not needed. If you redeploy Vercel after changing settings, use **Redeploy** on the project.
-
-### E. Check it before any tester sees it
+## Before any tester
 
 1. **YOU:** open the site. The header badge should say **Shared test**.
-2. **YOU:** import a **PDF** resume, run a search, and tailor one job. The first request after idle
-   takes about a minute (Render waking up).
-3. **YOU:** open the site in another browser or a private window. **You should see the same data.**
-   That is expected: it is one shared workspace.
-4. Tell me the result.
+2. **YOU:** import a resume, search, tailor one job and download the PDF. This also confirms
+   Word-to-PDF conversion works on the server (LibreOffice in the image), which hasn't been checked
+   online yet.
+3. **YOU:** delete everything in the shared test, so the tester starts empty.
 
-### F. What to tell each tester, before they sign in
+## What to tell each tester, before they start
 
-> This is a supervised test of an early product with no sign-in: **everyone using this address sees and overwrites the same data, so we test one person at a time.** Please upload your resume as a **PDF**. The free
-> test server forgets everything after about 15 minutes of inactivity, so please finish in one
-> sitting. The AI service we use on its free plan **may use what you send, including your resume
-> text, to improve its products, and its staff may read it.** If you're not comfortable with
-> that, please don't upload your real resume. Nothing is ever sent to an employer without you.
-
-## What I can do next, and what I can't
-
-**I can** (after you approve this spec): keep `render.yaml` and this guide up to date, read build
-logs you paste, fix whatever Render's first build or the memory limit turns up, and add a visible
-notice in the app telling testers about the data wipe. **I can't** create accounts, sign in, enter
-or see keys, press Deploy, or edit Google Cloud, Render or Vercel settings.
+> This is a supervised test of an early product with no sign-in: **everyone using this address
+> sees and overwrites the same data, so we test one person at a time.** The free test server
+> forgets everything after a short idle time, so please finish in one sitting. The AI service we
+> use on its free plan **may use what you send, including your resume text.** If you're not
+> comfortable with that, please don't upload your real resume. Nothing is ever sent to an employer
+> without you.
 
 ## Rejected or deferred
 
-- **Render paid plan** (about $7 a month plus a disk) keeps data, but is not free; revisit after
-  the 3 testers.
-- **A free external database** so data survives restarts: a real build, deferred.
-- **Hugging Face Spaces** (more free memory): its docs suggest a Docker Space may need a paid plan
-  to create; unverified.
-- **Merging to `main` first:** not needed; both hosts can deploy from the branch.
+- **Render free plan:** it restarted and returned 502 errors under the app's memory use; replaced.
+- **A disk or database so data survives restarts:** costs money or needs a real storage build.
+  Revisit after the 3 testers.
+- **Google sign-in:** deferred by decision 045.

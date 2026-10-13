@@ -10,6 +10,43 @@ decisions 001, 006, 009, 012, 014, 015, 016, or 017 unless new evidence forces i
 
 ---
 
+## START HERE (2026-10-13, evening) — live on Vercel + Cloud Run; review, dogfood and bug fixes
+
+Everything is on `main` (the codex branch matches it).
+- **Live:** website on Vercel, backend on **Google Cloud Run**, model **Groq**
+  (`groq/openai/gpt-oss-120b`). Deployment, settings and the backend update commands are in
+  `specs/023-free-test-deployment.md`; build with `cloudbuild.yaml`. Render is replaced.
+- **What today fixed** (details in the commit messages):
+  - **Code review fixes:**
+    - the shared-test sign-out lockout;
+    - spec 022 additions blocked by the gap gate;
+    - Word summaries never found;
+    - duplicate tools and fake certifications on import;
+    - batch review revision;
+    - trailing-punctuation metrics.
+  - **Dogfood fixes (PDF path):**
+    - "N/A" printed as the location;
+    - degree above the school line dropped;
+    - "Tools:" ending the skills section;
+    - stale reviews called ready;
+    - raw server errors shown to people;
+    - leadership evidence missing;
+    - audit-language refusals;
+    - plural and verb-form stemming blocking rewrites;
+    - failed proposals built into the first resume ("not usable");
+    - Core Competencies additions;
+    - review-list states in words.
+- **Backend not redeployed yet:** most fixes need the Cloud Run rebuild (spec 023).
+- **Open:**
+  - "Candidate fit" scores nearly every job 85–96% (specs 010/011 kept it separate, so changing
+    it is a builder decision);
+  - free-form resumes get no level 2–3 additions;
+  - Word-to-PDF conversion on Cloud Run hasn't been checked online;
+  - 0 human testers;
+  - the Gemini `reasoning_effort="disable"` bug (left by the builder; matters only if Gemini
+    returns).
+- **New decision:** 046 records the Unicode PDF fonts and fit-to-page shrink, which reverse part of 005.
+
 ## START HERE (2026-10-12, later) — Claude Code session: review fix, Word fix, direction, Streamlit retired
 
 Branch `codex/truthful-tailoring-sources-publication`, **not merged or pushed**. Preserve

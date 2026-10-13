@@ -1,3 +1,5 @@
+# REPLACED (2026-10-13): the backend now runs on Google Cloud Run (cloudbuild.yaml, specs/023).
+# Kept only for reference; turn the Render service off in the Render dashboard.
 # Render blueprint for the workspace API (spec 009, spec 023). The web app (apps/web) deploys to
 # Vercel with its root directory set to apps/web. See specs/023, "How to deploy".
 #

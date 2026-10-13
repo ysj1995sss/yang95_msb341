@@ -13,6 +13,10 @@ a brand new session act like a colleague who already knows what you are working 
 
 ## Current state
 
+> **Newest (2026-10-13, evening, Claude Code):** live on Vercel + Google Cloud Run with Groq (spec 023).
+> Read the top "START HERE (2026-10-13, evening)" section of `HANDOFF-TO-CODEX.md` first: today's code
+> review, dogfood fixes, what is open, and that the backend still needs redeploying.
+
 > **Newest (2026-10-12, later, Claude Code):** read the top "START HERE" section of either handoff
 > first. Decision 043 changed the product direction (auto-apply, levels 1–3 tailoring, online,
 > website only). Streamlit is retired (spec 021, tag `ui-streamlit-v1`); ignore older notes about
@@ -71,9 +75,9 @@ a brand new session act like a colleague who already knows what you are working 
   - **Length:** one bounded length-correction pass, and a hard page limit on freeform.
   - **Custom application answers** come only from the user's approved answer bank.
   - **Sign-in:** Google sign-in (when `[auth]` is configured) and per-user data folders.
-- **Deployed:** https://yang95msb341-epxbfpbdegytjwcajjthay.streamlit.app runs in *local
-  single-user mode* (no `[auth]` secrets, no durable disk). It is for supervised demos only;
-  don't share it as a multi-user product. The deployment checklist is in `decisions/023`.
+- **Deployed (2026-10-13):** website on Vercel, backend on Google Cloud Run, model Groq, for a
+  supervised test with no sign-in and one shared workspace (decision 045). Setup and the backend
+  update commands: `specs/023-free-test-deployment.md`. The old Streamlit demo is deleted.
 - **Not built (specs only):**
   - status sync from Gmail (`specs/005` slice 2; slice 1, pasting an email into Tracker, is built);
   - resume upload in the browser helper (`extension/`, spec 006 v0.1 fills the form and never
@@ -82,9 +86,9 @@ a brand new session act like a colleague who already knows what you are working 
     Greenhouse, Lever, Ashby and SmartRecruiters.
 - **Biggest open risk:** nobody other than the builder has used the full search → tailor → apply
   loop. Next: supervised tests with 2–3 people, then the Sprint 2 review.
-- **Where to see it:** `product/resume_tailorer/app.py` (Home) and
-  `product/resume_tailorer/pages/` (Career Profile, Jobs, Tailor, Apply, Tracker). View logic
-  lives in pure, tested modules under `product/resume_tailorer/ui/`.
+- **Where to see it:** the website `apps/web/src/app/` (Home, Career Profile, Jobs, Tailor, Apply,
+  Tracker) on the workspace API `apps/api/app/workspace/`. Engine logic lives in tested modules
+  under `product/resume_tailorer/` (view logic in `ui/`).
 - **Handoff docs:** `HANDOFF-TO-CLAUDE-CODE.md` and `HANDOFF-TO-CODEX.md`, both pointing at the
   same `decisions/` history.
 
@@ -98,9 +102,15 @@ a brand new session act like a colleague who already knows what you are working 
 
 ## Tools and conventions
 
-- **Stack:** Python (resume_tailorer package), Streamlit UI with built-in Google sign-in, any LiteLLM-supported model (`product/resume_tailorer/llm/`), pytest, reportlab/PyMuPDF for PDFs, python-docx for the DOCX splice pipeline, Greenhouse live job search (LinkedIn/Indeed/Handshake demo only), FastAPI backend in `apps/api/`.
-- **How work ships:** push to `main` → Streamlit Community Cloud redeploys `product/resume_tailorer/app.py`. Multi-user deployment needs the `decisions/023` checklist first (Google OAuth secrets, durable `JOB_COPILOT_DATA_DIR`).
-- **Testing and style:** pytest; CI (`.github/workflows/tests.yml`) runs both suites on every push, on Python 3.14 with the pinned versions in `product/requirements.txt`. Run both before claiming anything is done: `product/` currently 1126 tests, `apps/api/` currently 117. Web: `cd apps/web && npx eslint src && npx tsc --noEmit && npm run build`, and browser tests `npm run test:e2e` (20; starts its own stubbed API and web server).
+- **Stack:** Python (`resume_tailorer` engine), FastAPI workspace API (`apps/api`), Next.js 16 website (`apps/web`), any LiteLLM-supported model (`product/resume_tailorer/llm/`), pytest and Playwright, reportlab/PyMuPDF for PDFs, python-docx for the Word splice pipeline, live job search on Greenhouse, Lever, Ashby and SmartRecruiters.
+- **How work ships:** push to `main` and Vercel redeploys the website. The backend is rebuilt by
+  hand on Cloud Run (`cloudbuild.yaml`, then the deploy command in spec 023).
+- **Testing and style:** pytest; CI (`.github/workflows/tests.yml`) runs every suite on each push,
+  on Python 3.14 with the pinned versions in `product/requirements.txt`. Last full local run
+  (2026-10-13): `product/` 1372 passed (1 skipped), `apps/api/` 169 passed, web lint and types clean,
+  33 Playwright cases passed. Run fresh checks before claiming anything is done. Web:
+  `cd apps/web && npx eslint src e2e && npx tsc --noEmit`; browser tests `npm run test:e2e` (starts its
+  own stubbed API and web servers; stop any local dev server in `apps/web` first).
 
 ## Working with me
 
@@ -124,4 +134,4 @@ Default five-label vocabulary (`needs-triage`, `needs-info`, `ready-for-agent`, 
 
 ### Domain docs
 
-Single-context: `CONTEXT.md` at the repo root. Decision records already live in `decisions/` (001–042), so that folder takes the place of `docs/adr/`. See `docs/agents/domain.md`.
+Single-context: `CONTEXT.md` at the repo root. Decision records already live in `decisions/` (001–046), so that folder takes the place of `docs/adr/`. See `docs/agents/domain.md`.
