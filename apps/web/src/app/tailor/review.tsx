@@ -10,6 +10,12 @@ import { ResumeSource } from "./resume-source";
 
 const pct = (v: number | null) => (v === null || v === undefined ? "–" : `${Math.round(v * 100)}%`);
 
+/** A review-list row's state in words: decided (and by whom when AI decided) or not, and a failed check. */
+function queueState(c: Change): string {
+  const decided = c.decision ? `${c.decision_label}${c.decision_origin === "AI-assisted" ? " by AI assistance" : ""}` : "Not reviewed";
+  return c.check === "We could not verify this claim" ? `${decided} · failed a check` : decided;
+}
+
 function Steps({ review }: { review: Review }) {
   const p = review.progress;
   const allReviewed = p.reviewed === p.total;
@@ -195,8 +201,11 @@ export function ReviewRoom({ review, onChange, onReload, onDiscard }: {
                         className={cx("flex min-h-11 min-w-0 flex-1 items-start gap-2 rounded-[var(--radius-control)] px-3 py-2 text-left text-[15px] transition-colors duration-150 cursor-pointer",
                           c.id === current?.id ? "bg-primary-soft font-semibold text-primary" : "hover:bg-paper")}>
                         {c.decision ? <Check aria-hidden className="size-4 shrink-0 text-verified" /> : <Circle aria-hidden className="size-4 shrink-0 text-line-strong" />}
-                        <span className="min-w-0 whitespace-normal break-words">{c.title || `${i + 1}. ${c.section_label}: ${c.original || "(new line)"} → ${c.proposed}`}</span>
-                        <span className="sr-only">{c.decision ? ` — ${c.decision_label}` : " — not reviewed"}</span>
+                        <span className="min-w-0 whitespace-normal break-words">
+                          {c.title || `${i + 1}. ${c.section_label}: ${c.original || "(new line)"} → ${c.proposed}`}
+                          {/* Spec 019: the state in words, not only by icon and color. */}
+                          <span className="block text-[13px] font-normal text-muted">{queueState(c)}</span>
+                        </span>
                       </button>
                     </li>
                   ))}
@@ -271,7 +280,7 @@ export function ReviewRoom({ review, onChange, onReload, onDiscard }: {
           </details>
           <details className="text-[15px]">
             <summary className="cursor-pointer text-muted">Start over for this job</summary>
-            <p className="mt-2 text-muted">Discards this review. Your Career Profile is not changed.</p>
+            <p className="mt-2 text-muted">Discards this review, including your decisions and your own wording. Your Career Profile is not changed.</p>
             <Button variant="danger" className="mt-2" onClick={onDiscard}>Discard and tailor again</Button>
           </details>
         </aside>

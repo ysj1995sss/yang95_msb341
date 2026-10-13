@@ -275,3 +275,39 @@ def test_a_longer_but_truthful_edit_is_not_refused_for_its_length(no_word):
     state = _review_state(result, {change.change_id: "MANUALLY_EDITED"}, {change.change_id: "SQL, Excel, Tableau"})
     regenerate({}, state)
     assert "SQL, Excel, Tableau" in [p.text for p in Document(io.BytesIO(state["docx_bytes"])).paragraphs]
+
+
+def _competencies_docx(model_line=None):
+    doc = Document()
+    for line in ("Sam Example", "sam@example.com | (555) 010-0100", "EXPERIENCE", "Data Analyst", "Acme | 2021 - 2024"):
+        doc.add_paragraph(line)
+    doc.add_paragraph(_BULLET, style="List Bullet")
+    doc.add_paragraph("ADDITIONAL")
+    doc.add_paragraph("Core Competencies: SQL | Excel", style="List Bullet")
+    buf = io.BytesIO()
+    doc.save(buf)
+    return buf.getvalue()
+
+
+class _ReordersCompetencies(_KeepAll):
+    def tailor_bullets(self, bullets, profile, job_analysis, gap_report, **kwargs):
+        result = super().tailor_bullets(bullets, profile, job_analysis, gap_report, **kwargs)
+        for edit in result.edits:
+            if edit.original_text.startswith("Core Competencies"):
+                edit.new_text, edit.changed = "Core Competencies: Excel | SQL", True
+        return result
+
+
+@pytest.mark.parametrize("tailorer, line", [(_KeepAll(), "Core Competencies: SQL | Excel | Tableau | PostgreSQL"),
+                                            (_ReordersCompetencies(), "Core Competencies: Excel | SQL | Tableau | PostgreSQL")])
+def test_a_core_competencies_line_takes_the_additions_when_there_is_no_skills_line(no_word, tailorer, line):
+    """Spec 022 step 3 says "the existing skills/competencies paragraph", but a "Core Competencies:"
+    line was skipped, so resumes whose only list is that line never got additions (code review,
+    2026-10-13). The model's reorder of the line is kept, with the additions after it, as one change."""
+    result = run_docx_tailoring_pipeline(_competencies_docx(), _profile(), JobAnalyzer().analyze("Tableau and PostgreSQL."),
+                                         GapReport(items=[], summary=""), bullet_tailorer=tailorer,
+                                         convert_to_pdf=True, review=_review())
+    lines = [c for c in result.changes if c.original_text.startswith("Core Competencies")]
+    assert len(lines) == 1 and lines[0].category is ChangeCategory.SKILLS_ADDED and lines[0].proposed_text == line
+    assert line in [p.text for p in Document(io.BytesIO(result.docx_bytes)).paragraphs]
+    assert "PostgreSQL" in result.tailored_scoring_text  # the review reads the line as the file has it

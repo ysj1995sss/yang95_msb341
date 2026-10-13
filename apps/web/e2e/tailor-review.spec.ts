@@ -44,6 +44,9 @@ test("review mode is chosen before tailoring starts", async ({ page }) => {
   });
   await page.goto("/tailor");
   await expect(page.getByRole("radio", { name: "I'll review changes" })).toBeChecked();
+  // Spec 019/022: described honestly, including the skills it adds and what it never does.
+  await expect(page.getByText(/adds to your skills line/)).toBeVisible();
+  await expect(page.getByText(/never submits an application or promises an ATS result/)).toBeVisible();
   await page.getByRole("radio", { name: "AI-assisted review" }).check();
   await page.getByRole("button", { name: "Tailor my resume" }).click();
   await expect.poll(() => sent).toMatchObject({ review_mode: "assisted" });
@@ -115,7 +118,7 @@ test("a stale batch decision reloads rather than reporting success", async ({ pa
   await page.getByRole("button", { name: "Accept selected" }).click();
   await expect(page.getByText("This review changed elsewhere. The latest decisions are loading; select changes again.")).toBeVisible();
   await expect(page.getByText("0 selected", { exact: true })).toBeVisible();
-  await expect(page.getByRole("button", { name: /Built weekly reports → Built weekly SQL dashboards — Original kept/ })).toBeVisible();
+  await expect(page.getByRole("button", { name: /Built weekly reports → Built weekly SQL dashboards.*Original kept/ })).toBeVisible();
 });
 
 test("legacy decisions do not claim a known decision-maker", async ({ page }) => {
@@ -159,4 +162,17 @@ test("unconfirmed facts are explained before tailoring, with both ways forward",
   await expect.poll(() => confirmed).toBe(true);
   await expect(page.getByText("Your facts aren't confirmed yet")).toHaveCount(0);
   await expectAccessible(page, "tailor unconfirmed facts");
+});
+
+test("the review list says each change's state in words, not only by icon and color", async ({ page }) => {
+  // Spec 019: reviewed, unresolved, failed-check and AI-decided states shown with text as well as color.
+  const states = { ...review, changes: [
+    { ...first, decision: "REJECTED", decision_label: "Original kept", decision_origin: "AI-assisted" },
+    { ...second, check: "We could not verify this claim" },
+  ] } as unknown as typeof review;
+  await page.route("**/api/backend/tailor", (route) => route.fulfill({ json: pageData(states) }));
+  await page.goto("/tailor");
+  const queue = page.getByRole("navigation", { name: "Review queue" });
+  await expect(queue.getByText("Original kept by AI assistance", { exact: true })).toBeVisible();
+  await expect(queue.getByText("Not reviewed · failed a check", { exact: true })).toBeVisible();
 });

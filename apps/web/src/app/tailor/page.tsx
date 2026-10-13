@@ -49,7 +49,7 @@ function PastedJobForm({ onDone }: { onDone: (page: TailorPage) => void }) {
         <TextField label="Job title" required value={job.title} onChange={(e) => setJob({ ...job, title: e.target.value })} />
         <TextField label="Company" value={job.company} onChange={(e) => setJob({ ...job, company: e.target.value })} />
       </div>
-      <TextField label="Link to the posting" help="Optional. Apply uses it to open the employer's application." type="url"
+      <TextField label="Link to the posting" help="Optional for tailoring. Needed later to open the employer's application and track it from Apply." type="url"
         value={job.url} onChange={(e) => setJob({ ...job, url: e.target.value })} />
       <TextArea label="Job description" help="Paste the whole posting, including requirements." rows={10} required
         value={job.description} onChange={(e) => setJob({ ...job, description: e.target.value })} />
@@ -229,7 +229,7 @@ export default function TailorPageView() {
             )}
             {!data.model_ready && <div className="mt-3"><Alert tone="review" title="The writing model isn't set up">Enter your own model and key under Settings, or set LLM_MODEL and LLM_API_KEY on the server.</Alert></div>}
             <div className="mt-5">
-              <RadioGroup legend="Who reviews proposed changes?" help="Manual is the default. AI assistance accepts only clearly supported wording and keeps clear failures out; uncertain changes still need you. You can change each decision later."
+              <RadioGroup legend="Who reviews proposed changes?" help="Manual is the default. AI assistance accepts clearly supported wording and the skills Job Copilot adds to your skills line (each listed with its reason), and keeps clear failures out; uncertain changes still need you. You can change each decision later. It never submits an application or promises an ATS result."
                 name="review-mode" value={reviewMode} options={[{ value: "manual", label: "I'll review changes" }, { value: "assisted", label: "AI-assisted review" }]} onChange={setReviewMode} />
             </div>
             <details className="mt-5 rounded-[var(--radius-card)] border border-line p-4">

@@ -258,12 +258,15 @@ def run_docx_tailoring_pipeline(
     # Spec 022: change levels 2-3 go on the skills line, computed by code after the model answered,
     # so the model never edits the skills line itself. Additions that push the resume onto another
     # page are dropped one at a time, lowest priority first, and the review says which (step 6).
-    skills_bullet, skills_edit, additions = _skills_line_edit(doc, review)
+    skills_bullet, skills_edit, additions = _skills_line_edit(doc, review, structure, tailoring_result.edits)
+    # On a "Core Competencies:" line the model's own reorder is the base; its edit is folded into the
+    # one skills change, so the paragraph never gets two edits.
+    other_edits = [e for e in tailoring_result.edits if skills_edit is None or e.paragraph_index != skills_edit.paragraph_index]
     kept, result = list(additions), None
     while kept and result is None:
         attempt = finalize_docx_edits(
             doc=Document(io.BytesIO(original_docx_bytes)), bullets=bullets + [skills_bullet],
-            edits=tailoring_result.edits + [_with_skills(skills_edit, kept)], extra_warnings=list(warnings),
+            edits=other_edits + [_with_skills(skills_edit, kept)], extra_warnings=list(warnings),
             skill_additions=kept, **finalize_kwargs,
         )
         if attempt.page_count_preserved is False:
@@ -284,27 +287,35 @@ def run_docx_tailoring_pipeline(
 
 
 def _with_skills(edit: BulletEdit, additions) -> BulletEdit:
-    """The skills-line edit carrying exactly these additions."""
+    """The skills-line edit carrying exactly these additions, after any reorder already in it."""
     from resume_tailorer.docx_export.skills_line import append_skills
 
-    return replace(edit, new_text=append_skills(edit.original_text, [a.term for a in additions]))
+    return replace(edit, new_text=append_skills(edit.new_text, [a.term for a in additions]), changed=True)
 
 
-def _skills_line_edit(doc, review: RequirementReview | None):
-    """(skills Bullet, its BulletEdit, the additions), or Nones when nothing can be added."""
+def _skills_line_edit(doc, review: RequirementReview | None, structure: DocxStructure | None = None,
+                      model_edits: list[BulletEdit] = ()):
+    """(skills Bullet, its base BulletEdit, the additions), or Nones when nothing can be added. The base
+    is the line before additions: the one skills line, or else (spec 022: "skills/competencies
+    paragraph") a "Core Competencies:" line, as the model left it."""
     from resume_tailorer.analyzers.skill_additions import propose_skill_additions
-    from resume_tailorer.docx_export.skills_line import append_skills, find_skills_paragraph_index
+    from resume_tailorer.docx_export.skills_line import find_skills_paragraph_index
 
-    index = find_skills_paragraph_index(doc.paragraphs) if review is not None else None
+    if review is None:
+        return None, None, []
+    index = find_skills_paragraph_index(doc.paragraphs)
+    if index is None and structure is not None:
+        index = structure.competency_paragraph_index
     if index is None:
         return None, None, []
     original = doc.paragraphs[index].text
-    additions = propose_skill_additions(review, original)
+    model = next((e for e in model_edits if e.paragraph_index == index and e.changed), None)
+    base = model.new_text if model else original
+    additions = propose_skill_additions(review, base)
     if not additions:
         return None, None, []
-    new_text = append_skills(original, [a.term for a in additions])
     return (Bullet(paragraph_index=index, text=original, section="skills"),
-            BulletEdit(index, original, new_text, changed=True), additions)
+            BulletEdit(index, original, base, changed=base != original), additions)
 
 
 def finalize_docx_edits(
@@ -421,6 +432,8 @@ def finalize_docx_edits(
     from resume_tailorer.docx_export.skills_line import find_skills_paragraph_index
 
     skills_index = find_skills_paragraph_index(spliced_doc.paragraphs)
+    if skills_index is None:
+        skills_index = structure.competency_paragraph_index  # where additions go without a skills line
     skills_edit = next((e for e in edits if e.paragraph_index == skills_index and e.changed), None)
     scoring_text = _synthesize_scoring_text(profile, structure, edits,
                                             skills_line=skills_edit.new_text if skills_edit else None)

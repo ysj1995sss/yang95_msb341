@@ -335,7 +335,7 @@ test("one-off sources are disclosed and unsupported project wording is refused",
   await page.getByLabel("Your wording").fill("Built SQL and Tableau dashboards used by 40 managers across regional sales teams");
   await page.getByRole("button", { name: "Save my wording" }).click();
   await page.getByRole("button", { name: "Rebuild resume" }).click();
-  await expect(page.getByRole("alert").filter({ hasText: /this project/ })).toBeVisible();
+  await expect(page.getByRole("alert").filter({ hasText: /in this role|only listed in your skills/ })).toBeVisible();
   await page.getByRole("button", { name: "Keep original", exact: true }).click();
   await page.getByRole("button", { name: "Rebuild resume" }).click();
   await expect(page.getByText("Your resume is ready for Apply.")).toBeVisible();
