@@ -1,21 +1,25 @@
-# Render blueprint for the workspace API (spec 009). The web app (apps/web) deploys to
-# Vercel with its root directory set to apps/web. See specs/009, "Deploying".
+# Render blueprint for the workspace API (spec 009, spec 023). The web app (apps/web) deploys to
+# Vercel with its root directory set to apps/web. See specs/023, "How to deploy".
+#
+# FREE PLAN (supervised testing): no persistent disk, so saved profiles are wiped whenever the
+# service sleeps (after 15 idle minutes), restarts or redeploys. Testers are told this.
+# For data that stays, change `plan` to `starter` and add this back under the service:
+#   disk:
+#     name: job-copilot-data
+#     mountPath: /data
+#     sizeGB: 1
 services:
   - type: web
     name: job-copilot-api
     runtime: docker
     dockerfilePath: apps/api/Dockerfile
     dockerContext: .
-    plan: starter            # a persistent disk needs a paid instance (about $7/month)
+    plan: free
     healthCheckPath: /health
-    disk:
-      name: job-copilot-data
-      mountPath: /data
-      sizeGB: 1
     envVars:
       - key: WORKSPACE_TOKEN_SECRET   # the same value as on the web app
         sync: false
-      - key: LLM_MODEL
+      - key: LLM_MODEL                # for example gemini/gemini-2.5-flash
         sync: false
       - key: LLM_API_KEY
         sync: false
