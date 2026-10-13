@@ -321,15 +321,19 @@ class TestFontSanitization:
     font's supported WinAnsiEncoding range.
     """
 
-    def test_macron_e_is_transliterated_not_dropped_or_broken(self):
-        result = PDFGenerator._sanitize_for_font("Mondelēz")
-        assert result == "Mondelez"
+    def test_without_a_unicode_font_the_macron_e_is_simplified_not_broken(self, monkeypatch):
+        from resume_tailorer.pdf import generator as gen
 
-    def test_common_latin1_accents_still_work_fine(self):
-        # These ARE in WinAnsiEncoding -- confirm the sanitizer doesn't
-        # over-aggressively mangle characters that render correctly already.
-        result = PDFGenerator._sanitize_for_font("Café naïve")
-        assert result == "Cafe naive"
+        monkeypatch.setattr(gen, "unicode_font_family", lambda family: None)
+        assert PDFGenerator._sanitize_for_font("Mondelēz") == "Mondelez"
+
+    def test_without_a_unicode_font_common_accents_are_kept(self, monkeypatch):
+        # These ARE in WinAnsiEncoding, so the base font prints them (2026-10-12: they used to be
+        # stripped too, which changed people's and companies' names).
+        from resume_tailorer.pdf import generator as gen
+
+        monkeypatch.setattr(gen, "unicode_font_family", lambda family: None)
+        assert PDFGenerator._sanitize_for_font("Café naïve") == "Café naïve"
 
     def test_generated_pdf_has_no_replacement_glyphs_for_unusual_characters(self, tmp_path):
         resume_text = "- Consulted Mondelēz on a growth strategy\n"
@@ -337,5 +341,27 @@ class TestFontSanitization:
         path = gen.generate(resume_text, "Jane Doe", output_path=str(tmp_path / "resume.pdf"))
         reader = PdfReader(path)
         text = "".join(page.extract_text() or "" for page in reader.pages)
-        assert "Mondelez" in text
-        assert "�" not in text
+        assert "Mondel" in text and "�" not in text
+
+
+def test_accented_names_are_printed_exactly(tmp_path):
+    # Found on the builder's own resume (2026-10-12): "Mondelēz" printed as "Mondelez", so the
+    # final text check couldn't find the person's own wording and failed the resume.
+    import fitz
+    from resume_tailorer.pdf import generator as gen
+
+    if gen.unicode_font_family("sans-serif") is None:
+        pytest.skip("no Unicode TrueType font on this machine (Liberation Sans or Arial)")
+    path = str(tmp_path / "accents.pdf")
+    gen.PDFGenerator().generate("EXPERIENCE\nAnalyst | Example Co | 2021 - Present\n"
+                                "- Consulted Mondelēz on café pricing for José’s team\n", "Zoë Example", output_path=path)
+    text = fitz.open(path)[0].get_text()
+    assert "Mondelēz" in text and "café" in text and "José" in text and "Zoë Example" in text
+
+
+def test_without_a_unicode_font_only_unprintable_letters_are_simplified(monkeypatch):
+    from resume_tailorer.pdf import generator as gen
+
+    monkeypatch.setattr(gen, "unicode_font_family", lambda family: None)
+    escaped = gen.PDFGenerator()._escape("Mondelēz café")
+    assert escaped == "Mondelez café"

@@ -27,6 +27,7 @@ Scope of `target_length` (important):
   future enhancement, not implemented here.
 """
 
+import functools
 import os
 import re
 import tempfile
@@ -37,6 +38,40 @@ from reportlab.lib.styles import ParagraphStyle
 from reportlab.lib.units import inch
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer
 from reportlab.lib.enums import TA_CENTER
+
+# Unicode TrueType fonts, so every letter prints exactly ("Mondelēz", "José"). Liberation fonts are
+# installed on the Linux server (packages.txt) and match Arial/Times metrics; Windows has Arial and
+# Times. Without them the base-14 fonts are used and unprintable letters are simplified.
+_FONT_DIRS = ("/usr/share/fonts/truetype/liberation", "/usr/share/fonts/truetype/liberation2",
+              os.path.join(os.environ.get("WINDIR", r"C:\Windows"), "Fonts"))
+_UNICODE_FONTS = {
+    "sans-serif": (("LiberationSans-Regular.ttf", "LiberationSans-Bold.ttf", "LiberationSans-Italic.ttf"),
+                   ("arial.ttf", "arialbd.ttf", "ariali.ttf")),
+    "serif": (("LiberationSerif-Regular.ttf", "LiberationSerif-Bold.ttf", "LiberationSerif-Italic.ttf"),
+              ("times.ttf", "timesbd.ttf", "timesi.ttf")),
+}
+
+
+@functools.lru_cache(maxsize=None)
+def unicode_font_family(family: str) -> dict | None:
+    """Registered reportlab font names for `family`, or None when no Unicode font is installed."""
+    from reportlab.pdfbase import pdfmetrics
+    from reportlab.pdfbase.ttfonts import TTFont
+
+    for files in _UNICODE_FONTS.get(family, ()):
+        for folder in _FONT_DIRS:
+            paths = [os.path.join(folder, name) for name in files]
+            if all(os.path.isfile(path) for path in paths):
+                names = {}
+                for style, path in zip(("regular", "bold", "italic"), paths):
+                    names[style] = f"JC-{family}-{style}"
+                    pdfmetrics.registerFont(TTFont(names[style], path))
+                return names
+    return None
+
+
+def _unicode_fonts_available() -> bool:
+    return unicode_font_family("sans-serif") is not None and unicode_font_family("serif") is not None
 
 
 class PDFGenerator:
@@ -124,7 +159,9 @@ class PDFGenerator:
         heading_size_bump = 3 if heading_style_hint == "bold_larger" else 2
 
         font_family = (style_hints or {}).get("font_family", "sans-serif")
-        fonts = self.FONT_FAMILIES.get(font_family, self.FONT_FAMILIES["sans-serif"])
+        base = self.FONT_FAMILIES.get(font_family, self.FONT_FAMILIES["sans-serif"])
+        fonts = (unicode_font_family(font_family if font_family in _UNICODE_FONTS else "sans-serif")
+                 if _unicode_fonts_available() else None) or base
 
         name_style = ParagraphStyle(
             name="CandidateName",
@@ -376,8 +413,17 @@ class PDFGenerator:
         ASCII via Unicode decomposition trades a little typographic
         fidelity for guaranteeing nothing renders as a broken glyph.
         """
-        normalized = unicodedata.normalize("NFKD", text)
-        return "".join(c for c in normalized if not unicodedata.combining(c))
+        if _unicode_fonts_available():
+            return text  # a Unicode TrueType font prints every letter as it is
+        # Base-14 fallback: keep what WinAnsi can print (é, ñ, ü); simplify only the rest.
+        out = []
+        for c in text:
+            try:
+                c.encode("cp1252")
+                out.append(c)
+            except UnicodeEncodeError:
+                out.append("".join(d for d in unicodedata.normalize("NFKD", c) if not unicodedata.combining(d)))
+        return "".join(out)
 
     @classmethod
     def _escape(cls, text: str) -> str:
