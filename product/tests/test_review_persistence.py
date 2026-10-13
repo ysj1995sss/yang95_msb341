@@ -201,3 +201,17 @@ def test_a_new_review_never_starts_at_a_revision_an_old_tab_holds():
 
     first = new_review_revision()
     assert first > 1_000_000_000_000 and new_review_revision() >= first
+
+
+@pytest.mark.parametrize("selection", [["paragraph:1", "paragraph:2"], ["paragraph:2"]])
+def test_accepting_a_failed_change_names_it_so_the_person_can_unselect_it(selection):
+    # Review findings 2 and 5: "Select all unreviewed" then "Accept selected" failed with no
+    # hint which change was the problem, and a single Accept was told about a "batch".
+    review = _decision_module()
+    state = _two_change_state()
+    state["changes"][1] = replace(state["changes"][1], validation_status=ValidationStatus.FAIL)
+    with pytest.raises(review.ReviewSelectionError) as raised:
+        review.apply_decisions(state, [(cid, "ACCEPTED") for cid in selection], origin="person", expected_revision=0)
+    message = str(raised.value)
+    assert "Led customer surveys" in message and "2." in message
+    assert "batch" not in message.lower()

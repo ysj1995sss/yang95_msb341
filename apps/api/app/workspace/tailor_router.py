@@ -94,9 +94,9 @@ def _review(ws: Workspace, job_id: Optional[str]) -> Optional[dict]:
 
 
 def _save_review(ws: Workspace, job_id: str, state: dict) -> None:
-    from resume_tailorer.review_store import save_review
+    from resume_tailorer.review_decisions import save_review_locked
 
-    if not save_review(ws.session["artifacts_dir"], job_id, state):
+    if not save_review_locked(ws.session["artifacts_dir"], job_id, state):
         raise OSError("The tailored review could not be saved. Try again.")
 
 
@@ -176,6 +176,7 @@ def _review_view(ws: Workspace, state: dict, show_all: bool = False) -> dict:
         "version": state.get("version", 1),
         "review_revision": int(state.get("review_revision", 0)),
         "review_mode": state.get("review_mode", "manual"),
+        "assisted_note": state.get("assisted_note", ""),
         "source_info": state.get("source_info"),
         "status": status.value,
         "status_text": artifact_status_text(status),
@@ -334,10 +335,17 @@ def _run(ws: Workspace, job_id: str, pending: dict, source, request: RunRequest,
             regenerate(ws.session, state)
             state["reviewed"] = False
         if request.review_mode == "assisted":
-            state = apply_assisted_review(state)
-            if state.get("dirty"):
-                regenerate(ws.session, state)
-                state["reviewed"] = False
+            assisted = apply_assisted_review(state)
+            try:
+                if assisted.get("dirty"):
+                    regenerate(ws.session, assisted)
+                    assisted["reviewed"] = False
+                state = assisted
+            except TailoringError as exc:
+                # Keep the model's proposals: the person decides them instead of losing the run.
+                state["assisted_review_applied"] = True
+                state["assisted_note"] = (f"AI assistance couldn't apply its choices ({exc}). "
+                                          "Every change is left for you to decide.")
         _save_review(ws, job_id, state)
         _persist_handoff(ws, False)
         outcome = {"status": "done"}
@@ -355,7 +363,7 @@ def _run(ws: Workspace, job_id: str, pending: dict, source, request: RunRequest,
 
 @router.post("/tailor/run")
 def start_run(body: RunRequest, ws: Workspace = Depends(workspace)):
-    from resume_tailorer.review_store import discard_review
+    from resume_tailorer.review_decisions import discard_review_locked
 
     _load_local_env()
     pending = _pending(ws)
@@ -377,7 +385,7 @@ def start_run(body: RunRequest, ws: Workspace = Depends(workspace)):
         limits.use(ws.owner_id, "tailor")
         _write_run(ws.owner_id, {"status": "running", "step": "Starting", "job_id": pending["job_id"],
                                  "started": time.time(), "boot": BOOT_ID})
-    discard_review(ws.session["artifacts_dir"], pending["job_id"])
+    discard_review_locked(ws.session["artifacts_dir"], pending["job_id"])
     threading.Thread(target=_worker, args=(ws.owner, pending["job_id"], pending, source, body, settings),
                      name=f"tailor-{ws.owner_id[:8]}", daemon=True).start()
     return _run_status(ws.owner_id)
@@ -486,11 +494,12 @@ def rebuild(ws: Workspace = Depends(workspace)):
 
 @router.delete("/tailor/review")
 def discard(ws: Workspace = Depends(workspace)):
-    from resume_tailorer.review_store import discard_review
+    from resume_tailorer.review_decisions import discard_review_locked
     from resume_tailorer.tailoring_session import HANDOFF_KEY
 
     job_id = _pending(ws).get("job_id")
-    discard_review(ws.session["artifacts_dir"], job_id)
+    if job_id:
+        discard_review_locked(ws.session["artifacts_dir"], job_id)
     ws.session.pop(HANDOFF_KEY, None)
     record = ws.store().load()
     record["active_handoff"] = None

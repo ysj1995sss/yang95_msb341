@@ -178,7 +178,7 @@ def test_rebuild_advances_review_revision_so_an_old_tab_cannot_save(tailor_clien
 
 def test_a_failed_initial_review_save_is_not_reported_as_a_finished_run(tailor_client, monkeypatch):
     _ready(tailor_client)
-    monkeypatch.setattr("resume_tailorer.review_store.save_review", lambda *args: False)
+    monkeypatch.setattr("resume_tailorer.review_decisions.save_review", lambda *args: False)
     result = _run(tailor_client)
     assert result["status"] == "failed"
     assert tailor_client.get("/v2/tailor").json()["review"] is None
@@ -359,3 +359,100 @@ def test_manual_choice_without_text_keeps_the_saved_wording(tailor_client):
     again = tailor_client.post("/v2/tailor/decisions", json={"change_id": change["id"], "decision": "MANUALLY_EDITED"})
     assert again.status_code == 200
     assert next(c for c in again.json()["changes"] if c["id"] == change["id"])["manual_text"] == wording
+
+
+def _pause_a_decision_mid_save(tailor_client, monkeypatch):
+    """Start a batch decision and hold it right after it has read the saved review, inside
+    the per-user lock. Returns (folder, job_id, release, finish)."""
+    import threading
+    from resume_tailorer import review_decisions
+
+    review = tailor_client.get("/v2/tailor").json()["review"]
+    real_load = review_decisions.load_review
+    paused, release, seen = threading.Event(), threading.Event(), {}
+
+    def slow_load(folder, job_id):
+        state = real_load(folder, job_id)
+        seen.update(folder=folder, job_id=job_id)
+        paused.set()
+        release.wait(5)
+        return state
+
+    monkeypatch.setattr(review_decisions, "load_review", slow_load)
+    result = {}
+    decider = threading.Thread(target=lambda: result.update(response=tailor_client.post(
+        "/v2/tailor/decisions/batch", json={"expected_revision": review["review_revision"],
+                                            "decisions": [{"change_id": review["changes"][0]["id"], "decision": "REJECTED"}]})))
+    decider.start()
+    assert paused.wait(5)
+
+    def finish():
+        release.set()
+        decider.join(10)
+        monkeypatch.setattr(review_decisions, "load_review", real_load)
+        return result["response"]
+
+    return seen["folder"], seen["job_id"], release, finish
+
+
+def test_a_new_run_saved_during_another_tabs_decision_is_not_overwritten(tailor_client, monkeypatch):
+    import threading
+    from types import SimpleNamespace
+    from app.workspace import tailor_router
+    from resume_tailorer.review_store import load_review
+
+    _ready(tailor_client)
+    assert _run(tailor_client)["status"] == "done"
+    folder, job_id, _release, finish = _pause_a_decision_mid_save(tailor_client, monkeypatch)
+    newer = load_review(folder, job_id)
+    newer["version"], newer["review_revision"] = 999, newer["review_revision"] + 1000
+    saved = threading.Event()
+    writer = threading.Thread(target=lambda: (tailor_router._save_review(
+        SimpleNamespace(session={"artifacts_dir": folder}), job_id, newer), saved.set()))
+    writer.start()
+    saved.wait(1.0)  # unlocked, the new run's save lands while the decision is still in flight
+    finish()
+    writer.join(10)
+    assert load_review(folder, job_id)["version"] == 999  # the new run survives
+
+
+def test_start_over_during_another_tabs_decision_stays_discarded(tailor_client, monkeypatch):
+    import threading
+    from resume_tailorer.review_store import load_review
+
+    _ready(tailor_client)
+    assert _run(tailor_client)["status"] == "done"
+    folder, job_id, _release, finish = _pause_a_decision_mid_save(tailor_client, monkeypatch)
+    done = threading.Event()
+    discarder = threading.Thread(target=lambda: (tailor_client.delete("/v2/tailor/review"), done.set()))
+    discarder.start()
+    done.wait(1.0)
+    finish()
+    discarder.join(10)
+    assert load_review(folder, job_id) is None  # not resurrected by the in-flight decision
+
+
+def test_assisted_rebuild_failure_keeps_the_review_for_the_person(tailor_client, monkeypatch):
+    # Review finding 1: a rebuild error after AI assistance's choices (e.g. a free-form page
+    # limit) used to fail the whole run and throw the model's proposals away.
+    from resume_tailorer import tailoring_service
+
+    real = tailoring_service.regenerate
+
+    def regenerate(session, state):
+        if state.get("assisted_review_applied"):
+            raise tailoring_service.TailoringError("synthetic rebuild failure")
+        return real(session, state)
+
+    monkeypatch.setattr(tailoring_service, "regenerate", regenerate)
+    _ready(tailor_client)
+    assert tailor_client.post("/v2/tailor/run", json={"review_mode": "assisted"}).status_code == 200
+    for _ in range(200):
+        status = tailor_client.get("/v2/tailor/run").json()
+        if status["status"] != "running":
+            break
+        time.sleep(0.05)
+    assert status["status"] == "done", status
+    review = tailor_client.get("/v2/tailor").json()["review"]
+    assert review["changes"] and all(c["decision_origin"] != "AI-assisted" for c in review["changes"])
+    assert "synthetic rebuild failure" in review["assisted_note"]

@@ -159,6 +159,7 @@ export function ReviewRoom({ review, onChange, onReload, onDiscard }: {
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,1.15fr)_minmax(0,0.85fr)]">
         <div className="flex min-w-0 flex-col gap-5">
           <h2 className="text-[22px] font-semibold">Proposed changes</h2>
+          {review.assisted_note && <Alert tone="review" title="AI assistance didn't decide anything" role="status">{review.assisted_note}</Alert>}
           <p className="text-[14px] text-muted">{review.review_mode === "assisted" ? "AI assistance made only conservative decisions; review them and decide any remaining changes." : "Review each change yourself."} Select several changes to decide them together, or open one to edit its wording.</p>
           {review.changes.length > 0 ? (
             <>

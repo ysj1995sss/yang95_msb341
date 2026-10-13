@@ -12,8 +12,9 @@ from typing import Mapping
 
 from resume_tailorer.artifacts.models import ValidationStatus
 from resume_tailorer.batch_runner import _file_lock
-from resume_tailorer.review_store import load_review, save_review
+from resume_tailorer.review_store import discard_review, load_review, save_review
 from resume_tailorer.ui.artifact_review import visible_changes
+from resume_tailorer.ui.tailor_progress import change_title
 from resume_tailorer.ui.tailoring_view import group_changes
 
 
@@ -71,7 +72,10 @@ def apply_decisions(
         if decision not in {"ACCEPTED", "REJECTED", "MANUALLY_EDITED"}:
             raise ReviewSelectionError("Choose Accept, Keep original, or Edit manually.")
         if decision == "ACCEPTED" and change.validation_status is ValidationStatus.FAIL:
-            raise ReviewSelectionError("A change that failed its truth check cannot be batch accepted.")
+            title = change_title(change, reviewable.index(change) + 1)
+            raise ReviewSelectionError(
+                f"“{title}” failed its truth check, so it can't be accepted. "
+                "Unselect it, keep its original, or edit it, then try again.")
         if decision == "MANUALLY_EDITED" and not allow_blank_manual and not (manual_texts or {}).get(change_id, "").strip():
             raise ReviewSelectionError("Write the manual wording before saving it.")
 
@@ -118,9 +122,9 @@ def mutate_saved_review(
     allow_blank_manual: bool = False,
 ) -> dict:
     """One cross-process read/check/write; no partial decision is published."""
-    artifacts = Path(folder).resolve()
-    if artifacts.name != "artifacts" or not job_id:
+    if not job_id:
         raise ReviewStorageError("The review location is invalid.")
+    artifacts = _artifacts_folder(folder)
     with _file_lock(artifacts.parent):
         state = load_review(str(artifacts), job_id)
         if state is None:
@@ -134,3 +138,25 @@ def mutate_saved_review(
         if not save_review(str(artifacts), job_id, updated):
             raise ReviewStorageError("The review could not be saved. Try again.")
         return updated
+
+
+def _artifacts_folder(folder: str) -> Path:
+    artifacts = Path(folder).resolve()
+    if artifacts.name != "artifacts":
+        raise ReviewStorageError("The review location is invalid.")
+    return artifacts
+
+
+def save_review_locked(folder: str, job_id: str, state: dict, wait: float = 30.0) -> bool:
+    """Replace the saved review under the same per-user lock as decisions, so a decision
+    that is mid-transaction can't write the old review back over this one."""
+    artifacts = _artifacts_folder(folder)
+    with _file_lock(artifacts.parent, wait=wait):
+        return save_review(str(artifacts), job_id, state)
+
+
+def discard_review_locked(folder: str, job_id: str, wait: float = 30.0) -> None:
+    """Delete the saved review under the decision lock, so it can't be resurrected."""
+    artifacts = _artifacts_folder(folder)
+    with _file_lock(artifacts.parent, wait=wait):
+        discard_review(str(artifacts), job_id)
