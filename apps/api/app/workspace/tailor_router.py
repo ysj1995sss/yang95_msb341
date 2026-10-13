@@ -179,6 +179,9 @@ def _review_view(ws: Workspace, state: dict, show_all: bool = False, stale_messa
             "proposed": change.proposed_text or "",
             "check": validation_word(change.validation_status),
             "decision": current if is_decided else None,
+            # Kept out of the resume, by the person or by the checks before anyone decided, so the
+            # list never calls it merely "Not reviewed" (dogfood, 2026-10-13).
+            "left_out": current in ("REJECTED", "RESTORED"),
             "decision_label": DECISION_DONE.get(current, "Not reviewed yet") if is_decided else "Not reviewed yet",
             "decision_origin": origin.get("by") if is_decided else None,
             "decision_reason": origin.get("reason") if is_decided else "",
@@ -272,12 +275,15 @@ def tailor_page(show_all: bool = False, ws: Workspace = Depends(workspace)):
     state = _review(ws, pending.get("job_id"))
     stale = _stale_message(ws, state)  # once: the page and its review both show it
     fit = (pending.get("candidate_fit") or {}).get("overall_fit")
+    # Decision 047: a job chosen before the Match existed keeps the older fit measure, and says so.
+    match = str((pending.get("candidate_fit") or {}).get("scoring_version") or "").startswith("match")
     from resume_tailorer.tailoring_session import HANDOFF_KEY
 
     handoff = ws.session.get(HANDOFF_KEY) or {}
     return {
         "job": {"job_id": pending.get("job_id"), "title": pending.get("title"), "company": pending.get("company"),
-                "fit": None if fit is None else round(fit)} if pending else None,
+                "fit": None if fit is None else round(fit), "fit_label": "Match" if match else "Older fit measure"}
+               if pending else None,
         "resume": {"label": source[2], "one_off": source[3],
                    "source_info": source_details(source[0], source[3], resolve_fact_context(ws.session))} if source else None,
         "model_ready": model_ready,

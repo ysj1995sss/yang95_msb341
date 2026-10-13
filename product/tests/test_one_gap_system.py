@@ -39,4 +39,4 @@ def test_tailor_missing_list_agrees_with_the_jobs_gaps():
 
 def test_without_a_review_the_jobs_panel_behaves_as_before():
     detail = build_detail(_job(), None, None, {}, None)
-    assert detail.strong == () and "Fit not assessed" in detail.summary
+    assert detail.strong == () and "Match not assessed" in detail.summary

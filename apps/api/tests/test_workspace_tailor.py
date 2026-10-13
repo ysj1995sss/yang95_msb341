@@ -545,3 +545,14 @@ def test_a_finding_about_one_change_says_which_change(tailor_client):
     assert save_review(folder, job_id, state)
     findings = tailor_client.get("/v2/tailor").json()["review"]["findings"]
     assert len(findings) == 2 and all("change 1 " in f.lower() for f in findings), findings
+
+
+def test_each_change_says_whether_its_wording_is_left_out(tailor_client):
+    # Dogfood, 2026-10-13: a change already kept out of the resume (turned down by the checks, or
+    # "Keep original") read "Not reviewed", as if it might still be in the resume.
+    _ready(tailor_client)
+    assert _run(tailor_client)["status"] == "done"
+    [change] = tailor_client.get("/v2/tailor").json()["review"]["changes"][:1]
+    assert change["left_out"] is False
+    tailor_client.post("/v2/tailor/decisions", json={"change_id": change["id"], "decision": "REJECTED"})
+    assert tailor_client.get("/v2/tailor").json()["review"]["changes"][0]["left_out"] is True

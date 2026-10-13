@@ -387,3 +387,22 @@ def test_connection_usable_from_a_different_thread_than_it_was_created_on(tmp_pa
 
     assert errors == []
     db.close()
+
+
+def test_only_jobs_that_state_the_work_mode_when_asked(temp_db):
+    """Dogfood round 2, 2026-10-13: most "Remote" results were jobs whose work mode isn't stated (a
+    Bengaluru office job, say). Unstated jobs stay by default; the person can ask for stated only."""
+    temp_db.create_tables()
+    for source_id, mode in (("stated", "Remote"), ("unstated", "Unknown")):
+        temp_db.save_job_posting(JobPosting(source=JobSource.GREENHOUSE, source_id=source_id, company="Airbnb",
+                                            title="Software Engineer", location="Bengaluru, India", description="x",
+                                            work_mode=mode, url=f"https://boards.greenhouse.io/airbnb/jobs/{source_id}"))
+
+    def found(confirmed):
+        goals = SearchGoals(job_title="Software Engineer", industries=[], min_salary=0, max_salary=0, location="",
+                            remote_preference="remote", sponsorship_required=False, experience_level="",
+                            company_size="", work_mode_stated_only=confirmed)
+        return {job.source_id for job in temp_db.search_jobs(goals)}
+
+    assert found(False) == {"stated", "unstated"}
+    assert found(True) == {"stated"}

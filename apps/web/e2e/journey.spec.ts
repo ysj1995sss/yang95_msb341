@@ -41,6 +41,9 @@ test("resume → profile → goals → jobs → tailor → apply → tracker", a
   await expect(page.getByRole("button", { name: /Data Analyst, Growth/ })).toBeVisible();
   await expect(page.getByRole("button", { name: /Account Executive/ })).toHaveCount(0);
   await expect(page.getByRole("heading", { name: "Why this role may fit you" })).toBeVisible();
+  // Decision 047: the share of the job's requirements your facts show, explained.
+  await page.getByText("How the match is counted").click();
+  await expect(page.getByText(/^Match is the share of this posting's stated requirements.*not an employer's ATS score/)).toBeVisible();
   // Spec 010: honest wording, a requirement summary and the ATS explanation.
   await expect(page.getByText("In your Career Profile", { exact: true })).toBeVisible();
   await expect(page.getByText(/Requirement review:/)).toBeVisible();

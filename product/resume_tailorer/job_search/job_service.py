@@ -21,7 +21,7 @@ from resume_tailorer.job_search.database import JobDatabase
 from resume_tailorer.job_search.dashboard import sort_jobs
 from resume_tailorer.job_search.job_attributes import apply_goal_filters
 from resume_tailorer.job_search.deduplicator import JobDeduplicator
-from resume_tailorer.job_search.candidate_fit import CandidateFitScorer
+from resume_tailorer.job_search.requirement_match import SCORING_VERSION, MatchScorer, quick_match_score, quick_terms
 from resume_tailorer.job_search.scrapers import (
     AshbyScraper,
     GreenhouseScraper,
@@ -81,7 +81,8 @@ class JobService:
         self.db = JobDatabase(db_path=db_path)
         self.db.create_tables()
         self.deduplicator = JobDeduplicator()
-        self.fit_scorer = CandidateFitScorer()
+        # Decision 047: the fit shown everywhere is the requirement Match.
+        self.fit_scorer = MatchScorer()
 
         self.applications_db = ApplicationDatabase(db_path=applications_db_path)
         self.applications_db.create_tables()
@@ -282,12 +283,15 @@ class JobService:
         return jobs
 
     def fit_results_cached(
-        self, profile: CareerTruthProfile, jobs: List[JobPosting], cache: Dict[str, Any]
+        self, profile: CareerTruthProfile, jobs: List[JobPosting], cache: Dict[str, Any],
+        provenance: Optional[Dict[str, str]] = None,
     ) -> Dict[str, Any]:
-        """Detailed fit per job id, computed once per (profile version, job content)."""
+        """Detailed fit per job id, computed once per (profile version, confirmed facts, job content)."""
         import hashlib
+        import json
 
-        profile_version = _profile_hash(profile)
+        facts = hashlib.sha256(json.dumps(provenance or {}, sort_keys=True).encode("utf-8")).hexdigest()[:16]
+        profile_version = f"{SCORING_VERSION}:{_profile_hash(profile)}:{facts}"
         results: Dict[str, Any] = {}
         for job in jobs:
             job_id = f"{job.source.value}_{job.source_id}"
@@ -295,11 +299,18 @@ class JobService:
             key = f"{profile_version}:{job_id}:{content}"
             if key not in cache:
                 try:
-                    cache[key] = self.fit_scorer.score_fit_detailed(profile, job)
+                    cache[key] = self.fit_scorer.score_fit_detailed(profile, job, provenance=provenance)
                 except Exception:
                     cache[key] = None
             results[job_id] = cache[key]
         return results
+
+    def quick_match_scores(self, profile: CareerTruthProfile, jobs: List[JobPosting]) -> Dict[str, float]:
+        """A fast first pass (0-1 per job id) that picks which jobs of a large search get the full Match."""
+        from resume_tailorer.analyzers.ats_keywords import profile_text
+
+        have = quick_terms(profile_text(profile))
+        return {f"{job.source.value}_{job.source_id}": quick_match_score(profile, job, have) for job in jobs}
 
     def get_job_with_fit_score(
         self,

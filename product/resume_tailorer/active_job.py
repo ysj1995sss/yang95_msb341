@@ -21,7 +21,7 @@ def remember(record: MutableMapping[str, Any], job_id: str) -> None:
 
 
 def restore_pending_job(session: MutableMapping[str, Any], record: Optional[dict], job_db, fit_scorer,
-                        profile) -> Optional[dict]:
+                        profile, provenance: Optional[dict] = None) -> Optional[dict]:
     """The session's pending job, rebuilt from the record when the session lost it."""
     if session.get(PENDING_TAILOR_JOB_KEY):
         return session[PENDING_TAILOR_JOB_KEY]
@@ -31,7 +31,7 @@ def restore_pending_job(session: MutableMapping[str, Any], record: Optional[dict
     job = job_db.get_job_posting(job_id)
     if job is None or not (job.description or "").strip():
         return None
-    fit = fit_scorer.score_fit_detailed(profile, job) if profile is not None else None
+    fit = fit_scorer.score_fit_detailed(profile, job, provenance=provenance) if profile is not None else None
     snapshot = build_tailor_snapshot(job, fit)
     session[PENDING_TAILOR_JOB_KEY] = snapshot
     return snapshot

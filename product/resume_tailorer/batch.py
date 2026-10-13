@@ -34,7 +34,8 @@ def _compute_job(job, *, artifacts_dir: str, original_bytes: bytes, filename: st
     from resume_tailorer.ui.tailoring_view import safe_default_dispositions
 
     job_id = f"{job.source.value}_{job.source_id}"
-    fit = fit_scorer.score_fit_detailed(career_profile, job) if (fit_scorer and career_profile) else None
+    fit = (fit_scorer.score_fit_detailed(career_profile, job, provenance=provenance)
+           if (fit_scorer and career_profile) else None)
     pending = build_tailor_snapshot(job, fit)
     session = private_session(artifacts_dir)
     session[ACTIVE_JOB_KEY] = job_id

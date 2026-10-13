@@ -100,7 +100,7 @@ def application_detail(application_id: str, ws: Workspace = Depends(workspace)):
         "facts": [
             {"label": "Status", "value": STATUS_WORDS.get(row.status, row.status.value)},
             {"label": "Applied", "value": row.applied.isoformat() if row.applied else "Not yet"},
-            {"label": "Candidate fit when you applied", "value": row.fit},
+            {"label": "Match when you applied", "value": row.fit},
             {"label": "Resume used", "value": row.resume_version},
             {"label": "Mode", "value": row.mode},
             {"label": "Location", "value": job.get("location") or "Not recorded"},

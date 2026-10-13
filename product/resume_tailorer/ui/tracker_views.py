@@ -60,7 +60,7 @@ class TrackerRow:
             "Applied": self.applied.isoformat() if self.applied else "Not yet",
             "Next action": self.next_action or "None set",
             "Due": self.due.isoformat() if self.due else "",
-            "Candidate fit": self.fit,
+            "Match": self.fit,
             "Resume": self.resume_version,
             "Source": self.source,
             "Mode": self.mode,
@@ -95,6 +95,14 @@ def applied_date(history: list[ApplicationTracker]) -> Optional[date]:
     return None
 
 
+def _fit_label(overall, version: Optional[str]) -> str:
+    """The Match when you applied. An older application kept the earlier fit measure (decision 047),
+    which scored almost every job 85-96%, so it says so rather than passing as a Match."""
+    if not isinstance(overall, (int, float)):
+        return "Not assessed"
+    return f"{overall:.0f}%" if str(version or "").startswith("match") else f"{overall:.0f}% (older fit measure)"
+
+
 def build_row(tracker: ApplicationTracker, submission: Optional[ApplicationSubmission],
               history: list[ApplicationTracker]) -> TrackerRow:
     job = (submission.job_snapshot if submission else {}) or {}
@@ -110,7 +118,7 @@ def build_row(tracker: ApplicationTracker, submission: Optional[ApplicationSubmi
         applied=applied_date(history),
         next_action=(submission.next_action if submission else "") or "",
         due=_parse_due(submission.next_action_due if submission else None),
-        fit=f"{overall:.0f}%" if isinstance(overall, (int, float)) else "Not assessed",
+        fit=_fit_label(overall, fit.get("scoring_version")),
         resume_version=resume,
         source=source,
         mode=submission.mode.value.title() if submission else "Not recorded",

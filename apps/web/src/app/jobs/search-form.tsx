@@ -62,6 +62,12 @@ export function SearchForm({ setup, busy, error, onSearch, onCancel, onBoardsCha
         <SelectField label="Work mode" value={form.remote_preference} options={setup.options.work_modes}
           onChange={(e) => set({ remote_preference: e.target.value })} />
       </div>
+      {form.remote_preference !== "any" && (
+        // Most job boards don't state a work mode, so by default those jobs are kept (labelled
+        // "Work mode not stated"); this keeps only jobs that say it.
+        <Checkbox label={`Only jobs that say they're ${setup.options.work_modes.find((m) => m.value === form.remote_preference)?.label.toLowerCase() ?? form.remote_preference}`}
+          checked={Boolean(form.work_mode_stated_only)} onChange={(v) => set({ work_mode_stated_only: v })} />
+      )}
       <details className="rounded-[var(--radius-card)] border border-line p-4">
         <summary className="cursor-pointer font-semibold">More filters</summary>
         <div className="mt-4 flex flex-col gap-5">

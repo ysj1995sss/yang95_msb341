@@ -3,6 +3,7 @@
 **Date:** 2026-10-05
 **Status:** Active. This implements spec 010. The builder approved the spec and delegated the
 open choices.
+**Refined by:** decision 047. The job-level "Match" number is now worked out from this review.
 **Supersedes:** spec 001 step 14 (loop to ≥85% alignment), and the "Already on your resume"
 wording from specs 002, 007 and 008.
 

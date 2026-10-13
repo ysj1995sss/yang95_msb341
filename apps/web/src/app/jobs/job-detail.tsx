@@ -76,7 +76,8 @@ export function JobDetailPanel({ jobId, onChanged }: { jobId: string; onChanged:
         <h2 id="job-title" className="text-[24px] leading-tight font-semibold">{row.title}</h2>
         <p className="mt-1 text-muted">{meta}</p>
         <div className="mt-3 flex flex-wrap gap-2">
-          <Chip tone={toneOf(row.fit_tone)}>{`Candidate fit ${row.fit.replace("Fit ", "")}`}</Chip>
+          {/* "Match 40%" (decision 047); an older server still says "Fit 72%". */}
+          <Chip tone={toneOf(row.fit_tone)}>{row.fit.startsWith("Fit ") ? `Candidate fit ${row.fit.slice(4)}` : row.fit}</Chip>
           <Chip tone={toneOf(row.quality_tone)}>{`Posting ${row.quality.toLowerCase()}`}</Chip>
           <Chip>{row.salary}</Chip>
           <Chip tone={row.is_demo ? "review" : "neutral"}>{row.source}</Chip>
@@ -113,7 +114,9 @@ export function JobDetailPanel({ jobId, onChanged }: { jobId: string; onChanged:
             : <p className="text-muted">{data.fit_measured ? "Nothing genuinely missing against the stated requirements." : "Not known yet: this needs your Career Profile to compare against."}</p>}
         </div>
         {data.unknowns.length > 0 && <div><h4 className="mb-2 text-[14px] font-semibold text-muted uppercase">Important unknowns</h4><EvidenceList kind="unknown" items={data.unknowns} /></div>}
-        <p className="text-[14px] text-muted">Missing items are never added to your resume. Candidate fit measures your background, not how well a resume shows it.</p>
+        <p className="text-[14px] text-muted">Missing items are never added to your resume. {data.match_note
+          ? "Match counts what your confirmed facts show, not how well a resume shows it."
+          : "Candidate fit measures your background, not how well a resume shows it."}</p>
       </section>
 
       <section aria-labelledby="keywords">
@@ -147,7 +150,8 @@ export function JobDetailPanel({ jobId, onChanged }: { jobId: string; onChanged:
         </details>
         {data.fit_parts.length > 0 && (
           <details className="rounded-[var(--radius-card)] border border-line p-4">
-            <summary className="cursor-pointer font-semibold">How the fit score is made</summary>
+            <summary className="cursor-pointer font-semibold">{data.match_note ? "How the match is counted" : "How the fit score is made"}</summary>
+            {data.match_note && <p className="mt-3 text-[15px] text-muted">{data.match_note}</p>}
             <dl className="mt-3 grid grid-cols-[1fr_auto] gap-y-1">
               {data.fit_parts.map(([name, value]) => (
                 <div key={name} className="contents"><dt>{name}</dt><dd className="font-semibold">{value}</dd></div>

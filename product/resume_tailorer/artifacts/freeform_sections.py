@@ -91,3 +91,18 @@ def comparable_content(text: str, name: str) -> str | tuple[str, ...]:
     return tuple(re.sub(r"^\s*[-*•]\s*", "", term).strip().casefold()
                  for term in body.replace("\n", ",").split(",")
                  if term.strip())
+
+
+def with_certifications(text: str, profile: CareerTruthProfile) -> str:
+    """`text` with every certification in the profile. A model sometimes leaves the CERTIFICATIONS
+    section out "for space", which the review then proposed as removing a real credential (an AWS
+    certification, for a job asking for AWS; dogfood, 2026-10-13). Credentials are facts, not space."""
+    missing = [cert for cert in profile.certifications if cert.strip() and cert.strip().casefold() not in text.casefold()]
+    if not missing:
+        return text
+    added = "".join(f"- {cert.strip()}\n" for cert in missing)
+    lines = text.splitlines(keepends=True)
+    for index, line in enumerate(lines):
+        if line.strip().rstrip(":").upper() == "CERTIFICATIONS":
+            return "".join(lines[:index + 1]) + added + "".join(lines[index + 1:])
+    return text.rstrip("\n") + "\n\nCERTIFICATIONS\n" + added

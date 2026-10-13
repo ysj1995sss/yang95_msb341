@@ -55,7 +55,7 @@ class AshbyScraper(BoardApiScraper):
             experience_required="Unknown",
             education_required="Unknown",
             sponsorship_available=None,
-            work_mode=normalize_work_mode(raw_job.get("workplaceType")),
+            work_mode=normalize_work_mode(raw_job.get("workplaceType"), raw_job.get("location")),
             url=url,
             ats_platform="Ashby",
             raw_json=dict(raw_job),

@@ -4,7 +4,7 @@ from typing import List, Optional
 
 from resume_tailorer.job_search.job_attributes import COMPANY_DIRECTORY
 from resume_tailorer.job_search.models import JobPosting, JobSource
-from resume_tailorer.job_search.scrapers.board_scraper import BoardApiScraper, parse_iso, strip_html
+from resume_tailorer.job_search.scrapers.board_scraper import BoardApiScraper, normalize_work_mode, parse_iso, strip_html
 
 
 class GreenhouseScraper(BoardApiScraper):
@@ -52,7 +52,7 @@ class GreenhouseScraper(BoardApiScraper):
             experience_required="Unknown",
             education_required="Unknown",
             sponsorship_available=None,
-            work_mode="Unknown",
+            work_mode=normalize_work_mode(None, location),
             url=url,
             ats_platform="Greenhouse",
             raw_json=dict(raw_job),

@@ -69,6 +69,8 @@ class SearchGoals:
     exclude_companies: List[str] = field(default_factory=list)
     employment_type: str = "full-time"
     relocation_willing: bool = False
+    # Only jobs that state the chosen work mode; by default unstated ones are kept, labelled.
+    work_mode_stated_only: bool = False
 
     def __post_init__(self):
         """Validate search goals."""

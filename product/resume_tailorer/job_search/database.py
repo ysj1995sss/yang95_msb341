@@ -241,8 +241,11 @@ class JobDatabase:
             # Real postings from sources that don't expose work mode store
             # "Unknown" (never fabricated) — treat that as a pass rather than
             # silently hiding every real job whenever a preference is set.
+            # The person can ask for stated only: most boards don't say, so by default
+            # "Remote" mostly listed office jobs of unknown mode (dogfood, 2026-10-13).
             where_clauses.append(
-                "(work_mode LIKE ? OR work_mode IS NULL OR work_mode = 'Unknown')"
+                "work_mode LIKE ?" if goals.work_mode_stated_only
+                else "(work_mode LIKE ? OR work_mode IS NULL OR work_mode = 'Unknown')"
             )
             params.append(f"%{goals.remote_preference}%")
 

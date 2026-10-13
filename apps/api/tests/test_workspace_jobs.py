@@ -59,7 +59,10 @@ def test_detail_has_evidence_once_a_profile_exists(jobs_client):
     assert bare["fit_measured"] is False and bare["keywords"] is None
     jobs_client.post("/v2/profile/resume", files={"file": ("r.docx", resume_docx(), "application/octet-stream")})
     detail = jobs_client.get("/v2/jobs/greenhouse_101").json()
-    assert detail["fit_measured"] is True and detail["row"]["fit"].startswith("Fit ")
+    # Decision 047: the share of the posting's requirements your facts show, explained honestly.
+    assert detail["fit_measured"] is True and detail["row"]["fit"].startswith("Match ")
+    assert "not an employer's ATS score" in detail["match_note"]
+    assert [name for name, _value in detail["fit_parts"]] == ["Required qualifications", "Preferred qualifications"]
     assert "SQL" in detail["keywords"]["present"]
     # Spec 010: honest wording, and the shared ATS explanation.
     assert "Career Profile" in detail["keywords"]["summary"] and "on your resume" not in detail["keywords"]["summary"]
@@ -132,3 +135,36 @@ def test_saving_a_job_counts_as_saved_on_home_and_tracker(jobs_client):
     assert jobs_client.post("/v2/jobs/greenhouse_101/action", json={"action": "save"}).status_code == 200
     assert jobs_client.get("/v2/home").json()["weekly"]["saved"] == 1
     assert jobs_client.get("/v2/tracker").json()["weekly"]["saved"] == 1
+
+
+def test_only_jobs_that_state_the_work_mode_is_a_remembered_search_option(jobs_client):
+    # Dogfood round 2, 2026-10-13: "Remote" mostly listed jobs whose work mode isn't stated.
+    stated = jobs_client.post("/v2/jobs/search", json={"job_title": "Data Analyst", "remote_preference": "hybrid",
+                                                       "work_mode_stated_only": True}).json()
+    assert stated["rows"] == []  # the board's only match says "Remote, US", so it is Remote, not hybrid
+    assert jobs_client.get("/v2/jobs/setup").json()["form"]["work_mode_stated_only"] is True
+    remote = jobs_client.post("/v2/jobs/search", json={"job_title": "Data Analyst", "remote_preference": "remote",
+                                                       "work_mode_stated_only": True}).json()
+    assert [r["title"] for r in remote["rows"]] == ["Senior Data Analyst"]
+
+
+MANY = {"jobs": [
+    {"id": 200 + n, "title": f"Data Analyst {n}", "absolute_url": f"https://job-boards.greenhouse.io/gitlab/jobs/{200 + n}",
+     "location": {"name": "Remote, US"}, "updated_at": "2026-09-20T12:00:00-00:00",
+     "content": "Requirements: SQL. Tableau." if n == 2 else "Requirements: Kubernetes. Terraform. Golang. Kafka."}
+    for n in range(4)
+]}
+
+
+def test_a_large_search_ranks_by_a_quick_pass_and_still_shows_a_match_on_every_row(jobs_client):
+    # Full Match scoring for thousands of jobs is too slow for one request (decision 047): the quick
+    # pass picks the top jobs, and every row on the page shown still gets its full Match.
+    from app.workspace import jobs_router
+
+    jobs_client.post("/v2/profile/resume", files={"file": ("r.docx", resume_docx(), "application/octet-stream")})
+    with patch.object(GreenhouseScraper, "_fetch_board", lambda self, token: MANY if token == "gitlab" else {"jobs": []}), \
+         patch.object(jobs_router, "FULL_MATCH_LIMIT", 1):
+        clear_board_cache()
+        result = _search(jobs_client)
+    assert result["rows"][0]["title"] == "Data Analyst 2"  # the posting asking for what you have
+    assert len(result["rows"]) == 4 and all(r["fit"].startswith("Match ") for r in result["rows"])

@@ -134,6 +134,7 @@ def build_search_goals_from_form(form_data: Dict[str, Any]) -> SearchGoals:
         exclude_companies=_parse_comma_separated(form_data.get("exclude_companies")),
         employment_type=",".join(_parse_comma_separated(form_data.get("employment_type"))),
         relocation_willing=bool(form_data.get("relocation_willing", False)),
+        work_mode_stated_only=bool(form_data.get("work_mode_stated_only", False)),
     )
 
 

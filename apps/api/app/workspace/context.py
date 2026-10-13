@@ -52,7 +52,7 @@ class Workspace:
             from resume_tailorer.session_profile import get_career_profile
 
             pending = restore_pending_job(self.session, self.record, self.service.db, self.service.fit_scorer,
-                                          get_career_profile(self.session))
+                                          get_career_profile(self.session), self.record.get("provenance"))
             if pending:
                 # The tailored-resume handoff is labelled with this key (Streamlit sets it in
                 # sync_pending_job); without it Apply can't match the resume to the job.

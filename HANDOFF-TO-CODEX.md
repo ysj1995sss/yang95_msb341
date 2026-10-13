@@ -10,6 +10,22 @@ decisions 001, 006, 009, 012, 014, 015, 016, or 017 unless new evidence forces i
 
 ---
 
+## START HERE (2026-10-13, late) — Match score, Remote filter, certifications, "Left out"
+
+Local commits on `main`, **not pushed**; the backend needs a Cloud Run rebuild after the push (spec 023).
+- **Match replaces Candidate fit (decision 047).** The number is the share of the posting's stated
+  requirements that the person's confirmed facts show (required ones count double; related
+  experience or listed-only skills count half). It's worked out from the requirement review
+  (`job_search/requirement_match.py`). Searches over 100 jobs get a quick first pass, and only the
+  top 100 (plus the page shown) get the full Match. Older scores say "(older fit measure)".
+- **Remote filter:** work mode is read from the location ("Remote, US"); an "Only jobs that say
+  they're Remote" option hides jobs that don't state it.
+- **Certifications** the model drops are put back, never proposed for removal.
+- **Review list:** a change the checks kept out says "Left out", not "Not reviewed".
+- **Open (needs the builder's call):** tailoring proposes tiny rewrites because three checks block
+  ordinary rewording: the 15% length cap (Word), every core word must survive, and any new word
+  must already be in the profile. See the session report; decision 043 level 1 allows rewording.
+
 ## START HERE (2026-10-13, evening) — live on Vercel + Cloud Run; review, dogfood and bug fixes
 
 Everything is on `main` (the codex branch matches it).
@@ -38,8 +54,7 @@ Everything is on `main` (the codex branch matches it).
     - review-list states in words.
 - **Backend not redeployed yet:** most fixes need the Cloud Run rebuild (spec 023).
 - **Open:**
-  - "Candidate fit" scores nearly every job 85–96% (specs 010/011 kept it separate, so changing
-    it is a builder decision);
+  - ~~"Candidate fit" scores nearly every job 85–96%~~ (fixed later the same day: decision 047);
   - free-form resumes get no level 2–3 additions;
   - Word-to-PDF conversion on Cloud Run hasn't been checked online;
   - 0 human testers;

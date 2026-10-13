@@ -109,3 +109,12 @@ def test_newest_sorts_by_post_date_with_undated_last():
 def test_searched_at_text():
     assert searched_at_text(datetime(2026, 10, 4, 14, 41)) == "searched 2:41 PM"
     assert searched_at_text(None) == ""
+
+
+def test_a_large_search_puts_matched_jobs_first_then_the_rest_in_quick_pass_order():
+    # Only the quick pass's top jobs get the full Match (decision 047); the others follow by quick score.
+    jobs = [SimpleNamespace(id=i, posted_date=None) for i in ("rest-low", "matched-low", "rest-high", "matched-high")]
+    fits = {"matched-low": 20.0, "matched-high": 60.0}
+    quick = {"rest-low": 0.1, "matched-low": 0.5, "rest-high": 0.4, "matched-high": 0.6}
+    ordered = order_jobs(jobs, BEST, fits, {}, lambda j: j.id, quick)
+    assert [j.id for j in ordered] == ["matched-high", "matched-low", "rest-high", "rest-low"]

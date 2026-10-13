@@ -87,6 +87,8 @@ export type JobForm = {
   industries: string[]; min_salary: number; employment_type: string[]; sponsorship_required: boolean;
   relocation_willing: boolean; target_companies: string; exclude_companies: string; sources: string[];
   include_custom: boolean;
+  /** Only jobs that state the chosen work mode (absent on older servers). */
+  work_mode_stated_only?: boolean;
 };
 
 export type Option = { value: string; label: string };
@@ -136,6 +138,8 @@ export type JobDetail = {
   fit_measured: boolean; keywords: { summary: string; present: string[]; missing: string[] } | null;
   description: string; active: boolean; ats_explainer: AtsExplainerText;
   requirements: { summary: string; rows: number } | null;
+  /** How the Match is counted (decision 047); absent on older servers. */
+  match_note?: string;
 };
 
 // --- Tailor (phase 3) ---
@@ -147,6 +151,8 @@ export type Change = {
     title: string; category: string; full_requirement: string;
     check: string; decision: Decision | null; decision_label: string; manual_text: string;
     decision_origin: "person" | "AI-assisted" | null; decision_reason: string;
+    /** Kept out of the resume, decided or not (absent on older servers). */
+    left_out?: boolean;
     // Spec 022: skills added to the skills line by code; level 2 = you have it, 3 = adjacent.
     added_skills?: { term: string; level: number; reason: string }[];
 };
@@ -206,7 +212,8 @@ export type PrepareResult = { job_id: string; title: string; company: string; ur
 export type RunStatus = { status: "idle" | "running" | "done" | "failed"; step?: string; error?: string; job_id?: string };
 
 export type TailorPage = {
-  job: { job_id: string; title: string; company: string; fit: number | null } | null;
+  /** fit_label: "Match" (decision 047) or the older measure; absent on older servers. */
+  job: { job_id: string; title: string; company: string; fit: number | null; fit_label?: string } | null;
   resume: { label: string; one_off: boolean; source_info?: ResumeSourceInfo | null } | null;
   model_ready: boolean;
   facts_confirmed?: boolean; // bug 15: tailoring only uses confirmed facts

@@ -180,3 +180,25 @@ def test_section_decisions_survive_format_two_reload_and_rebuild(tmp_path):
     assert "SUMMARY\nRetail analyst\n" in result
     assert "SKILLS\nSQL, Tableau\n" in result
     assert "- Built SQL reports" in result
+
+
+def _certified_person():
+    return CareerTruthProfile(
+        contact_info={"name": "Sam Example"}, education=[], skills=["SQL"], tools=[], accomplishments=[],
+        certifications=["AWS Solutions Architect - Associate (2021)", "PMP"],
+        work_experience=[WorkExperience("Acme", "Analyst", "2021 - 2024", ["Built SQL reports"], [])])
+
+
+def test_a_certification_the_model_left_out_is_put_back_not_proposed_for_removal():
+    """Dogfood, 2026-10-13: the model dropped the CERTIFICATIONS section "for space" (an AWS
+    certification, for a job asking for AWS), so removing it was proposed, and the first PDF had none."""
+    from resume_tailorer.artifacts.freeform_sections import with_certifications
+
+    person = _certified_person()
+    model_text = "SUMMARY\nAnalyst.\n\nWORK EXPERIENCE\nAcme | 2021 - 2024\nAnalyst\n- Built SQL reports\n\nSKILLS\nSQL\n"
+    kept = with_certifications(model_text, person)
+    assert "AWS Solutions Architect - Associate (2021)" in kept and "PMP" in kept
+    changes = build_freeform_changes(person, kept, GapReport(items=[], summary=""))
+    assert not [c for c in changes if c.original_text in person.certifications and not c.proposed_text]
+    # Already there: nothing changes.
+    assert with_certifications(kept, person) == kept

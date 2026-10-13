@@ -168,13 +168,14 @@ test("the review list says each change's state in words, not only by icon and co
   // Spec 019: reviewed, unresolved, failed-check and AI-decided states shown with text as well as color.
   const states = { ...review, changes: [
     { ...first, decision: "REJECTED", decision_label: "Original kept", decision_origin: "AI-assisted" },
-    { ...second, check: "We could not verify this claim" },
+    { ...second, check: "We could not verify this claim", left_out: true },
   ] } as unknown as typeof review;
   await page.route("**/api/backend/tailor", (route) => route.fulfill({ json: pageData(states) }));
   await page.goto("/tailor");
   const queue = page.getByRole("navigation", { name: "Review queue" });
   await expect(queue.getByText("Original kept by AI assistance", { exact: true })).toBeVisible();
-  await expect(queue.getByText("Not reviewed · failed a check", { exact: true })).toBeVisible();
+  // Already kept out of the resume by the checks, so not merely "Not reviewed" (dogfood, 2026-10-13).
+  await expect(queue.getByText("Left out · failed a check", { exact: true })).toBeVisible();
   // A failed change can't be accepted, so selecting "all unreviewed" for Accept leaves it out
   // (dogfood, 2026-10-13: one failed change made the whole "Accept selected" refuse).
   await page.getByRole("button", { name: "Select all unreviewed" }).click();

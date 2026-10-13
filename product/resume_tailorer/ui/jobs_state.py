@@ -127,8 +127,10 @@ def goals_summary_line(goals: Mapping[str, Any]) -> str:
 
 
 def order_jobs(jobs: Sequence[Any], view: str, fit_by_id: Mapping[str, Optional[float]],
-               actions: Mapping[str, Optional[str]], id_of) -> list:
-    """Best matches: highest fit first, unassessed after, passed last.
+               actions: Mapping[str, Optional[str]], id_of,
+               quick_by_id: Optional[Mapping[str, float]] = None) -> list:
+    """Best matches: highest fit first, unassessed after, passed last. In a large search only the
+    top jobs of a quick first pass get a fit; the rest follow in `quick_by_id` order.
     Newest: most recently posted first, passed last."""
     def passed(job) -> bool:
         return str(actions.get(id_of(job)) or "").lower() == "pass"
@@ -139,9 +141,12 @@ def order_jobs(jobs: Sequence[Any], view: str, fit_by_id: Mapping[str, Optional[
             ts = posted.timestamp() if isinstance(posted, datetime) else float("-inf")
             return (passed(job), -ts)
     else:
+        quick = quick_by_id or {}
+
         def key(job):
-            fit = fit_by_id.get(id_of(job))
-            return (passed(job), fit is None, -(fit or 0))
+            job_id = id_of(job)
+            fit = fit_by_id.get(job_id)
+            return (passed(job), job_id not in fit_by_id, fit is None, -(fit or 0), -quick.get(job_id, 0.0))
     return sorted(jobs, key=key)
 
 

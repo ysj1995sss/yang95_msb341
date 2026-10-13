@@ -14,7 +14,7 @@ def job(**kw):
 def test_unknown_salary_and_fit_are_named_not_zero():
     row = build_row(job(), None, None)
     assert row.salary == "No salary stated"
-    assert row.fit == "Fit not assessed" and row.fit_tone == "neutral"
+    assert row.fit == "Match not assessed" and row.fit_tone == "neutral"
     assert row.status == "New"
     assert "0" not in row.salary
 
@@ -55,10 +55,10 @@ def test_detail_separates_evidence_gaps_hard_gates_and_unknowns():
 def test_no_sponsorship_is_not_a_gate_when_the_user_does_not_need_it():
     detail = build_detail(job(sponsorship_available=False), None, None, {"sponsorship_required": False})
     assert detail.hard_gates == ()
-    assert detail.summary.startswith("Fit not assessed")
+    assert detail.summary.startswith("Match not assessed")
 
 
 def test_unknown_salary_sponsorship_and_fit_are_named_as_unknowns():
     detail = build_detail(job(), None, None, {})
     assert detail.unknowns == ("Salary was not stated", "Sponsorship was not stated",
-                               "Fit couldn't be assessed from what the posting says")
+                               "Match couldn't be worked out from what the posting says")

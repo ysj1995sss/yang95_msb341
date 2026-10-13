@@ -17,7 +17,7 @@ def sub(**kw):
                 candidate_fit_score=72.0, resume_match_score=81.0, form_fields_submitted={}, custom_answers={},
                 ats_platform="greenhouse", form_url="https://example.com/1",
                 job_snapshot={"company": "Northwind", "title": "Analyst", "url": "https://example.com/1"},
-                candidate_fit_snapshot={"overall_fit": 72.0})
+                candidate_fit_snapshot={"overall_fit": 72.0, "scoring_version": "match-v1"})
     base.update(kw)
     return ApplicationSubmission(**base)
 
@@ -30,8 +30,15 @@ def row(status, updated=datetime(2026, 10, 6), due=None, history=None):
 def test_row_reads_the_immutable_snapshot():
     r = row(S.APPLIED)
     table = r.as_table()
-    assert (table["Company"], table["Role"], table["Candidate fit"]) == ("Northwind", "Analyst", "72%")
+    assert (table["Company"], table["Role"], table["Match"]) == ("Northwind", "Analyst", "72%")
     assert table["Resume"] == "tailored_v2.pdf" and table["Source"] == "Greenhouse" and table["Mode"] == "Manual"
+
+
+def test_an_application_scored_with_the_older_fit_measure_says_so():
+    # Decision 047: the old fit gave almost every job 85-96%; it must not pass as a Match.
+    tracker = ApplicationTracker("app1", "greenhouse_1", S.APPLIED, status_updated=datetime(2026, 10, 6))
+    old = build_row(tracker, sub(candidate_fit_snapshot={"overall_fit": 91.0, "scoring_version": "cf-v2"}), [tracker])
+    assert old.fit == "91% (older fit measure)"
 
 
 def test_applied_date_comes_from_when_the_user_marked_it():

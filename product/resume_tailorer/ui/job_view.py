@@ -101,11 +101,12 @@ def freshness_text(posted: Optional[datetime], now: Optional[datetime] = None) -
 
 
 def fit_text(fit: Optional[FitResult]) -> tuple[str, str]:
+    """Decision 047: the share of the posting's requirements your facts show."""
     if fit is None or fit.overall_fit is None:
-        return "Fit not assessed", "neutral"
+        return "Match not assessed", "neutral"
     value = round(fit.overall_fit)
-    tone = "verified" if value >= 70 else "review" if value >= 40 else "blocked"
-    return f"Fit {value}%", tone
+    tone = "verified" if value >= 60 else "review" if value >= 30 else "blocked"
+    return f"Match {value}%", tone
 
 
 def source_text(job: JobPosting) -> tuple[str, bool]:
@@ -222,6 +223,9 @@ def build_detail(job: JobPosting, fit: Optional[FitResult], action: Optional[str
             return "Not assessed" if v is None else f"{round(v)}%"
 
         parts = (
+            ("Required qualifications", pct(fit.core_capabilities)),
+            ("Preferred qualifications", pct(fit.preferred_qualifications)),
+        ) if fit.scoring_version.startswith("match") else (
             ("Eligibility", pct(fit.eligibility)),
             ("Core skills", pct(fit.core_capabilities)),
             ("Preferred skills", pct(fit.preferred_qualifications)),
@@ -238,10 +242,10 @@ def build_detail(job: JobPosting, fit: Optional[FitResult], action: Optional[str
     if job.sponsorship_available is None:
         stated.append("Sponsorship was not stated")
     if fit is None or fit.overall_fit is None:
-        stated.append("Fit couldn't be assessed from what the posting says")
+        stated.append("Match couldn't be worked out from what the posting says")
     unknowns = tuple(stated) + tuple(u for u in unknowns if u not in stated)
     if (fit is None or fit.overall_fit is None) and review is None:
-        summary = "Fit not assessed. Import and confirm your resume in Career Profile to see how you match."
+        summary = "Match not assessed. Import and confirm your resume in Career Profile to see how you match."
     elif hard:
         summary = f"{len(hard)} hard {'requirement' if len(hard) == 1 else 'requirements'} may rule this out. Check before preparing an application."
     elif gaps:

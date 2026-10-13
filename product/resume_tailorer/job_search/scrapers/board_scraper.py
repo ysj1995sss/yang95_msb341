@@ -95,8 +95,16 @@ _JOB_TYPES = {
 }
 
 
-def normalize_work_mode(value: Optional[str]) -> str:
-    return _WORK_MODES.get((value or "").strip().lower(), "Unknown")
+def normalize_work_mode(value: Optional[str], location: Optional[str] = None) -> str:
+    """The board's stated work mode, else one the location states ("United States - Remote"). An
+    office city alone stays Unknown, never guessed as on-site (Greenhouse has no field for it)."""
+    mode = _WORK_MODES.get((value or "").strip().lower(), "Unknown")
+    if mode == "Unknown" and location:
+        if re.search(r"\bremote\b", location, re.IGNORECASE):
+            return "Remote"
+        if re.search(r"\bhybrid\b", location, re.IGNORECASE):
+            return "Hybrid"
+    return mode
 
 
 def normalize_job_type(value: Optional[str]) -> Optional[str]:

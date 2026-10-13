@@ -24,10 +24,12 @@ function Context({ page }: { page: TailorPage }) {
       <p className="text-[14px] font-semibold tracking-wide text-muted uppercase">{job.company || "Pasted job description"}</p>
       <h2 className="mt-1 text-[24px] font-semibold">{job.title}</h2>
       <div className="mt-3 flex flex-wrap gap-2">
-        <Chip tone="primary">{`Candidate fit ${job.fit === null ? "not assessed" : `${job.fit}%`}`}</Chip>
+        <Chip tone="primary">{`${job.fit_label ?? "Candidate fit"} ${job.fit === null ? "not assessed" : `${job.fit}%`}`}</Chip>
         {review && <Chip tone={toneOf(review.status_tone)}>{review.status_text}</Chip>}
       </div>
-      <p className="mt-2 text-[14px] text-muted">Candidate fit measures your background. The review below shows how clearly this resume shows it, requirement by requirement.</p>
+      <p className="mt-2 text-[14px] text-muted">{job.fit_label === "Match"
+        ? "Match is the share of this job's requirements your confirmed facts show. The review below shows how clearly this resume shows them, requirement by requirement."
+        : "Candidate fit measures your background. The review below shows how clearly this resume shows it, requirement by requirement."}</p>
       <AtsExplainer explainer={page.ats_explainer} />
     </Card>
   );

@@ -14,7 +14,8 @@ const FAILED_CHECK = "We could not verify this claim";
 
 /** A review-list row's state in words: decided (and by whom when AI decided) or not, and a failed check. */
 function queueState(c: Change): string {
-  const decided = c.decision ? `${c.decision_label}${c.decision_origin === "AI-assisted" ? " by AI assistance" : ""}` : "Not reviewed";
+  const decided = c.decision ? `${c.decision_label}${c.decision_origin === "AI-assisted" ? " by AI assistance" : ""}`
+    : c.left_out ? "Left out" : "Not reviewed";
   return c.check === FAILED_CHECK ? `${decided} · failed a check` : decided;
 }
 

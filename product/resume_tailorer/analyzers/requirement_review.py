@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
+from functools import lru_cache
 from typing import Iterable, Mapping, Optional
 
 from resume_tailorer.analyzers.ats_keywords import VOCABULARY, terms_in
@@ -330,13 +331,21 @@ def requirement_terms(requirement: str, job_analysis: Optional[JobAnalysis] = No
     return tuple(dict.fromkeys(found))
 
 
-def _search_forms(term: str) -> tuple[str, ...]:
-    """A display label and every vocabulary spelling that maps to it ("Go-to-market" -> gtm too)."""
-    forms = {term}
+@lru_cache(maxsize=1)
+def _vocabulary_spellings() -> dict[str, tuple[str, ...]]:
+    """Each vocabulary label (lower-cased) and the spellings that map to it, built once."""
+    spellings: dict[str, list[str]] = {}
     for key, label in VOCABULARY.items():
-        if label.lower() == term.lower():
-            forms.add(key)
-    return tuple(forms)
+        spellings.setdefault(label.lower(), []).append(key)
+    return {label: tuple(keys) for label, keys in spellings.items()}
+
+
+@lru_cache(maxsize=8192)
+def _search_forms(term: str) -> tuple[str, ...]:
+    """A display label and every vocabulary spelling that maps to it ("Go-to-market" -> gtm too).
+    Looked up, not scanned: scanning the whole vocabulary on each of thousands of calls per job made
+    the requirement review too slow to score a search's jobs (2026-10-13)."""
+    return tuple({term, *_vocabulary_spellings().get(term.lower(), ())})
 
 
 def _mentions_any(term: str, text: str) -> bool:

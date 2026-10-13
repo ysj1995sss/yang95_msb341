@@ -23,6 +23,9 @@ LAST_SEARCH_FIELD = "last_search"
 VIEW_KEYS = {"best": "Best matches", "newest": "Newest", "saved": "Saved"}
 _FIT_CACHES: dict[str, dict] = {}
 _FIT_LOCK = threading.Lock()
+# A broad search can match thousands of jobs; the full Match for all of them would take minutes.
+# Beyond this many, a quick pass ranks them and only its top jobs (plus the page shown) get it.
+FULL_MATCH_LIMIT = 100
 
 
 def _fit_cache(owner_id: str) -> dict:
@@ -89,6 +92,8 @@ class SearchForm(BaseModel):
     employment_type: list[str] = Field(default_factory=list)
     sponsorship_required: bool = False
     relocation_willing: bool = False
+    # Only jobs that state the chosen work mode (most boards don't say; dogfood, 2026-10-13).
+    work_mode_stated_only: bool = False
     target_companies: str = ""
     exclude_companies: str = ""
     # Not sent: every curated source (as before). An empty list: only the added boards (spec 013).
@@ -117,6 +122,7 @@ def search_setup(ws: Workspace = Depends(workspace)):
         "min_salary": int(goals.get("min_salary") or 0), "employment_type": list(goals.get("employment_type") or []),
         "sponsorship_required": bool(goals.get("sponsorship_required", auth.get("sponsorship_required") is True)),
         "relocation_willing": bool(goals.get("relocation_willing")),
+        "work_mode_stated_only": bool(((ws.record.get(LAST_SEARCH_FIELD) or {}).get("form") or {}).get("work_mode_stated_only")),
         "target_companies": goals.get("target_companies") or "", "exclude_companies": goals.get("exclude_companies") or "",
         "sources": list((ws.record.get(LAST_SEARCH_FIELD) or {}).get("sources", [s.value for s, _, _ in _live_sources()])),
         "include_custom": bool((ws.record.get(LAST_SEARCH_FIELD) or {}).get("include_custom", True)),
@@ -226,8 +232,24 @@ def list_jobs(view: Literal["best", "newest", "saved"] = "best", offset: int = 0
     ids_all = [job_id_for(j) for j in jobs]
     actions = service.db.get_latest_actions(ids_all) if ids_all else {}
     profile = _profile(ws)
-    fits = service.fit_results_cached(profile, jobs, _fit_cache(ws.owner_id)) if profile and jobs else {}
-    jobs = order_jobs(jobs, view_name, {k: (r.overall_fit if r else None) for k, r in fits.items()}, actions, job_id_for)
+    provenance = ws.record.get("provenance")
+    cache = _fit_cache(ws.owner_id)
+    fits: dict = {}
+    quick = None
+    if profile and jobs and view != "newest":
+        scored = jobs
+        if len(jobs) > FULL_MATCH_LIMIT:
+            # Decision 047: a quick pass picks the jobs that get the full Match first.
+            quick = service.quick_match_scores(profile, jobs)
+            scored = sorted(jobs, key=lambda j: -quick[job_id_for(j)])[:FULL_MATCH_LIMIT]
+        fits = service.fit_results_cached(profile, scored, cache, provenance)
+    jobs = order_jobs(jobs, view_name, {k: (r.overall_fit if r else None) for k, r in fits.items()}, actions,
+                      job_id_for, quick)
+    page = jobs[max(0, offset): max(0, offset) + max(1, min(limit, 200))]
+    if profile and page:
+        # Every row shown has its Match, wherever it sits in the order.
+        fits.update(service.fit_results_cached(profile, [j for j in page if job_id_for(j) not in fits], cache,
+                                               provenance))
     statuses = tuple((p["source"], p["status"]) for p in last.get("providers") or [])
     state = resolve(JobsInputs(
         has_goals=bool(_goals(ws).get("job_title")), searched=bool(last), search_requested=False,
@@ -252,7 +274,7 @@ def list_jobs(view: Literal["best", "newest", "saved"] = "best", offset: int = 0
         "offset": max(0, offset),
         "rows": [jsonable(build_row(j, fits.get(job_id_for(j)), actions.get(job_id_for(j)),
                                     added_keys=added, sponsorship_needed=sponsorship_needed))
-                 for j in jobs[max(0, offset): max(0, offset) + max(1, min(limit, 200))]],
+                 for j in page],
         # Spec 013: what was searched, which added boards failed, and why results may be few.
         "boards_line": sh.search_result_line(
             int(last.get("boards_searched") or 0), int(last.get("boards_failed") or 0),
@@ -327,6 +349,7 @@ def job_detail(job_id: str, ws: Workspace = Depends(workspace)):
     from resume_tailorer.analyzers.ats_keywords import check_keywords, profile_text
     from resume_tailorer.ui import ats_explainer
     from resume_tailorer.job_search.job_quality import evaluate_job_quality
+    from resume_tailorer.job_search.requirement_match import MATCH_NOTE
     from resume_tailorer.ui.job_view import build_detail
 
     job = ws.service.db.get_job_posting(job_id)
@@ -334,7 +357,8 @@ def job_detail(job_id: str, ws: Workspace = Depends(workspace)):
         raise HTTPException(404, "That job is no longer stored. Search again.")
     action = ws.service.db.get_latest_actions([job_id]).get(job_id)
     profile = _profile(ws)
-    fit = ws.service.fit_results_cached(profile, [job], _fit_cache(ws.owner_id)).get(job_id) if profile else None
+    fit = (ws.service.fit_results_cached(profile, [job], _fit_cache(ws.owner_id), ws.record.get("provenance")).get(job_id)
+           if profile else None)
     keywords = None
     requirements = None
     review = None
@@ -357,6 +381,7 @@ def job_detail(job_id: str, ws: Workspace = Depends(workspace)):
     return {
         **jsonable(detail),
         "fit_measured": fit is not None and fit.overall_fit is not None,
+        "match_note": MATCH_NOTE,
         "keywords": keywords,
         "requirements": requirements,
         "ats_explainer": ats_explainer.as_dict(),
@@ -385,7 +410,8 @@ def job_action(job_id: str, body: JobAction, ws: Workspace = Depends(workspace))
     result: dict[str, Any] = {"action": body.action}
     if body.action == "apply":
         profile = _profile(ws)
-        fit = ws.service.fit_results_cached(profile, [job], _fit_cache(ws.owner_id)).get(job_id) if profile else None
+        fit = (ws.service.fit_results_cached(profile, [job], _fit_cache(ws.owner_id), ws.record.get("provenance"))
+               .get(job_id) if profile else None)
         build_tailor_snapshot(job, fit)  # validates the job can be handed to Tailor
         record = ws.record
         remember(record, job_id)

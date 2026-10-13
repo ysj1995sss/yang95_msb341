@@ -306,3 +306,15 @@ def test_partial_board_failure_is_reported():
     assert scraper.data_source == "real"
     assert len(results) == len(tokens) - 3
     assert scraper.coverage_note == f"3 of {len(tokens)} company boards did not respond"
+
+
+def test_work_mode_is_read_from_a_location_that_states_it():
+    """Greenhouse has no work-mode field, but many locations say it ("Remote, US"); an office city
+    alone stays unknown, never guessed as on-site (dogfood round 2, 2026-10-13)."""
+    from resume_tailorer.job_search.scrapers.board_scraper import normalize_work_mode
+
+    assert normalize_work_mode(None, "United States - Remote") == "Remote"
+    assert normalize_work_mode(None, "Remote-Friendly (Travel-Required) | San Francisco, CA") == "Remote"
+    assert normalize_work_mode(None, "New York, NY (Hybrid)") == "Hybrid"
+    assert normalize_work_mode(None, "Bengaluru, India") == "Unknown"
+    assert normalize_work_mode("OnSite", "Remote, US") == "Onsite"  # a stated field wins

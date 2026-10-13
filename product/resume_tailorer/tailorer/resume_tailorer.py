@@ -569,6 +569,9 @@ SUMMARY TOOLS -- Never add a tool, software, language or platform name to the pr
 that it doesn't already contain. Tools belong in the bullets that used them and in the skills list;
 in a summary they read as a claim we can't tie to a job.
 
+CERTIFICATIONS -- Keep every certification exactly as written, in its own section. Never remove one
+to save space: a credential is a fact the employer may screen for.
+
 BULLET LENGTH -- keep each rewritten bullet close to its original length (roughly within 30%
 character count), not just the section/page count overall. A bullet that grows substantially
 risks wrapping onto an extra line and pushing content off the page even when the total word
@@ -746,6 +749,9 @@ FORBIDDEN TRANSFORMATIONS:
 SUMMARY TOOLS -- Never add a tool, software, language or platform name to the professional summary
 that it doesn't already contain. Tools belong in the bullets that used them and in the skills list;
 in a summary they read as a claim we can't tie to a job.
+
+CERTIFICATIONS -- Keep every certification exactly as written, in its own section. Never remove one
+to save space: a credential is a fact the employer may screen for.
 
 BULLET LENGTH -- keep each rewritten bullet close to its current length (roughly within 30%
 character count). A bullet that grows substantially risks wrapping onto an extra line and
