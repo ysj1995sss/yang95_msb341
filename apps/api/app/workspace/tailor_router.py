@@ -133,6 +133,16 @@ def _groups(state: dict, show_all: bool = False):
     return group_changes(visible_changes(state["changes"], advanced=show_all), state["report"].true_gaps)
 
 
+def _finding_text(finding, reviewable) -> str:
+    """A finding's message, with the number of the change it is about (as shown in the review
+    queue) so two similar findings can be told apart."""
+    change_id = (getattr(finding, "details", None) or {}).get("change_id")
+    for number, change in enumerate(reviewable, 1):
+        if change.change_id == change_id:
+            return f"{finding.message} (Change {number} in the list.)"
+    return finding.message
+
+
 def _review_view(ws: Workspace, state: dict, show_all: bool = False) -> dict:
     from resume_tailorer.analyzers.term_match import displayable_gaps, short_requirement
     from resume_tailorer.artifacts.models import FidelityMode
@@ -186,7 +196,7 @@ def _review_view(ws: Workspace, state: dict, show_all: bool = False) -> dict:
         "status": status.value,
         "status_text": artifact_status_text(status),
         "status_tone": artifact_tone(status),
-        "findings": [f.message for f in report.validation.findings],
+        "findings": [_finding_text(f, groups.reviewable) for f in report.validation.findings],
         "fidelity": "Original layout kept" if report.fidelity_mode is FidelityMode.PRESERVED else "Rebuilt layout; details may differ",
         "page_count": report.tailored_page_count,
         "preview_pages": pages,

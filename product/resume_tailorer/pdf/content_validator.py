@@ -17,7 +17,9 @@ from resume_tailorer.artifacts.models import (
 from resume_tailorer.models import CareerTruthProfile
 
 
-_METRIC_RE = re.compile(r"\$?\d[\d,.]*\s*(?:%|k|m|b|x|×|\+|-person|-year|s\b)?", re.I)
+# A unit sticks to its number: "$120M", "3x", "15%". With a space allowed, "by 2027" + "Managed" read as
+# "2027 M" (million), a metric no correct PDF contains (builder's resume, 2026-10-12).
+_METRIC_RE = re.compile(r"\$?\d[\d,.]*(?:%|[kmb](?![a-z])|x(?![a-z])|×|\+|-person|-year|s\b)?", re.I)
 _PLACEHOLDER_RE = re.compile(
     r"\[(?:insert|add|fill|replace)[^\]]*\]|\b(?:lorem ipsum|your name here)\b",
     re.I,
@@ -108,7 +110,7 @@ def validate_pdf_content(
         for value in [*job.responsibilities, *job.accomplishments]
         if value not in condensed_originals
     )
-    expected_metrics = {match.group().strip() for match in _METRIC_RE.finditer(source_text)}
+    expected_metrics = {match.group().strip().rstrip(",.") for match in _METRIC_RE.finditer(source_text)} - {""}
     missing_metrics = sorted(metric for metric in expected_metrics if metric not in text)
     if missing_metrics:
         findings.append(_failure("METRIC_MISSING", FindingCategory.TRUTH,

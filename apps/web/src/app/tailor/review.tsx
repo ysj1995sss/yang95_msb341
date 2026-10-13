@@ -242,7 +242,7 @@ export function ReviewRoom({ review, onChange, onReload, onDiscard }: {
           </div>
           {review.status === "FAIL" && <Alert tone="blocked" role="alert">This resume failed validation and can&apos;t be downloaded or used to apply.</Alert>}
           {review.status === "WARNING" && <Alert tone="review" title="Passed with warnings. Read them before you use this resume." />}
-          {review.status !== "PASS" && review.findings.length > 0 && <ul className="list-disc pl-5 text-[15px]">{review.findings.map((f) => <li key={f}>{f}</li>)}</ul>}
+          {review.status !== "PASS" && review.findings.length > 0 && <ul className="list-disc pl-5 text-[15px]">{review.findings.map((f, i) => <li key={`${i}-${f}`}>{f}</li>)}</ul>}
           <ReadabilityCheck readability={review.readability} />
           {review.preview_pages > 0 ? (
             <div className="flex max-h-[70vh] flex-col gap-3 overflow-y-auto rounded-[var(--radius-card)] border border-line bg-canvas p-3">

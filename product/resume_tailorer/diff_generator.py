@@ -409,7 +409,7 @@ class DiffGenerator:
     # "60s", "42s", "3x"/"3×" contain no run of 4+ letters -- so this is a
     # real gap it closes, not just a restatement of the word check.
     _METRIC_TOKEN_RE = re.compile(
-        r"\$?\d[\d,.]*\s*(?:%|k|m|b|x|×|\+|-person|-year|s\b)?", re.IGNORECASE
+        r"\$?\d[\d,.]*(?:%|[kmb](?![a-z])|x(?![a-z])|×|\+|-person|-year|s\b)?", re.IGNORECASE
     )
 
     # A bullet's CORE clause (who/what/how-much) is where a word swap

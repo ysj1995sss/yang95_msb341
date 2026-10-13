@@ -519,3 +519,28 @@ def test_tailor_says_whether_facts_are_confirmed(tailor_client):
     assert tailor_client.get("/v2/tailor").json()["facts_confirmed"] is False
     tailor_client.post("/v2/profile/confirm")
     assert tailor_client.get("/v2/tailor").json()["facts_confirmed"] is True
+
+
+def test_a_finding_about_one_change_says_which_change(tailor_client):
+    # Two identical "claim not supported" lines gave the person no way to tell which change each was
+    # about (and crashed React's list keys). A finding that names a change now says its number.
+    from resume_tailorer.artifacts.models import ArtifactValidation, FindingCategory, FindingSeverity, ValidationFinding
+    from resume_tailorer.review_store import load_review, save_review
+
+    _ready(tailor_client)
+    assert _run(tailor_client)["status"] == "done"
+    review = tailor_client.get("/v2/tailor").json()["review"]
+    change = review["changes"][0]
+    from resume_tailorer.identity import artifacts_dir
+
+    folder = artifacts_dir("local")
+    job_id = tailor_client.get("/v2/tailor").json()["job"]["job_id"]
+    state = load_review(folder, job_id)
+    finding = ValidationFinding("UNSUPPORTED_CLAIM_PRESENT", FindingSeverity.FAIL, FindingCategory.TRUTH,
+                                "The resume contains a claim not supported by your verified facts.",
+                                {"change_id": change["id"]})
+    from dataclasses import replace
+    state["report"] = replace(state["report"], validation=ArtifactValidation.from_findings([finding, finding]))
+    assert save_review(folder, job_id, state)
+    findings = tailor_client.get("/v2/tailor").json()["review"]["findings"]
+    assert len(findings) == 2 and all("change 1 " in f.lower() for f in findings), findings

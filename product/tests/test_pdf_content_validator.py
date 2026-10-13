@@ -166,3 +166,23 @@ def test_metric_missing_still_fires_when_not_explained_by_a_reviewed_change():
     text = "Test Candidate candidate@example.test Example Corp Manager 2022-2024 Example University MBA 2027"
     findings = validate_pdf_content(text, _profile(), [])
     assert "METRIC_MISSING" in {finding.code for finding in findings}
+
+
+def test_a_year_followed_by_the_next_bullet_is_not_a_metric():
+    # Found on the builder's own resume (2026-10-12): the check joins bullets with a space, so a
+    # bullet ending "... by 2027" followed by "Managed ..." became the "metric" "2027 M" (million),
+    # which a correct PDF can never contain, failing the whole resume.
+    profile = _profile()
+    profile.work_experience[0].accomplishments = ["Targeted $120M in sales by 2027", "Managed a team of 12"]
+    text = ("Test Candidate candidate@example.test Example Corp Manager 2022-2024 "
+            "Targeted $120M in sales by 2027\nManaged a team of 12")
+    findings = validate_pdf_content(text, profile, [])
+    assert "METRIC_MISSING" not in {finding.code for finding in findings}
+
+
+def test_real_metrics_with_units_are_still_required():
+    profile = _profile()
+    profile.work_experience[0].accomplishments = ["Targeted $120M in sales", "Grew retention 3x and cut cost 15%"]
+    text = "Test Candidate candidate@example.test Example Corp Manager 2022-2024 Targeted sales Grew retention"
+    missing = next(f for f in validate_pdf_content(text, profile, []) if f.code == "METRIC_MISSING")
+    assert {"$120M", "3x", "15%"} <= set(missing.details["missing"])
