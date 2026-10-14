@@ -93,6 +93,28 @@ def comparable_content(text: str, name: str) -> str | tuple[str, ...]:
                  if term.strip())
 
 
+def with_skill_additions(text: str, review) -> tuple[str, list]:
+    """`text` with the skills Job Copilot computes (spec 022 levels 2-3) added to the first line of
+    its skills section, and those additions. The same code the Word path uses chooses them; until
+    now a PDF resume never got them (2026-10-13)."""
+    from resume_tailorer.analyzers.skill_additions import propose_skill_additions
+    from resume_tailorer.docx_export.skills_line import append_skills
+
+    span = find_sections(text).get("skills") if review is not None else None
+    if span is None:
+        return text, []
+    lines = span.text.splitlines(keepends=True)
+    first = next((i for i, line in enumerate(lines[1:], 1) if line.strip()), None)
+    if first is None:
+        return text, []
+    additions = propose_skill_additions(review, "".join(lines[1:]))
+    if not additions:
+        return text, []
+    body = lines[first].rstrip("\r\n")
+    lines[first] = append_skills(body, [a.term for a in additions]) + lines[first][len(body):]
+    return text[:span.start] + "".join(lines) + text[span.end:], additions
+
+
 def with_certifications(text: str, profile: CareerTruthProfile) -> str:
     """`text` with every certification in the profile. A model sometimes leaves the CERTIFICATIONS
     section out "for space", which the review then proposed as removing a real credential (an AWS

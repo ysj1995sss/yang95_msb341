@@ -147,12 +147,17 @@ def run_tailoring(
             optimization = ResumeTailoringOptimizer(llm=llm).optimize(
                 profile, job_analysis, initial, gap_report, conservative=conservative, review=review
             )
-            from resume_tailorer.artifacts.freeform_sections import with_certifications
+            from resume_tailorer.artifacts.changes import revert_grammar_only_rewrites
+            from resume_tailorer.artifacts.freeform_sections import with_certifications, with_skill_additions
 
             # Credentials are facts: one the model dropped is put back, never proposed for removal.
             tailored_text = with_certifications(optimization.tailored_resume, profile)
+            tailored_text = revert_grammar_only_rewrites(profile, tailored_text)
+            # Spec 022 levels 2-3, computed by code as on the Word path.
+            tailored_text, skill_additions = with_skill_additions(tailored_text, review)
             tailored_alignment = optimization.final_score
-            changes = build_freeform_changes(profile, tailored_text, gap_report, review=review)
+            changes = build_freeform_changes(profile, tailored_text, gap_report, review=review,
+                                             skill_additions=skill_additions)
             pdf_bytes, validation, tailored_text, changes, _attempts = build_freeform_artifact(
                 tailored_text=tailored_text, changes=changes, profile=profile,
                 target_length=target_length, style_hints=style_hints, llm=llm,

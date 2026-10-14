@@ -183,3 +183,29 @@ class TestSupportedCompetencies:
 
     def test_empty_profile_returns_no_competencies(self):
         assert supported_competencies([]) == {}
+
+
+_BULLETS = ["Led a team of 3 analysts building weekly sales dashboards in Tableau",
+            "Built SQL pipelines feeding pricing reviews for 120 stores",
+            "Partnered with merchandising leads to explain sales trends"]
+
+
+def test_a_requirement_is_matched_on_what_it_is_about_not_an_incidental_word():
+    # Dogfood follow-up, 2026-10-13: "Communication: … presenting complex data insights" and
+    # "Collaboration: … varying levels of data fluency" were both "shown" by a Tableau dashboards
+    # bullet, as "data analytics", because each mentions "data". One bullet backed three soft skills.
+    from resume_tailorer.analyzers.competency_map import find_transferable_evidence
+
+    communication = find_transferable_evidence(
+        "Communication: Clear and effective communicator, both written and verbal. Skilled at presenting "
+        "complex data insights to non-technical audiences.", _BULLETS)
+    assert communication is not None and communication.competency == "executive communication"
+    assert communication.evidence_text.startswith("Partnered")
+    collaboration = find_transferable_evidence(
+        "Collaboration: Demonstrated success working cross-functionally and building relationships across "
+        "business teams. Comfortable engaging stakeholders with varying levels of data fluency.", _BULLETS)
+    assert collaboration is None or collaboration.competency != "data analytics"
+    analytical = find_transferable_evidence(
+        "Analytical Thinking: Proven ability to analyze complex data sets, uncover key insights, and translate "
+        "findings into actionable strategies.", _BULLETS)
+    assert analytical is not None  # analysis really is shown by the dashboards and SQL bullets

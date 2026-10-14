@@ -50,6 +50,12 @@ exactly that.
    bullet was in the resume. Now they count as shown only when the resume names most of what the
    requirement asks for, so naming it becomes the improvement.
 
+6. **PDF resumes get the same treatment as Word** (follow-up, same day):
+   - grammar-only rewrites are put back before review;
+   - the spec 022 skills (levels 2-3) are added to the skills line by the same code;
+   - only the model's own wording on that line is checked;
+   - the PDF content check accepts a computed skills line.
+
 ## Unchanged
 
 - Never added: employers, titles, dates, degrees, numbers, tools the person never used

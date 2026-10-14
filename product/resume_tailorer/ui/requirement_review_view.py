@@ -31,7 +31,29 @@ def _all_added(row, adjacent: set[str]) -> bool:
     return row.status == NONE and bool(row.terms) and all(term.casefold() in adjacent for term in row.terms)
 
 
-def review_view(review: RequirementReview, adjacent: set[str] = frozenset()) -> dict:
+def work_authorization_state(row, authorization: Optional[dict]) -> Optional[tuple[str, str, str, bool]]:
+    """(label, tone, reason, still a hard requirement) for a work authorization row, from the person's
+    answer in Career Profile; None for any other row. A resume never shows it, so "no evidence" was
+    wrong for everyone who simply hadn't answered (dogfood follow-up, 2026-10-13). Jobs and Tailor
+    both use this."""
+    from resume_tailorer.analyzers.requirement_review import is_work_authorization
+
+    if not is_work_authorization(row):
+        return None
+    answer = authorization or {}
+    if answer.get("authorized_to_work") is True and not (answer.get("sponsorship_required") is True
+                                                         and "sponsor" in row.text.lower()):
+        return ("You said yes in Career Profile", "verified",
+                "You said you're authorized to work (Career Profile). A resume doesn't need to show it.", False)
+    if answer.get("authorized_to_work") is False or answer.get("sponsorship_required") is True:
+        return ("You said no in Career Profile", "blocked",
+                "Your Career Profile answer doesn't meet this. Check it before applying.", True)
+    return ("Not answered in Career Profile", "review",
+            "Work authorization comes from your answer in Career Profile, not your resume. Answer it there.", False)
+
+
+def review_view(review: RequirementReview, adjacent: set[str] = frozenset(),
+                authorization: Optional[dict] = None) -> dict:
     def term_view(term: str, status: str) -> dict:
         if status == NONE and term.casefold() in adjacent:
             return {"term": term, "status": status, "label": ADDED_TO_SKILLS, "tone": "review"}
@@ -42,16 +64,25 @@ def review_view(review: RequirementReview, adjacent: set[str] = frozenset()) -> 
         rows = [r for r in review.rows if r.section == section]
         if not rows:
             continue
-        groups.append({"section": section, "label": label, "rows": [{
-            "id": r.id, "text": r.text, "status": r.status,
-            "label": ADDED_TO_SKILLS if _all_added(r, adjacent) else r.label,
-            "tone": "review" if _all_added(r, adjacent) else TONES[r.status],
-            "reason": r.reason, "hard_gate": r.hard_gate, "shown_in_resume": r.shown_in_resume,
-            "evidence": [{"text": e.text, "source": e.source, "confirmed": e.confirmed} for e in r.evidence],
-            "terms": [term_view(t, st) for t, st in r.term_status],
-        } for r in rows]})
+        groups.append({"section": section, "label": label, "rows": [_row_view(r, adjacent, authorization, term_view)
+                                                                    for r in rows]})
     return {"summary": review.summary, "computed_from": review.computed_from,
             "note": COMPUTED_NOW if review.computed_from == "now" else "", "groups": groups}
+
+
+def _row_view(r, adjacent: set[str], authorization: Optional[dict], term_view) -> dict:
+    view = {
+        "id": r.id, "text": r.text, "status": r.status,
+        "label": ADDED_TO_SKILLS if _all_added(r, adjacent) else r.label,
+        "tone": "review" if _all_added(r, adjacent) else TONES[r.status],
+        "reason": r.reason, "hard_gate": r.hard_gate, "shown_in_resume": r.shown_in_resume,
+        "evidence": [{"text": e.text, "source": e.source, "confirmed": e.confirmed} for e in r.evidence],
+        "terms": [term_view(t, st) for t, st in r.term_status],
+    }
+    work = work_authorization_state(r, authorization)
+    if work is not None:
+        view.update(label=work[0], tone=work[1], reason=work[2], hard_gate=work[3])
+    return view
 
 
 def review_for_state(state: dict, provenance: Optional[dict] = None) -> Optional[RequirementReview]:
@@ -146,7 +177,8 @@ def _names(term: str, text: str) -> bool:
     return _mentions_any(term, text)
 
 
-def missing_list(review: Optional[RequirementReview], adjacent: set[str] = frozenset()) -> list[dict]:
+def missing_list(review: Optional[RequirementReview], adjacent: set[str] = frozenset(),
+                 authorization: Optional[dict] = None) -> list[dict]:
     """Tailor's "Missing, never added" list, from the requirement review (spec 011): requirements
     with no evidence, then each missing named term of a partly supported requirement. Adjacent
     skills the skills line now names (spec 022) aren't listed as never added."""
@@ -154,8 +186,11 @@ def missing_list(review: Optional[RequirementReview], adjacent: set[str] = froze
 
     if review is None:
         return []
-    items = [{"label": short_requirement(r.text), "full": r.text} for r in review.rows
-             if r.status == NONE and not _all_added(r, adjacent)]
+    def missing(r) -> bool:
+        work = work_authorization_state(r, authorization)
+        return work[3] if work is not None else r.status == NONE and not _all_added(r, adjacent)
+
+    items = [{"label": short_requirement(r.text), "full": r.text} for r in review.rows if missing(r)]
     for r in review.rows:
         if r.status == PARTIAL:
             for term, state in r.term_status:

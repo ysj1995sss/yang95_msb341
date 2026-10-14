@@ -68,6 +68,23 @@ above for broad words and "check yourself" rows came from that run; the job is n
 run found that "using analytical tools" and "dev tool companies" were read as unknown products,
 and that work authorization was shown as missing when the person simply hadn't answered.
 
+## Follow-up (same day)
+
+- **The job page shows how many requirements the Match counted** ("6 of 8"). Below 4, it adds
+  "few, so this number is rough".
+- **Tailor's requirement list takes work authorization from the Career Profile answer**, like the
+  Jobs page:
+  - "You said yes", "You said no" or "Not answered".
+  - It's listed as missing only when the answer is no.
+  - The review summary no longer counts it as a missing credential.
+- **The competency matcher picks the competency a requirement is about.**
+  - **Before:** "Communication: … presenting data insights" was "shown" as data analytics by a
+    dashboards bullet.
+  - **Now:** competencies named earlier in the requirement come first, and the first one with
+    evidence wins.
+  - **New evidence:** "partnered with … leads" and "collaborated with … teams" count as partial
+    cross-functional evidence.
+
 ## How this fits decision 032
 
 Decision 032 rejected an ATS-style score, because one number invites chasing and no universal

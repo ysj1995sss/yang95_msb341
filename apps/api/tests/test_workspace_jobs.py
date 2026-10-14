@@ -62,7 +62,8 @@ def test_detail_has_evidence_once_a_profile_exists(jobs_client):
     # Decision 047: the share of the posting's requirements your facts show, explained honestly.
     assert detail["fit_measured"] is True and detail["row"]["fit"].startswith("Match ")
     assert "not an employer's ATS score" in detail["match_note"]
-    assert [name for name, _value in detail["fit_parts"]] == ["Required qualifications", "Preferred qualifications"]
+    assert [name for name, _value in detail["fit_parts"]] == ["Required qualifications", "Preferred qualifications",
+                                                              "Requirements counted"]
     assert "SQL" in detail["keywords"]["present"]
     # Spec 010: honest wording, and the shared ATS explanation.
     assert "Career Profile" in detail["keywords"]["summary"] and "on your resume" not in detail["keywords"]["summary"]

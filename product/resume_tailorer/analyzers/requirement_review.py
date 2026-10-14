@@ -184,7 +184,8 @@ class RequirementReview:
     listed: tuple[str, ...] = ()  # requirement terms the person lists (skills, tools, summary)
 
     def counts(self, section: str) -> tuple[int, int]:
-        rows = [r for r in self.rows if r.section == section]
+        # Work authorization is answered in Career Profile, not shown by a resume, so it isn't counted.
+        rows = [r for r in self.rows if r.section == section and not is_work_authorization(r)]
         return sum(1 for r in rows if r.supported), len(rows)
 
     def partly(self, section: str) -> int:
@@ -201,7 +202,8 @@ class RequirementReview:
         if pref_total:
             partly = self.partly("preferred")
             parts.append(f"Preferred: {pref} of {pref_total}" + (f" ({partly} only partly)" if partly else ""))
-        missing_gates = sum(1 for r in self.rows if r.hard_gate and r.section == "required" and r.status == NONE)
+        missing_gates = sum(1 for r in self.rows if r.hard_gate and r.section == "required" and r.status == NONE
+                            and not is_work_authorization(r))
         if missing_gates:
             parts.append(f"{missing_gates} required credential or threshold not found")
         return " · ".join(parts) if parts else "No requirement list was found in this posting."
@@ -277,11 +279,18 @@ _CONTEXT_KINDS = ("experience", "education", "certification")
 
 # A lower-case word with an ordinary English ending ("analytical", "companies", "visualization") after
 # tool wording is a description, not a product name (dogfood, 2026-10-13).
-_ORDINARY_WORD = re.compile(r"^[a-z]+(?:al|ive|ous|ic|ies|ment|tion|sion|ing|ed|ful|able|ible|ary|ors|ers)$")
+_ORDINARY_WORD = re.compile(r"^[a-z]+(?:al|ive|ous|ic|ies|ment|tion|sion|ing|ed|ful|able|ible|ary|ors|ers)s?$")
+# Short common nouns that follow "platform", "tool" or "software" in postings: "support platform data"
+# made "data" an unknown product, which then blocked every rewrite saying "data" (2026-10-13).
+_COMMON_NOUNS = {
+    "data", "stack", "support", "access", "usage", "team", "teams", "users", "vendors", "partners",
+    "products", "services", "features", "space", "skills", "stacks", "suite", "suites", "set", "sets",
+    "work", "jobs", "roles", "tasks", "tooling", "tools", "platforms", "systems", "needs", "issues",
+}
 
 
 def _could_be_product(name: str) -> bool:
-    return not _ORDINARY_WORD.match(name)
+    return name.lower() not in _COMMON_NOUNS and not _ORDINARY_WORD.match(name)
 
 
 def explicit_platform_terms(text: str) -> tuple[str, ...]:

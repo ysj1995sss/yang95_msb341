@@ -290,7 +290,9 @@ export function ReviewRoom({ review, onChange, onReload, onDiscard }: {
         </aside>
       </div>
 
-      <div className="sticky bottom-16 z-30 mt-8 flex flex-col gap-3 rounded-[var(--radius-card)] border border-line bg-paper p-4 md:bottom-4 sm:flex-row sm:items-center sm:justify-between">
+      {/* Pinned from tablet width up. On a phone its stacked text and buttons covered a third of the
+          screen (risk check, 2026-10-13), so there it sits after the review; the steps above show progress. */}
+      <div className="z-30 mt-8 flex flex-col gap-3 rounded-[var(--radius-card)] border border-line bg-paper p-4 sm:sticky sm:bottom-16 sm:flex-row sm:items-center sm:justify-between md:bottom-4">
         <div role="status">
           <p className="font-semibold">{p.label}</p>
           <p className="text-[14px] text-muted">{p.blocker || "Your resume is ready for Apply."}</p>

@@ -162,6 +162,9 @@ class FitResult:
     unknown: List[str] = field(default_factory=list)
     evidence: List[FitEvidence] = field(default_factory=list)
     scoring_version: str = "cf-v2"
+    # Match (decision 047): how many of the posting's requirements the number rests on.
+    requirements_counted: Optional[int] = None
+    requirements_total: Optional[int] = None
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -183,6 +186,8 @@ class FitResult:
                 for e in self.evidence
             ],
             "scoring_version": self.scoring_version,
+            "requirements_counted": self.requirements_counted,
+            "requirements_total": self.requirements_total,
         }
 
 

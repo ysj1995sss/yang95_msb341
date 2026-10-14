@@ -168,3 +168,23 @@ def test_work_authorization_is_eligibility_not_a_skill_so_match_leaves_it_out():
     authorized = RequirementRow("r1", "Must be authorized to work in the U.S.", "required", True, NONE, (), (), "")
     skill = _row(2, DIRECT)
     assert match_from_review(RequirementReview((authorized, skill))).percent == 100
+
+
+def test_the_match_says_how_many_requirements_it_counted():
+    # A 75% from 2 requirements reads very differently from a 75% from 10 (dogfood round 4).
+    review = RequirementReview((_row(1, DIRECT), _row(2, NONE), _row(3, CHECK)))
+    from resume_tailorer.job_search.requirement_match import fit_from_review
+    fit = fit_from_review(review)
+    assert (fit.requirements_counted, fit.requirements_total) == (2, 3)
+    assert fit.to_dict()["requirements_counted"] == 2
+
+
+def test_the_job_page_shows_the_count_and_says_when_it_is_rough():
+    from resume_tailorer.job_search.requirement_match import fit_from_review
+    from resume_tailorer.ui.job_view import build_detail
+
+    few = fit_from_review(RequirementReview((_row(1, DIRECT), _row(2, NONE))))
+    parts = dict(build_detail(_job("Requirements: SQL"), few, None).fit_parts)
+    assert parts["Requirements counted"] == "2 of 2 (few, so this number is rough)"
+    many = fit_from_review(RequirementReview(tuple(_row(n, DIRECT) for n in range(1, 7))))
+    assert dict(build_detail(_job("Requirements: SQL"), many, None).fit_parts)["Requirements counted"] == "6 of 6"

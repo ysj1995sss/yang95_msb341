@@ -87,3 +87,13 @@ def test_a_known_missing_latest_pdf_does_not_make_an_older_handoff_usable(pdf_by
 def test_a_legacy_review_without_pdf_bytes_keeps_unknown_freshness():
     fresh = handoff_freshness({**HANDOFF, "sha256": "old-artifact-hash"}, {"changes": []}, None)
     assert fresh.stale is None and fresh.message == ""
+
+
+def test_unreviewed_changes_are_not_ready_to_apply():
+    # Risk check, 2026-10-13: Apply said "Ready. Open the employer's application" while Tailor said
+    # "0 of 2 changes reviewed" and kept its own Continue button disabled. The file could still hold
+    # AI wording the person never saw.
+    v = view(review_complete=False)
+    assert v.stage == "not_ready" and not v.can_track
+    assert v.can_open  # the employer's posting can still be read
+    assert "Tailor" in v.headline

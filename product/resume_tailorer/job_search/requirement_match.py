@@ -127,6 +127,8 @@ def fit_from_review(review: RequirementReview) -> FitResult:
         evidence=[FitEvidence(r.text, _LEVELS.get(r.status, UNSUPPORTED), r.evidence[0].text if r.evidence else "")
                   for r in rows],
         scoring_version=SCORING_VERSION,
+        requirements_counted=sum(1 for r in rows if row_credit(r) is not None),
+        requirements_total=len(rows),
     )
 
 

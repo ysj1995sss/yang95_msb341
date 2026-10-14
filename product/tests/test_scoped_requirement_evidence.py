@@ -122,3 +122,16 @@ def test_e_g_is_not_a_product_name():
     from resume_tailorer.analyzers.requirement_review import explicit_platform_terms
     found = explicit_platform_terms("Advanced proficiency in enterprise HR platforms e.g. Workday, ServiceNow, Greenhouse.")
     assert "e.g" not in found and "ServiceNow" in found
+
+
+@pytest.mark.parametrize("requirement", [
+    "Fluency in support platform data — you know how Zendesk (or equivalent) is structured",
+    "Experience with BI tools administration and reporting",
+    "Hands-on software engineering or platform integrations experience",
+])
+def test_common_nouns_after_platform_or_tool_are_not_product_names(requirement):
+    # Risk-check run, 2026-10-13: "platform data" made "data" an unknown product, so every rewrite
+    # containing "data" was refused as "adds data, which you haven't shown evidence for".
+    from resume_tailorer.analyzers.requirement_review import explicit_platform_terms
+    found = {t.lower() for t in explicit_platform_terms(requirement)}
+    assert not found & {"data", "administration", "integrations", "engineering"}

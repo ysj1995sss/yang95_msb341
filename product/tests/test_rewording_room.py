@@ -155,3 +155,22 @@ def test_the_requirements_word_family_is_grounded_too():
     unrelated = DiffGenerator().check_bullet_pair_fabrication_risk(
         LAUNCH, LAUNCH + " to communicate risks", profile(), grounded="Strong commercial instincts.")
     assert unrelated  # "communicate" isn't in the family of anything grounded
+
+
+def test_a_grammar_only_rewrite_on_a_pdf_resume_is_undone_before_review():
+    from resume_tailorer.artifacts.changes import revert_grammar_only_rewrites
+    from resume_tailorer.models import CareerTruthProfile, WorkExperience
+
+    person = CareerTruthProfile(
+        contact_info={"name": "Sam Example"}, education=[], skills=[], tools=[], certifications=[], accomplishments=[],
+        work_experience=[WorkExperience(employer="Example Co", title="Analyst", dates="2021 - Present", accomplishments=[],
+                                        responsibilities=["Partnered with merchandising leads to explain sales trends",
+                                                          "Built SQL pipelines feeding pricing reviews for 120 stores"])])
+    tailored = ("Sam Example\nExample Co | Analyst | 2021 - Present\n"
+                "- Partnered with merchandising leads, explaining sales trends\n"
+                "- Built SQL pipelines supporting pricing reviews across 120 stores\n")
+    cleaned = revert_grammar_only_rewrites(person, tailored)
+    assert "- Partnered with merchandising leads to explain sales trends" in cleaned
+    assert "supporting pricing reviews across 120 stores" in cleaned  # a real rewrite stays
+    changes = build_freeform_changes(person, cleaned, GapReport(items=[], summary=""))
+    assert [c.proposed_text for c in changes] == ["Built SQL pipelines supporting pricing reviews across 120 stores"]

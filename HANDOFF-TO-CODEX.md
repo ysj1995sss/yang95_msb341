@@ -35,7 +35,23 @@ Local commits on `main`, **not pushed**; the backend needs a Cloud Run rebuild a
   - **Remote:** the "only jobs that say they're remote" box starts ticked.
   - **Rewrites:** word-family grounding; grammar-only Word rewrites dropped.
   - **Supporting fact:** a rewrite's supporting fact is its own bullet.
-  - **Still open:** Tailor's requirement review calls unanswered work authorization "missing".
+  - **Still open (fixed in the next commit):** Tailor's requirement review called unanswered work
+    authorization "missing".
+- **Follow-up fixes and risk checks (local):**
+  - **Fixes:**
+    - Tailor's work authorization comes from the Career Profile answer;
+    - competencies are matched on what a requirement is about;
+    - the job page shows how many requirements Match counted;
+    - PDF resumes get grammar-only rewrites put back and spec 022 skills added;
+    - Apply isn't "ready" while changes are unreviewed;
+    - the Tailor action bar isn't pinned on phones;
+    - "platform data" is no longer read as a product.
+  - **Checked:**
+    - search speed: 1,810 jobs in 31 s, 7 s with boards cached, under Cloud Run's default 300 s;
+    - batches, the Apply flow and phone layout work locally.
+  - **Not checked:**
+    - Word-to-PDF on Cloud Run (needs one live Word run);
+    - Vercel's function time limit (300 s if Fluid compute is on, 60 s if off).
 
 ## START HERE (2026-10-13, evening) — live on Vercel + Cloud Run; review, dogfood and bug fixes
 

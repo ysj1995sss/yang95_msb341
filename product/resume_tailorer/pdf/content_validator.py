@@ -47,8 +47,11 @@ def validate_pdf_content(
     text = extracted_text or ""
     from resume_tailorer.analyzers.claim_scope import introduced_unscoped_tools
     from resume_tailorer.artifacts.regeneration import final_text_for_change
+    from resume_tailorer.analyzers.skill_additions import is_computed_skills_line
     for change in accepted_changes:
         effective = final_text_for_change(change)
+        if is_computed_skills_line(change):
+            continue  # skills added by code (spec 022) meet their own rules; the model's part was checked
         if effective and _contains(text, effective):
             scoped = introduced_unscoped_tools(change.original_text, effective, profile, section=change.section)
             if scoped:

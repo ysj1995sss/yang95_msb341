@@ -209,7 +209,9 @@ def _review_view(ws: Workspace, state: dict, show_all: bool = False, stale_messa
         "has_docx": bool(state.get("docx_bytes")) and status.value != "FAIL",
         "tailored_text": state.get("tailored_text") or "",
         "alignment": {"before": report.original_alignment, "after": report.tailored_alignment},
-        "requirement_review": review_view(review, adjacent) if review is not None else None,
+        # Work authorization comes from the person's Career Profile answer, as on Jobs.
+        "requirement_review": (review_view(review, adjacent, ws.record.get("authorization"))
+                               if review is not None else None),
         "keyword_report": keyword_report_view(review, state) if review is not None else None,
         "readability": readability_view(report.validation.findings, state.get("source_kind", ""),
                                         getattr(report.validation, "checks_run", ())),
@@ -225,7 +227,7 @@ def _review_view(ws: Workspace, state: dict, show_all: bool = False, stale_messa
         "turned_down": [{"original": c.original_text, "reason": c.reason or "did not pass the checks"}
                         for c in rejected_by_checks(state["changes"])],
         # Spec 011: one gap system on every screen; the requirement review decides what's missing.
-        "true_gaps": (missing_list(review, adjacent) if review is not None else
+        "true_gaps": (missing_list(review, adjacent, ws.record.get("authorization")) if review is not None else
                       [{"label": short_requirement(g), "full": g} for g in displayable_gaps(groups.true_gaps)]),
         "blocked": [c.job_requirement or "an unsupported requirement" for c in groups.blocked],
         "show_all": show_all,

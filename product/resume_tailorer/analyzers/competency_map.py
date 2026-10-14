@@ -81,6 +81,9 @@ COMPETENCY_EVIDENCE_PATTERNS: dict[str, dict[str, list[str]]] = {
         "partial": [
             r"\baligned?\b.{0,20}\bstakeholders?\b",
             r"\bstakeholders?\b.{0,20}\bacross\b",
+            # Working with other teams: "Partnered with merchandising leads to explain sales trends".
+            r"\bpartner(ed|ing)?\s+with\b.{0,30}\b(leads?|leaders?|teams?|managers?|partners?|departments?)\b",
+            r"\bcollaborat\w*\b.{0,30}\b(teams?|leads?|leaders?|managers?|departments?)\b",
         ],
     },
     "stakeholder management": {
@@ -228,12 +231,16 @@ def _competency_keys_for(requirement_text: str) -> list[str]:
     -- that needs a real lemmatizer, not this stemmer (see
     utils/stemming.py's own docstring)."""
     req_words = _match_words(requirement_text)
-    scored: list[tuple[int, str]] = []
+    # Where each word first appears: a requirement names what it is about first ("Communication:
+    # ... presenting data insights" is about communication, not data analytics).
+    order = [stem(w) for w in re.findall(r"[a-z]{2,}", requirement_text.lower())]
+    position = {w: order.index(w) for w in req_words if w in order}
+    scored: list[tuple[int, int, str]] = []
     for key in COMPETENCY_EVIDENCE_PATTERNS:
         key_words = _match_words(key)
-        overlap = len(req_words & key_words)
-        if overlap:
-            scored.append((overlap, key))
+        shared = req_words & key_words
+        if shared:
+            scored.append((len(shared), min(position.get(w, len(order)) for w in shared), key))
     # Sort by overlap count descending (most specific match first) --
     # found live testing normalize_concept() (2026-09-27): "Strong
     # stakeholder management skills" shares the word "management" with
@@ -245,8 +252,10 @@ def _competency_keys_for(requirement_text: str) -> list[str]:
     # management), "project management" only 1 (management). Stable sort
     # keeps dict declaration order as the tie-break for equal overlap
     # counts, same behavior as before for genuinely ambiguous cases.
-    scored.sort(key=lambda pair: pair[0], reverse=True)
-    return [key for _, key in scored]
+    # Equal overlap: the competency named earliest in the requirement comes first; declaration
+    # order breaks any remaining tie (stable sort).
+    scored.sort(key=lambda item: (-item[0], item[1]))
+    return [key for _, _, key in scored]
 
 
 def normalize_concept(requirement_text: str) -> str:
@@ -279,8 +288,13 @@ def find_transferable_evidence(
     if not keys:
         return None
 
+    # The most relevant competency with any evidence wins; a strong match on a competency the
+    # requirement only mentions in passing must not outrank it (dogfood follow-up, 2026-10-13: one
+    # dashboards bullet "showed" collaboration and communication as data analytics).
     best: TransferableEvidence | None = None
     for key in keys:
+        if best is not None:
+            break
         patterns = COMPETENCY_EVIDENCE_PATTERNS[key]
         for level in ("strong", "partial"):
             if best is not None and best.level == "strong":

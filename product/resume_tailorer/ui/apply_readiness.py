@@ -143,13 +143,18 @@ def build_apply_view(
         ))
 
     can_open = bool(job) and url_ok
-    can_track = can_open and bool(handoff) and has_profile and status is None and not stale_message
+    # Unreviewed changes block "ready", as Tailor's own Continue button does: the file may still hold
+    # wording the person never saw (risk check, 2026-10-13).
+    can_track = (can_open and bool(handoff) and review_complete and has_profile and status is None
+                 and not stale_message)
     if status == ApplicationStatus.READY_TO_APPLY:
         stage, headline = "tracked", "Tracked as ready to apply. Finish on the employer's site, then mark it as applied."
     elif status is not None and status not in (ApplicationStatus.DISCOVERED, ApplicationStatus.INTERESTED, ApplicationStatus.PREPARING):
         stage, headline = "applied", "Marked as applied. Follow it in Tracker."
     elif can_track:
         stage, headline = "ready", "Ready. Open the employer's application and use your tailored resume."
+    elif handoff and not review_complete and not stale_message:
+        stage, headline = "not_ready", "Not ready yet. Finish reviewing the changes in Tailor, then rebuild."
     else:
         stage, headline = "not_ready", "Not ready yet. Resolve the items marked below."
     return ApplyView(

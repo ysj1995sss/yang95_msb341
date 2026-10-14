@@ -202,3 +202,52 @@ def test_a_certification_the_model_left_out_is_put_back_not_proposed_for_removal
     assert not [c for c in changes if c.original_text in person.certifications and not c.proposed_text]
     # Already there: nothing changes.
     assert with_certifications(kept, person) == kept
+
+
+def test_a_pdf_resume_gets_the_same_computed_skills_additions_as_a_word_resume():
+    # Spec 022 levels 2-3 reached only Word resumes; a PDF resume's skills line never gained a skill
+    # its experience shows (open item, 2026-10-13).
+    from resume_tailorer.analyzers.gap_analyzer import GapReport
+    from resume_tailorer.analyzers.job_analyzer import JobAnalyzer
+    from resume_tailorer.analyzers.requirement_review import build_review
+    from resume_tailorer.artifacts.changes import build_freeform_changes
+    from resume_tailorer.artifacts.freeform_sections import with_skill_additions
+    from resume_tailorer.artifacts.models import ChangeCategory, ValidationStatus
+    from resume_tailorer.models import CareerTruthProfile, WorkExperience
+
+    person = CareerTruthProfile(
+        contact_info={"name": "Sam Example"}, education=[], tools=[], certifications=[], accomplishments=[],
+        skills=["SQL", "Excel"],
+        work_experience=[WorkExperience(employer="Example Co", title="Analyst", dates="2021 - Present", accomplishments=[],
+                                        responsibilities=["Built weekly sales dashboards in Tableau for regional managers"])])
+    posting = "Requirements:\n- Experience with Tableau\n- Experience with PostgreSQL\n"
+    review = build_review(JobAnalyzer().analyze(posting), person, posting=posting)
+    tailored = ("Sam Example\nEXPERIENCE\nExample Co | Analyst | 2021 - Present\n"
+                "- Built weekly sales dashboards in Tableau for regional managers\nSKILLS\nSQL, Excel\n")
+    text, additions = with_skill_additions(tailored, review)
+    assert "SKILLS\nSQL, Excel, Tableau, PostgreSQL\n" in text
+    assert [(a.term, a.level) for a in additions] == [("Tableau", 2), ("PostgreSQL", 3)]
+    changes = build_freeform_changes(person, text, GapReport(items=[], summary=""), review=review,
+                                     skill_additions=additions)
+    skills = next(c for c in changes if c.section == "skills")
+    assert skills.category is ChangeCategory.SKILLS_ADDED and skills.validation_status is ValidationStatus.PASS
+    assert [term for term, _level, _reason in skills.added_skills] == ["Tableau", "PostgreSQL"]
+
+
+def test_a_computed_skills_line_passes_the_pdf_content_check():
+    # The PDF check called the adjacent skill on a computed skills line an unverified tool, which
+    # failed the whole resume; the Word path never had that problem.
+    from resume_tailorer.artifacts.models import ChangeCategory, ResumeChange, ValidationStatus
+    from resume_tailorer.models import CareerTruthProfile
+    from resume_tailorer.pdf.content_validator import validate_pdf_content
+
+    person = CareerTruthProfile(contact_info={"name": "Sam Example"}, education=[], work_experience=[],
+                                skills=["SQL", "Excel"], tools=[], certifications=[], accomplishments=[])
+    line = ResumeChange(change_id="freeform:skills:0", section="skills", source_index=None,
+                        original_text="SKILLS\nSQL, Excel\n", proposed_text="SKILLS\nSQL, Excel, PostgreSQL\n",
+                        category=ChangeCategory.SKILLS_ADDED, reason="", job_requirement="PostgreSQL",
+                        evidence_source="career_profile", evidence_text="SQL, Excel",
+                        validation_status=ValidationStatus.PASS,
+                        added_skills=(("PostgreSQL", 3, "You have SQL; the job asks for PostgreSQL."),))
+    findings = validate_pdf_content("Sam Example\nSKILLS\nSQL, Excel, PostgreSQL\n", person, [line])
+    assert "UNSUPPORTED_TOOL_ATTRIBUTION" not in {f.code for f in findings}

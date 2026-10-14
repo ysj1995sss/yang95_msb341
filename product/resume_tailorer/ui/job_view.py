@@ -225,6 +225,7 @@ def build_detail(job: JobPosting, fit: Optional[FitResult], action: Optional[str
         parts = (
             ("Required qualifications", pct(fit.core_capabilities)),
             ("Preferred qualifications", pct(fit.preferred_qualifications)),
+            *_counted_part(fit),
         ) if fit.scoring_version.startswith("match") else (
             ("Eligibility", pct(fit.eligibility)),
             ("Core skills", pct(fit.core_capabilities)),
@@ -258,6 +259,19 @@ def build_detail(job: JobPosting, fit: Optional[FitResult], action: Optional[str
     )
 
 
+# Below this many counted requirements, one requirement moves the Match a lot.
+FEW_REQUIREMENTS = 4
+
+
+def _counted_part(fit: FitResult) -> tuple:
+    if fit.requirements_counted is None or not fit.requirements_total:
+        return ()
+    text = f"{fit.requirements_counted} of {fit.requirements_total}"
+    if fit.requirements_counted < FEW_REQUIREMENTS:
+        text += " (few, so this number is rough)"
+    return (("Requirements counted", text),)
+
+
 def review_lists(review, authorization: Optional[Mapping[str, Any]] = None) -> tuple:
     """(strong, partial, gaps, hard, unknowns) for the Jobs panel, from the requirement review.
     Work authorization comes from the person's answer in Career Profile, never from the resume, and
@@ -283,13 +297,14 @@ def review_lists(review, authorization: Optional[Mapping[str, Any]] = None) -> t
             if r.status == NONE and r.hard_gate]
     words = {MENTION: "Only listed in your skills", UNCONFIRMED: "Not confirmed yet", CHECK: "Check yourself"}
     unknowns = [f"{words[r.status]}: {short_requirement(r.text)}" for r in rows if r.status in words]
+    from resume_tailorer.ui.requirement_review_view import work_authorization_state
+
     for r in work_rows:
-        authorized = authorization.get("authorized_to_work")
-        needs_sponsor = authorization.get("sponsorship_required") is True and "sponsor" in r.text.lower()
-        if authorized is True and not needs_sponsor:
-            strong.append(EvidenceLine(short_requirement(r.text), "You said you're authorized to work (Career Profile)"))
-        elif authorized is False or needs_sponsor:
+        _label, tone, _reason, gate = work_authorization_state(r, authorization)
+        if gate:
             hard.append(f"Check your work authorization: {short_requirement(r.text)}")
+        elif tone == "verified":
+            strong.append(EvidenceLine(short_requirement(r.text), "You said you're authorized to work (Career Profile)"))
         else:
             unknowns.append(f"Work authorization not answered in your Career Profile: {short_requirement(r.text)}")
     return tuple(strong), tuple(partial), gaps, hard, tuple(unknowns)
