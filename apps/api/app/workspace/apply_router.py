@@ -8,9 +8,9 @@ import os
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Response
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
-from app.workspace.context import Workspace, jsonable, route_for, workspace
+from app.workspace.context import Workspace, attachment, jsonable, route_for, workspace
 
 router = APIRouter(prefix="/v2", tags=["workspace"])
 
@@ -123,24 +123,50 @@ def apply_page(ws: Workspace = Depends(workspace)):
         "application_id": application.application_id if application else None,
         "kit": jsonable(kit),
         "kit_summary": kit_summary(kit),
-        "helper_code": _helper_code(kit, handoff),
+        "helper_code": _helper_code(kit, handoff, _contact_name(record)),
     }
 
 
-def _helper_code(kit, handoff: Optional[dict]) -> str:
+def _contact_name(record: dict) -> str:
+    return str(((record.get("profile") or {}).get("contact_info") or {}).get("name") or "")
+
+
+def _helper_code(kit, handoff: Optional[dict], name: str = "") -> str:
     """The browser helper's code, with the tailored PDF inside so it can attach it (decision 030)."""
     import base64
     import json
 
-    from resume_tailorer.ui.application_kit import helper_payload
+    from resume_tailorer.ui.application_kit import helper_payload, resume_filename
 
     code = json.loads(helper_payload(kit))
     path = (handoff or {}).get("pdf_path") or ""
     if path and os.path.exists(path):
         with open(path, "rb") as f:
-            code["resume"] = {"filename": f"tailored_resume_v{handoff.get('version', 1)}.pdf",
-                              "data": base64.b64encode(f.read()).decode("ascii")}
+            code["resume"] = {"filename": resume_filename(name), "data": base64.b64encode(f.read()).decode("ascii")}
     return json.dumps(code, ensure_ascii=False)
+
+
+class PostingLink(BaseModel):
+    url: str = Field(max_length=2000)
+
+
+@router.post("/apply/link")
+def add_posting_link(body: PostingLink, ws: Workspace = Depends(workspace)):
+    """The posting's link for a job saved without one (a pasted job). Without it the job could never be
+    opened or tracked here, and pasting it again made a new job, losing the tailored resume (round 6
+    bug hunt)."""
+    from resume_tailorer.ui.apply_readiness import valid_employer_url
+
+    job_id = _pending(ws).get("job_id", "")
+    stored = ws.service.db.get_job_posting(job_id) if job_id else None
+    if stored is None:
+        raise HTTPException(404, "Choose a job first.")
+    url = body.url.strip()
+    if not valid_employer_url(url):
+        raise HTTPException(400, "Paste the posting's full web address, starting with https://")
+    stored.url = url
+    ws.service.db.save_job_posting(stored)
+    return apply_page(ws)
 
 
 class Select(BaseModel):
@@ -228,5 +254,6 @@ def tailored_resume(ws: Workspace = Depends(workspace)):
         raise HTTPException(404, "There's no tailored resume file for this job.")
     with open(handoff["pdf_path"], "rb") as f:
         data = f.read()
-    return Response(data, media_type="application/pdf",
-                    headers={"Content-Disposition": f'attachment; filename="tailored_resume_v{handoff.get("version", 1)}.pdf"'})
+    from resume_tailorer.ui.application_kit import resume_filename
+
+    return Response(data, media_type="application/pdf", headers=attachment(resume_filename(_contact_name(ws.record))))

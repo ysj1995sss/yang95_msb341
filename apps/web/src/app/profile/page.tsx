@@ -151,7 +151,10 @@ export default function ProfilePage() {
             <Card>
               <h2 className="text-[18px] font-semibold">Choose a section</h2>
               <p className="mt-2 text-muted">Pick Edit, Review or Add. One section opens here at a time.</p>
-              <p className="mt-2 text-muted">Everything under &ldquo;Needs your attention&rdquo; is worth a look before you tailor a resume.</p>
+              {/* Only when that list is on the page (round 6 bug hunt). */}
+              {data.attention.length > 0 && (
+                <p className="mt-2 text-muted">Everything under &ldquo;Needs your attention&rdquo; is worth a look before you tailor a resume.</p>
+              )}
             </Card>
           )}
         </div>

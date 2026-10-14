@@ -23,7 +23,7 @@ function ToggleList({ legend, options, value, onChange }: {
           const on = value.includes(o);
           return (
             <button key={o} type="button" aria-pressed={on}
-              onClick={() => onChange(on ? value.filter((v) => v !== o) : [...value, o])}
+              onClick={() => onChange(on ? value.filter((v) => v !== o) : options.filter((x) => x === o || value.includes(x)))}
               className={cx("min-h-11 rounded-full border px-4 text-[15px] font-semibold capitalize transition-colors duration-150 cursor-pointer",
                 on ? "border-primary bg-primary-soft text-primary" : "border-line-strong bg-paper text-ink hover:bg-canvas")}>
               {o}

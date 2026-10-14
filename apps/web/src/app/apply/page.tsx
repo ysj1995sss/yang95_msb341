@@ -2,7 +2,7 @@
 
 import { ArrowRight, Check, CircleAlert, Copy, Download, ExternalLink, Minus, X } from "lucide-react";
 import { useState } from "react";
-import { Alert, Button, Card, Chip, ErrorBox, LinkButton, PageHeader, Spinner, TextArea, cx, useToast } from "@/components/ui";
+import { Alert, Button, Card, Chip, ErrorBox, LinkButton, PageHeader, Spinner, TextArea, TextField, cx, useToast } from "@/components/ui";
 import { api, useResource } from "@/lib/api";
 import { BatchPrepare } from "@/components/batch";
 import type { ApplyPage, CheckItem, KitField } from "@/lib/types";
@@ -110,6 +110,29 @@ function Questions() {
   );
 }
 
+/** A pasted job saved without its link couldn't be opened or tracked, and pasting it again made a new job
+ *  (round 6 bug hunt). */
+function AddLink({ onAdded }: { onAdded: (page: ApplyPage) => void }) {
+  const toast = useToast();
+  const [url, setUrl] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  return (
+    <form className="mt-2 flex flex-col gap-2 rounded-[var(--radius-card)] border border-line p-3" onSubmit={async (e) => {
+      e.preventDefault();
+      setBusy(true);
+      setError(null);
+      try { onAdded(await api<ApplyPage>("/apply/link", { method: "POST", json: { url } })); toast("Link added."); }
+      catch (err) { setError((err as Error).message); } finally { setBusy(false); }
+    }}>
+      <TextField label="The posting's link" type="url" value={url} placeholder="https://"
+        help="Where you found the job, so you can open the employer's application and track it." onChange={(e) => setUrl(e.target.value)} />
+      {error && <Alert tone="blocked" role="alert">{error}</Alert>}
+      <Button type="submit" className="self-start" busy={busy} disabled={!url.trim()}>Add link</Button>
+    </form>
+  );
+}
+
 export default function ApplyPageView() {
   const toast = useToast();
   const { data, error, loading, reload, set } = useResource<ApplyPage>("/apply");
@@ -208,6 +231,9 @@ export default function ApplyPageView() {
             <h2 className="mt-1 text-[24px] font-semibold">{data.job.title}</h2>
             <div className="mt-3"><Alert tone={tone}>{v.headline}</Alert></div>
             <div className="mt-2"><Checklist items={v.checklist} /></div>
+            {v.checklist.some((i) => i.label === "Employer application link" && i.state === "blocked") && (
+              <AddLink onAdded={set} />
+            )}
             <div className="mt-4 flex flex-wrap gap-2">
               {v.can_open
                 ? <LinkButton href={data.job.url} external variant="primary">Open employer application <ExternalLink aria-hidden className="size-4" /></LinkButton>

@@ -226,7 +226,8 @@ def section_rows(record: Mapping[str, Any], answers: int = 0) -> tuple[SectionRo
     contact = profile.get("contact_info") or {}
     return (
         row("contact", "Contact", contact.get("email") or "No email yet", by_key["contact"].ready),
-        row("summary", "Professional summary", "Added" if (profile.get("summary") or "").strip() else "Not added",
+        # The summary's opening words, not "Added" beside an "Added" badge (round 6 bug hunt).
+        row("summary", "Professional summary", _excerpt(profile.get("summary") or "") or "Not added",
             optional_done=bool((profile.get("summary") or "").strip())),
         row("work", "Work history", f"{len(jobs)} {'role' if len(jobs) == 1 else 'roles'}", by_key["work"].ready,
             action_done="Review"),
@@ -234,8 +235,10 @@ def section_rows(record: Mapping[str, Any], answers: int = 0) -> tuple[SectionRo
             f"{len(edu)} {'school' if len(edu) == 1 else 'schools'}" if edu else
             ("No degree to list" if record.get("no_education") else "None yet"), by_key["education"].ready,
             action_done="Review"),
-        row("skills", "Skills and tools", f"{len(skills)} skills · {len(tools)} tools", by_key["skills"].ready),
-        row("certifications", "Certifications", f"{len(certs)}" if certs else "None", optional_done=bool(certs)),
+        row("skills", "Skills and tools", f"{_count(len(skills), 'skill')} · {_count(len(tools), 'tool')}",
+            by_key["skills"].ready),
+        row("certifications", "Certifications", _count(len(certs), "certification") if certs else "None",
+            optional_done=bool(certs)),
         row("links", "Links", f"{len(links)} added" if links else "Not added", optional_done=bool(links)),
         row("goals", "Job goals", prefs.get("job_title") or "Not set", optional_done=bool(prefs.get("job_title"))),
         row("authorization", "Work authorization",
@@ -243,6 +246,15 @@ def section_rows(record: Mapping[str, Any], answers: int = 0) -> tuple[SectionRo
         SectionRow("answers", "Saved answers", f"{answers} {'answer' if answers == 1 else 'answers'}",
                    "Added" if answers else "Optional", "verified" if answers else "", "Manage"),
     )
+
+
+def _count(n: int, noun: str) -> str:
+    return f"{n} {noun}{'' if n == 1 else 's'}"
+
+
+def _excerpt(text: str, limit: int = 48) -> str:
+    words = " ".join(text.split())
+    return words if len(words) <= limit else words[:limit - 1].rsplit(" ", 1)[0].rstrip(",.;:") + "…"
 
 
 def first_section_needing_review(rows: tuple[SectionRow, ...]) -> Optional[str]:

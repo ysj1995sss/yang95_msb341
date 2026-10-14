@@ -90,9 +90,19 @@ def _help_texts() -> dict:
 
 
 def _goals(ws: Workspace) -> dict:
-    """The search shown: the last search, else the saved goals."""
+    """The search shown: the last search, else the saved goals. Choices read in list order ("mid,
+    senior"), whatever order they were picked in (round 6 bug hunt)."""
+    from resume_tailorer.job_search.job_attributes import (
+        EMPLOYMENT_TYPE_OPTIONS, EXPERIENCE_LEVEL_OPTIONS, INDUSTRY_OPTIONS, in_option_order,
+    )
+
     last = (ws.record.get(LAST_SEARCH_FIELD) or {}).get("form")
-    return dict(last or ws.record.get("preferences") or {})
+    goals = dict(last or ws.record.get("preferences") or {})
+    for key, options in (("experience_level", EXPERIENCE_LEVEL_OPTIONS), ("industries", INDUSTRY_OPTIONS),
+                         ("employment_type", EMPLOYMENT_TYPE_OPTIONS)):
+        if isinstance(goals.get(key), list):
+            goals[key] = in_option_order(goals[key], options)
+    return goals
 
 
 class SearchForm(BaseModel):
@@ -171,6 +181,7 @@ def search_setup(ws: Workspace = Depends(workspace)):
 
 @router.post("/jobs/search")
 def search(body: SearchForm, ws: Workspace = Depends(workspace)):
+    from resume_tailorer.job_search.job_attributes import title_keywords
     from resume_tailorer.job_search.models import JobSource
     from resume_tailorer.job_search.ui_helpers import build_search_goals_from_form
     from resume_tailorer.ui.onboarding import form_to_goals, save_goals
@@ -185,7 +196,8 @@ def search(body: SearchForm, ws: Workspace = Depends(workspace)):
     live = {s.value for s, _, _ in _live_sources()}
     sources = [JobSource(v) for v in sources_raw if v in live]
     boards = _custom_boards(ws) if include_custom else []
-    if not form["job_title"].strip():
+    # A role needs a real word: "!!!" or "the and of" matched every job (round 6 bug hunt).
+    if not title_keywords(form["job_title"]):
         raise HTTPException(400, "Add a target role to search, for example “Product marketing manager”.")
     if not sources and not boards:
         raise HTTPException(400, "Choose at least one source.")

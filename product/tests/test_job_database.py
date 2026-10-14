@@ -440,3 +440,13 @@ def test_location_suggestions_come_from_the_places_postings_name(temp_db):
     assert "CA" not in suggestions and "NY" not in suggestions
     assert "Hybrid" not in temp_db.common_locations()  # a work mode, not a place
     assert len(suggestions) == 5
+
+
+def test_location_suggestions_merge_spellings_with_and_without_accents(temp_db):
+    temp_db.create_tables()
+    for n, place in enumerate(("Zürich, Switzerland", "Zurich, Switzerland", "Zürich, CH")):
+        temp_db.save_job_posting(JobPosting(source=JobSource.GREENHOUSE, source_id=str(n), company="Acme",
+                                            title="Analyst", location=place, description="x",
+                                            url=f"https://boards.greenhouse.io/acme/jobs/{n}"))
+    suggestions = temp_db.common_locations()
+    assert "Zürich" in suggestions and "Zurich" not in suggestions  # one entry, the most common spelling

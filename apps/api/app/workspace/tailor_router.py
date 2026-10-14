@@ -573,11 +573,13 @@ def download(kind: Literal["pdf", "docx"], ws: Workspace = Depends(workspace)):
     data = state.get("pdf_bytes") if kind == "pdf" else state.get("docx_bytes")
     if not data:
         raise HTTPException(404, "That format isn't available for this resume.")
-    name = (state.get("candidate_name") or "resume").replace(" ", "_")
+    from app.workspace.context import attachment
+    from resume_tailorer.ui.application_kit import resume_filename
+
     media = "application/pdf" if kind == "pdf" else \
         "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-    return Response(data, media_type=media,
-                    headers={"Content-Disposition": f'attachment; filename="{name}_tailored_resume_v{state.get("version", 1)}.{kind}"'})
+    name = resume_filename(state.get("candidate_name") or "", kind, state.get("version", 1))
+    return Response(data, media_type=media, headers=attachment(name))
 
 
 class PastedJob(BaseModel):

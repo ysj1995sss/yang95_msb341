@@ -85,6 +85,17 @@ and that work authorization was shown as missing when the person simply hadn't a
   - **New evidence:** "partnered with … leads" and "collaborated with … teams" count as partial
     cross-functional evidence.
 
+## Bug hunt round 6 (2026-10-14)
+
+- **A requirement shown only by one broad word is marked "partly supported" in the review itself.**
+  - **Before:** the Jobs page and Match treated it that way, but Tailor said "Direct evidence".
+  - **Credit:** still half.
+- **Alternatives:** "(Looker, Hex, Tableau, or similar)" is any one of them. "Check yourself" made
+  Tableau count half; now it counts in full. Only the "and"/"or" in the listed names decides
+  this; an "and" in the description before them doesn't.
+- **Products in brackets** ("tools (Claude Code, Cursor, GitHub Copilot)") are named products: a row
+  that names them and shows none is "check yourself", counted by those names (decision 048, item 7).
+
 ## How this fits decision 032
 
 Decision 032 rejected an ATS-style score, because one number invites chasing and no universal

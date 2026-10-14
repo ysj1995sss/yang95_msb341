@@ -19,7 +19,9 @@ from resume_tailorer.analyzers.job_analyzer import JobAnalysis
 from resume_tailorer.analyzers.gap_analyzer import EvidenceLevel, GapCategory, GapReport
 from resume_tailorer.analyzers.requirement_review import RequirementReview, unshown_targets
 from resume_tailorer.parsers.docx_structure import Bullet, extract_docx_structure, DocxStructure
-from resume_tailorer.tailorer.docx_bullet_tailorer import DocxBulletTailorer, BulletEdit, BulletTailoringResult
+from resume_tailorer.tailorer.docx_bullet_tailorer import (
+    MALFORMED_ANSWER, DocxBulletTailorer, BulletEdit, BulletTailoringResult,
+)
 from resume_tailorer.tailorer.resume_tailorer import _job_header_lines
 from resume_tailorer.docx_export.splicer import splice_bullets_into_docx, save_docx
 from resume_tailorer.docx_export.converter import convert_docx_to_pdf, DocxConversionUnavailable
@@ -180,6 +182,9 @@ def run_docx_tailoring_pipeline(
     # Passed only when there is one, so any bullet tailorer without the argument keeps working.
     review_kwargs = {"review": review} if review is not None else {}
     tailoring_result = tailorer.tailor_bullets(bullets, profile, job_analysis, gap_report, **review_kwargs)
+    if MALFORMED_ANSWER in tailoring_result.warnings:
+        # Kept quietly, the page said the model "didn't propose any changes" (round 6 bug hunt).
+        raise RuntimeError("The writing model's answer couldn't be read.")
 
     # Length-cap, semantic-drift, and fabrication-risk checks all now run
     # as HARD rejects inside DocxBulletTailorer._parse_and_validate itself

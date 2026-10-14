@@ -55,6 +55,23 @@ exactly that.
    - the spec 022 skills (levels 2-3) are added to the skills line by the same code;
    - only the model's own wording on that line is checked;
    - the PDF content check accepts a computed skills line.
+7. **Names are never borrowed** (bug hunt round 6, 2026-10-14). Two real holes let an invented
+   tool claim pass every check:
+   - **The problem:**
+     - **Broad word as evidence:** "generative AI and LLM-based tools (Claude Code, Cursor, GitHub
+       Copilot) … automated reporting" was direct evidence through the one word "reporting". Its
+       whole wording was then the reporting bullet's own, so "…in Python with GitHub Copilot"
+       passed.
+     - **Product names lent:** "dashboards … in Hex and Mode" lent "Hex" to a dashboards
+       bullet.
+   - **Now:**
+     - a capitalized word or acronym in a requirement is lent only if the bullet already has it;
+     - a requirement shown only by one broad word is partly supported and lends nothing (it isn't
+       a target);
+     - products listed in brackets after "tools"/"platforms" count as named products to check,
+       never as evidence;
+     - the new-word check also covers short names ("Hex", "AI"); it used to skip every word of 3
+       letters or fewer.
 
 ## Unchanged
 
@@ -83,3 +100,6 @@ exactly that.
 - "delivery" and metrics still must survive;
 - the 25% cap;
 - the PDF instructions.
+
+`product/tests/test_scoped_requirement_evidence.py` (round 6): the GitHub Copilot and "Hex" claims
+are refused; a broad word lends nothing; alternatives with "or similar".

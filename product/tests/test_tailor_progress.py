@@ -152,3 +152,13 @@ def test_check_reasons_read_as_plain_words():
     both = readable_reason(raw + " adds “dbt”, which you haven't shown evidence for")
     assert both == "Adds words your facts don't show: communicate, recurring. Adds “dbt”, which you haven't shown evidence for."
     assert readable_reason("Names the tool the posting asks for") == "Names the tool the posting asks for"
+
+
+def test_word_resume_turn_down_labels_read_as_plain_words():
+    """Round 6 bug hunt: "Turned down by our checks" on a Word resume read "— semantic drift"."""
+    from resume_tailorer.ui.tailor_progress import readable_reason
+
+    assert readable_reason("semantic drift") == "It dropped part of what your original says."
+    assert readable_reason("length cap exceeded") == "It made the line too long."
+    assert readable_reason("unverified content") == "It added words your facts don't show."
+    assert readable_reason("unsupported requirement term") == "It named a skill you haven't shown evidence for."

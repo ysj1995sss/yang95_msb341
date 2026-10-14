@@ -73,6 +73,24 @@ Local commits on `main`, **not pushed**; the backend needs a Cloud Run rebuild a
     - the Apply kit lists missing answers by short name;
     - a real "Page not found" page;
     - keyboard focus stays clear of the pinned bars.
+- **Bug hunt round 6 (local, 2026-10-14):** a first-time user's whole journey on an empty workspace
+  (import, confirm, goals, search, real Codex tailoring, batch, pasted job, Apply, Tracker, delete
+  account), odd inputs, and a review of the unpushed commits. 19 bugs, all fixed (report outside
+  the repo, `dogfood-output-6`).
+  - **Truthfulness (2 holes):** a broad word ("reporting") made "generative AI tools (Claude Code,
+    Cursor, GitHub Copilot)" direct evidence, and a requirement's product names were lent to its
+    evidence bullet. Invented tool claims ("…with GitHub Copilot", "…and Hex") passed every check.
+    Fixed in `requirement_review` and the new-word check (decision 048 item 7, 047 round 6).
+  - **Paste a job:** possible from Tailor at any time (it used to vanish once a job was chosen); a
+    pasted job's link can be added on Apply (`POST /v2/apply/link`).
+  - **Tailoring runs:** a turned-down rewrite no longer vanishes when the model's repair says
+    "keep"; an unreadable model answer fails the run ("Try again") instead of "no changes".
+  - **Search:** a role with no real words ("!!!") is refused (it matched all ~10,900 jobs); accents
+    don't matter in Location ("Zürich"/"Zurich"); choices read in list order.
+  - **Files:** the resume to attach is named "First_Last_Resume.pdf" (was "tailored_resume_v2.pdf");
+    names beyond Latin-1 no longer break the download.
+  - **Wording:** Career Profile counts ("1 tool"), the competency named as the posting says it, the
+    Word path's turn-down reasons, Home's weekly-goal hint (it's set in Tracker).
 
 ## START HERE (2026-10-13, evening) — live on Vercel + Cloud Run; review, dogfood and bug fixes
 

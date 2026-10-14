@@ -173,6 +173,14 @@ def title_matches(goal_title: str, job_title: str) -> bool:
     )
 
 
+def in_option_order(values: Iterable[str], options: Iterable[str]) -> List[str]:
+    """`values` in the order the choices are listed ("mid, senior"), whatever order they were picked
+    in; values that aren't listed keep their place at the end (round 6 bug hunt)."""
+    values = [v for v in values if v]
+    order = {o.lower(): n for n, o in enumerate(options)}
+    return sorted(values, key=lambda v: order.get(str(v).lower(), len(order)))
+
+
 def selected_values(raw) -> Set[str]:
     """Normalize a multi-select value (list or comma-separated str); 'any'/blank means no filter."""
     if raw is None:

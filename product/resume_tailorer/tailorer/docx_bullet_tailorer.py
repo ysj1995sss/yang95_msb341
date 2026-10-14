@@ -33,6 +33,8 @@ from resume_tailorer.tailorer.resume_tailorer import (
 )
 
 _CODE_FENCE_RE = re.compile(r"^```(?:json)?\s*|\s*```$", re.MULTILINE)
+# The warning for an answer that isn't the JSON asked for; the pipeline fails the run on it.
+MALFORMED_ANSWER = "LLM returned malformed JSON; no bullets were changed."
 _WHITESPACE_RE = re.compile(r"[\r\n]+")
 
 
@@ -231,9 +233,19 @@ Return the JSON array now, in the same format as before:"""
     ) -> BulletTailoringResult:
         """Repaired bullets replace their original outcome (whether the
         repair succeeded or failed again with a new reason); every other
-        bullet's outcome is untouched."""
+        bullet's outcome is untouched. A repair that only keeps the bullet
+        leaves the first turn-down on record: replaced by a plain keep, it
+        vanished, and the page said the model "didn't propose any changes"
+        (round 6 bug hunt)."""
         repair_by_index = {e.paragraph_index: e for e in repair.edits}
-        merged_edits = [repair_by_index.get(e.paragraph_index, e) for e in original.edits]
+
+        def outcome(edit: BulletEdit) -> BulletEdit:
+            fixed = repair_by_index.get(edit.paragraph_index)
+            if fixed is None or (not fixed.changed and not fixed.rejected_reason):
+                return edit
+            return fixed
+
+        merged_edits = [outcome(e) for e in original.edits]
         return BulletTailoringResult(
             edits=merged_edits, warnings=original.warnings + repair.warnings
         )
@@ -440,7 +452,7 @@ Return the JSON array now:"""
                 edits=[
                     BulletEdit(b.paragraph_index, b.text, b.text, changed=False) for b in bullets
                 ],
-                warnings=["LLM returned malformed JSON; no bullets were changed."],
+                warnings=[MALFORMED_ANSWER],
             )
 
         by_index = {b.paragraph_index: b for b in bullets}

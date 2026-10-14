@@ -9,6 +9,7 @@ anything else still matches part of the location, as before. A posting that name
 from __future__ import annotations
 
 import re
+import unicodedata
 from typing import Optional
 
 US = "United States"
@@ -42,7 +43,7 @@ _CITIES = {
          "palo alto", "menlo park", "sunnyvale", "san jose", "san diego", "redwood city", "foster city", "irvine",
          "miami", "dallas", "houston", "philadelphia", "pittsburgh", "salt lake city", "washington dc",
          "washington d.c.", "raleigh", "nashville", "phoenix", "minneapolis", "detroit", "portland"},
-    CANADA: {"toronto", "vancouver", "montreal", "montréal", "ottawa", "calgary", "waterloo", "edmonton"},
+    CANADA: {"toronto", "vancouver", "montreal", "ottawa", "calgary", "waterloo", "edmonton"},
     UK: {"london", "manchester", "edinburgh", "glasgow", "bristol", "belfast"},
 }
 # What a person may type for a country, and what postings say.
@@ -63,6 +64,12 @@ _WORK_MODES = {"remote", "hybrid", "onsite", "on-site", "in-office", "in office"
 
 def _collapse(text: Optional[str]) -> str:
     return re.sub(r"\s+", " ", str(text or "")).strip()
+
+
+def fold(text: str) -> str:
+    """Lower case, without accents: postings write both "Zürich" and "Zurich", "São Paulo" and "Sao
+    Paulo", and typing one missed the other (round 6 bug hunt)."""
+    return "".join(c for c in unicodedata.normalize("NFKD", text) if not unicodedata.combining(c)).casefold()
 
 
 def _pieces(location: str) -> list:
@@ -86,10 +93,10 @@ def _country_of(piece: str) -> Optional[str]:
     last = parts[-1]
     if last.replace(".", "") in _SUBDIVISIONS:  # "Foster City, CA", "Washington, D.C."; never "Barcelona, CT, Spain"
         return _SUBDIVISIONS[last.replace(".", "")][0]
-    if last.casefold() in _SUBDIVISION_NAMES:
-        return _SUBDIVISION_NAMES[last.casefold()][0]
+    if fold(last) in _SUBDIVISION_NAMES:
+        return _SUBDIVISION_NAMES[fold(last)][0]
     if len(parts) == 1:  # "Seattle", "San Francisco Bay Area", "San Francisco HQ"
-        name = last.casefold()
+        name = fold(last)
         return next((country for country, cities in _CITIES.items()
                      if any(name == city or name.startswith(city + " ") for city in cities)), None)
     return None
@@ -97,7 +104,7 @@ def _country_of(piece: str) -> Optional[str]:
 
 def _in_subdivision(piece: str, abbr: str) -> bool:
     country, name = _SUBDIVISIONS[abbr]
-    if re.search(rf"\b{re.escape(name)}\b", piece, re.IGNORECASE):
+    if re.search(rf"\b{re.escape(fold(name))}\b", fold(piece)):
         return True
     parts = [part.replace(".", "") for part in _parts(piece)]
     if parts and parts[-1] == abbr:
@@ -118,7 +125,7 @@ def place_matches(location: Optional[str], wanted: Optional[str]) -> bool:
     if not wanted:
         return True
     location = _collapse(location)
-    key = wanted.casefold()
+    key = fold(wanted)
     country = next((c for c, names in _ALIASES.items() if key in names), None)
     if country:
         return any(_country_of(piece) == country for piece in _pieces(location))
@@ -126,7 +133,7 @@ def place_matches(location: Optional[str], wanted: Optional[str]) -> bool:
     if abbr and any(_in_subdivision(piece, abbr) for piece in _pieces(location)):
         return True
     # Part of the location, as before; a state's two letters only as the state ("CA" isn't "Chicago").
-    if (len(key) > 2 or not abbr) and key in location.casefold():
+    if (len(key) > 2 or not abbr) and key in fold(location):
         return True
     if "," in wanted:  # "San Francisco, CA": the city and the state, in the same place
         head, rest = (part.strip() for part in wanted.split(",", 1))

@@ -67,6 +67,8 @@ test("resume → profile → goals → jobs → tailor → apply → tracker", a
   await expect(firstRow.locator("blockquote").first()).toBeVisible();
   await expect(page.getByText("Readability check", { exact: true })).toBeVisible();
   await expect(page.getByText(/Resume alignment/)).toHaveCount(0);
+  // A role found elsewhere can still be pasted while another job is open (round 6 bug hunt).
+  await expect(page.getByText("Tailor for a role you found somewhere else")).toBeVisible();
   await expectAccessible(page, "tailor, review");
   const status = page.getByRole("status").filter({ hasText: /meaningful changes reviewed|No changes need/ });
   for (let i = 0; i < 12; i++) {

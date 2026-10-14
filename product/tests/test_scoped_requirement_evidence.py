@@ -135,3 +135,87 @@ def test_common_nouns_after_platform_or_tool_are_not_product_names(requirement):
     from resume_tailorer.analyzers.requirement_review import explicit_platform_terms
     found = {t.lower() for t in explicit_platform_terms(requirement)}
     assert not found & {"data", "administration", "integrations", "engineering"}
+
+
+AI_TOOLS = ("Experience with generative AI and LLM-based tools (Claude Code, Cursor, GitHub Copilot) to perform "
+            "and accelerate analyses, automated reporting, and build self-service data tools.")
+KPI = "Automated monthly KPI reporting in Python, saving 6 hours a week"
+
+
+def test_products_named_in_brackets_are_named_platforms_not_generic_evidence():
+    """Round 6 bug hunt (a real Brex posting): this row was direct evidence through the word "reporting",
+    so a rewrite claiming GitHub Copilot on a reporting bullet passed every check."""
+    from resume_tailorer.analyzers.requirement_review import explicit_platform_terms, introduced_unsupported
+
+    assert {"Claude Code", "Cursor", "GitHub Copilot"} <= set(explicit_platform_terms(AI_TOOLS))
+    review = review_for(AI_TOOLS, candidate(KPI), {"work_experience[0]": "confirmed"})
+    row = review.rows[0]
+    assert not row.supported
+    assert introduced_unsupported(KPI, KPI.replace("in Python", "in Python with GitHub Copilot"), review)
+
+
+def test_a_broad_word_alone_does_not_lend_the_rest_of_the_requirement():
+    """The same hole without brackets: one broad word ("reporting") made the whole requirement the
+    bullet's own wording, so "using LLM-based tools" counted as grounded."""
+    from resume_tailorer.analyzers.requirement_review import requirement_wording
+    from resume_tailorer.diff_generator import DiffGenerator
+
+    requirement = "Experience using generative AI and LLM-based tools to accelerate analyses and automated reporting."
+    profile = candidate(KPI)
+    review = review_for(requirement, profile, {"work_experience[0]": "confirmed"})
+    row = review.rows[0]
+    assert row.status == "partial" and "Shown only as" in row.reason
+    assert row not in review.targets
+    grounded = requirement_wording(KPI, review)
+    assert "LLM" not in grounded
+    fake = KPI.replace("in Python", "in Python using LLM-based tools")
+    assert DiffGenerator().check_bullet_pair_fabrication_risk(KPI, fake, profile, grounded=grounded)
+
+
+def test_one_of_several_named_tools_shown_is_direct_evidence():
+    """Round 6: "(Looker, Hex, Tableau, or similar)" was "check yourself" though Tableau is shown: the
+    "and" in "business intelligence and data visualization" read as "all of these tools"."""
+    profile = candidate("Led a team of 3 analysts building weekly sales dashboards in Tableau")
+    review = review_for("Experience with business intelligence and data visualization tools (Looker, Hex, Tableau, "
+                        "or similar).", profile, {"work_experience[0]": "confirmed"})
+    row = review.rows[0]
+    assert row.status == "direct" and row.term_relation == "any"
+    assert "Tableau" in row.shown_terms
+    assert {"Looker", "Hex"} <= set(blocked_terms(review)[0])  # alternatives you don't show stay unclaimed
+
+
+def test_transferable_evidence_is_named_in_the_requirement_s_own_words():
+    """Round 6 bug hunt: "Strong communication skills…" was shown as "Partly shows “executive
+    communication”": a qualifier the posting never used."""
+    profile = candidate("Partnered with merchandising leads to explain sales trends")
+    row = review_for("Strong communication skills and the ability to work effectively with stakeholders.", profile,
+                     {"work_experience[0]": "confirmed"}).rows[0]
+    assert row.status == "transferable"
+    assert "“communication”" in row.reason and "executive" not in row.reason
+
+
+def test_a_product_the_posting_names_is_never_borrowed_onto_the_evidence_bullet():
+    """Round 6 bug hunt: "dashboards for regional managers in Hex and Mode" lent its whole wording,
+    product names included, to a dashboards bullet, so "…in Tableau and Hex" passed every check."""
+    from resume_tailorer.analyzers.requirement_review import requirement_wording
+    from resume_tailorer.diff_generator import DiffGenerator
+
+    bullet = "Built weekly sales dashboards for regional managers in Tableau"
+    profile = candidate(bullet)
+    review = review_for("Experience building weekly dashboards for regional managers in Hex and Mode", profile,
+                        {"work_experience[0]": "confirmed"})
+    grounded = requirement_wording(bullet, review)
+    assert "regional" in grounded and "Hex" not in grounded and "Mode" not in grounded
+    for fake in (bullet.replace("in Tableau", "in Tableau and Hex"), bullet.replace("in Tableau", "in Tableau and Mode")):
+        assert DiffGenerator().check_bullet_pair_fabrication_risk(bullet, fake, profile, grounded=grounded), fake
+
+
+def test_a_short_new_name_is_checked_but_an_opening_verb_is_not():
+    from resume_tailorer.diff_generator import DiffGenerator
+
+    bullet = "Built weekly sales dashboards in Tableau"
+    profile = candidate(bullet)
+    check = DiffGenerator().check_bullet_pair_fabrication_risk
+    assert check(bullet, "Built weekly sales dashboards in Tableau and Hex", profile)
+    assert check(bullet, "Built weekly AI sales dashboards in Tableau", profile)
+    assert not check(bullet, "Led weekly sales dashboards in Tableau", profile)

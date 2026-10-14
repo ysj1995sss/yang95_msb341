@@ -59,3 +59,12 @@ def test_suggestions_use_one_name_per_country():
     assert canonical_place("U.S.") == "United States"
     assert canonical_place("UK") == "United Kingdom"
     assert canonical_place("San Francisco") == "San Francisco"
+
+
+def test_accents_dont_matter():
+    """Round 6 bug hunt: postings write both "Zürich" and "Zurich", "São Paulo" and "Sao Paulo"; typing one
+    missed the other."""
+    assert place_matches("Zurich, Switzerland", "Zürich")
+    assert place_matches("Zürich, CH", "Zurich")
+    assert place_matches("São Paulo, Brazil", "Sao Paulo")
+    assert place_matches("Montréal, Canada", "montreal")

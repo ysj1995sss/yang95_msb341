@@ -217,7 +217,9 @@ export function MultiSelect({ label, options, value, onChange, anyLabel = "Any" 
       document.removeEventListener("keydown", escape);
     };
   }, [open]);
-  const summary = value.length ? value.map(firstUpper).join(", ") : anyLabel;
+  // In list order, however the value arrived (saved goals kept the order they were tapped in).
+  const chosen = [...options.filter((o) => value.includes(o)), ...value.filter((v) => !options.includes(v))];
+  const summary = chosen.length ? chosen.map(firstUpper).join(", ") : anyLabel;
   return (
     <div ref={root} className="relative flex flex-col gap-1">
       <span id={`${id}-label`} className="text-[15px] font-semibold">{label}</span>

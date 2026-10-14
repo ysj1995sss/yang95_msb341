@@ -130,7 +130,8 @@ export default function HomePage() {
                 <p className="mt-2 text-[14px] text-muted">{data.weekly.applied} of your goal of {goal}. A steady pace beats a burst.</p>
               </>
             ) : (
-              <p className="mt-2 text-[14px] text-muted">Set a weekly goal in Career Profile → Job goals if it helps you pace yourself.</p>
+              // The weekly goal is set in Tracker; Job goals never asked for it (round 6 bug hunt).
+              <p className="mt-2 text-[14px] text-muted">Set a weekly goal in <a href="/tracker" className="font-semibold underline">Tracker</a> if it helps you pace yourself.</p>
             )}
             <p className="mt-3 text-[14px]">{data.weekly.interviews} in interviews · {data.weekly.saved} saved {data.weekly.saved === 1 ? "job" : "jobs"}</p>
           </Card>

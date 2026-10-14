@@ -9,6 +9,7 @@ when the user chose them.
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from typing import Any, Iterable, Mapping, Optional
 
@@ -29,6 +30,13 @@ def _split_name(name: str) -> tuple[str, str]:
     if not parts:
         return "", ""
     return parts[0], " ".join(parts[1:])
+
+
+def resume_filename(name: str, kind: str = "pdf", version: Optional[int] = None) -> str:
+    """The resume file's name as an employer sees it once attached: "Riley_Park_Resume.pdf", never
+    "tailored_resume_v2.pdf" (round 6 bug hunt). A version tells the person's own downloads apart."""
+    stem = re.sub(r"[^\w-]+", "_", (name or "").strip()).strip("_")
+    return f"{stem + '_' if stem else ''}Resume{f'_v{version}' if version else ''}.{kind}"
 
 
 def _yes_no(value: Optional[bool]) -> str:
@@ -61,7 +69,7 @@ def build_kit(
 
     resume = ""
     if handoff and str(handoff.get("validation_status", "")).upper() != "FAIL":
-        resume = f"tailored_resume_v{handoff.get('version', 1)}.pdf"
+        resume = resume_filename(contact.get("name", ""))
 
     fields = [
         _field("First name", first, "Career Profile"),

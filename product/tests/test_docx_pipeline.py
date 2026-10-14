@@ -419,3 +419,22 @@ def test_blank_generated_pdf_fails_validation(
 
     assert result.validation.status is ValidationStatus.FAIL
     assert "TEXT_NOT_EXTRACTABLE" in {f.code for f in result.validation.findings}
+
+
+def test_an_unreadable_model_answer_fails_the_run_instead_of_passing_for_no_changes(
+    tmp_path, monkeypatch, sample_profile, sample_job_analysis, sample_gap_report
+):
+    """Round 6 bug hunt: an answer that isn't JSON kept every bullet, and the page then said the
+    writing model "didn't propose any changes"; the person had no reason to try again."""
+    from unittest.mock import MagicMock
+
+    from resume_tailorer.llm.client import LLMClient
+    from resume_tailorer.tailorer.docx_bullet_tailorer import DocxBulletTailorer
+
+    monkeypatch.setattr(pipeline_module, "convert_docx_to_pdf",
+                        lambda src, dst: (_ for _ in ()).throw(DocxConversionUnavailable("skip")))
+    llm = MagicMock(spec=LLMClient)
+    llm.complete.return_value = "Sorry, I can't help with that right now."
+    with pytest.raises(RuntimeError, match="couldn't be read"):
+        run_docx_tailoring_pipeline(_sample_docx_bytes(tmp_path), sample_profile, sample_job_analysis,
+                                    sample_gap_report, bullet_tailorer=DocxBulletTailorer(llm=llm))

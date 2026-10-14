@@ -441,6 +441,23 @@ class TestParseAndValidate:
         assert edit.new_text == _BULLET_10_TEXT
         assert llm.complete.call_count == 2
 
+    def test_a_repair_that_keeps_the_bullet_leaves_the_turn_down_on_record(
+        self, sample_bullets, sample_profile, sample_job_analysis, sample_gap_report
+    ):
+        """Round 6 bug hunt: a rewrite rejected for length, then "keep" on the repair, vanished, and the
+        page said the writing model "didn't propose any changes"."""
+        too_long = _BULLET_10_TEXT + " and then did quite a bit more on top of that as well, over and over again"
+        llm = MagicMock(spec=LLMClient)
+        llm.complete.side_effect = [
+            json.dumps([{"paragraph_index": 10, "change": "rewrite", "new_text": too_long}]),
+            json.dumps([{"paragraph_index": 10, "change": "keep", "new_text": ""}]),
+        ]
+        result = DocxBulletTailorer(llm=llm).tailor_bullets(
+            sample_bullets, sample_profile, sample_job_analysis, sample_gap_report)
+        edit = next(e for e in result.edits if e.paragraph_index == 10)
+        assert edit.changed is False and edit.new_text == _BULLET_10_TEXT
+        assert edit.rejected_reason == "length cap exceeded"
+
     def test_no_repair_call_when_nothing_was_rejected(
         self, sample_bullets, sample_profile, sample_job_analysis, sample_gap_report
     ):

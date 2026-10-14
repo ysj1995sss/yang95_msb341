@@ -96,6 +96,9 @@ def test_save_pass_and_prepare(jobs_client):
 
 def test_search_needs_a_role_and_a_source(jobs_client):
     assert jobs_client.post("/v2/jobs/search", json={"job_title": " "}).status_code == 400
+    # Round 6 bug hunt: a role with no words matched every job (10,870) and took 30 seconds.
+    for empty in ("!!!", "the and of"):
+        assert jobs_client.post("/v2/jobs/search", json={"job_title": empty}).status_code == 400
     assert jobs_client.post("/v2/jobs/search", json={"job_title": "Analyst", "sources": ["linkedin"]}).status_code == 400
 
 
@@ -188,3 +191,13 @@ def test_a_large_search_ranks_by_a_quick_pass_and_still_shows_a_match_on_every_r
         result = _search(jobs_client)
     assert result["rows"][0]["title"] == "Data Analyst 2"  # the posting asking for what you have
     assert len(result["rows"]) == 4 and all(r["fit"].startswith("Match ") for r in result["rows"])
+
+
+def test_choices_read_in_list_order_whatever_order_they_were_picked(jobs_client):
+    """Round 6 bug hunt: levels picked Senior, then Mid in the goals wizard read "senior, mid"."""
+    jobs_client.put("/v2/profile/goals", json={"job_title": "Data Analyst", "experience_level": ["senior", "mid"],
+                                              "industries": ["Technology", "Finance"]})
+    setup = jobs_client.get("/v2/jobs/setup").json()
+    assert setup["form"]["experience_level"] == ["mid", "senior"]
+    assert setup["form"]["industries"] == ["Finance", "Technology"]
+    assert "mid, senior" in setup["summary_line"]

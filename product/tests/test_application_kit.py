@@ -21,7 +21,7 @@ def _by_label(fields):
 def test_values_come_from_the_profile_resume_and_saved_answers():
     kit = _by_label(build_kit(RECORD, HANDOFF, [{"question": "Why Acme?", "answer": "Their analytics work."}]))
     assert (kit["First name"].value, kit["Last name"].value) == ("Riley", "Ann Park")
-    assert kit["Email"].state == READY and kit["Resume"].value == "tailored_resume_v2.pdf"
+    assert kit["Email"].state == READY and kit["Resume"].value == "Riley_Ann_Park_Resume.pdf"
     assert kit["Degree"].value == "BS Economics"
     assert kit["Legally authorized to work here?"].value == "Yes"
     assert kit["Why Acme?"].value == "Their analytics work." and kit["Why Acme?"].source == "Your saved answers"
@@ -84,3 +84,13 @@ def test_missing_questions_read_as_a_list_not_question_marks():
     """Dogfood round 5: "Missing: Legally authorized to work here?, Will you need visa sponsorship?."."""
     fields = [f for f in build_kit({}, None) if f.label.endswith("?")]
     assert kit_summary(fields) == "0 answers ready to copy. Missing: work authorization, visa sponsorship."
+
+
+def test_the_resume_file_is_named_for_the_person_not_the_tailoring():
+    """Round 6 bug hunt: the file to attach was "tailored_resume_v2.pdf", which an employer sees."""
+    from resume_tailorer.ui.application_kit import resume_filename
+
+    assert resume_filename("Riley Park") == "Riley_Park_Resume.pdf"
+    assert resume_filename("Riley Park", "docx", 3) == "Riley_Park_Resume_v3.docx"
+    assert resume_filename("Łukasz Nowak") == "Łukasz_Nowak_Resume.pdf"
+    assert resume_filename("  ") == "Resume.pdf"

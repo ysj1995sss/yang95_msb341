@@ -140,3 +140,16 @@ def jsonable(value: Any) -> Any:
 
 def route_for(page: str) -> str:
     return ROUTES.get(page or "", page or "")
+
+
+def attachment(filename: str) -> dict:
+    """Headers for a download whose name may hold any letter ("Łukasz_Nowak_Resume.pdf"). A header
+    can only carry Latin-1, so a plain ASCII name goes first and the real one in RFC 6266's
+    filename* (round 6 bug hunt: such a name would have failed the download with a server error)."""
+    import re
+    import unicodedata
+    from urllib.parse import quote
+
+    plain = unicodedata.normalize("NFKD", filename).encode("ascii", "ignore").decode("ascii")
+    plain = re.sub(r"[^A-Za-z0-9._-]+", "_", plain).strip("_") or "download"
+    return {"Content-Disposition": f"attachment; filename=\"{plain}\"; filename*=UTF-8''{quote(filename)}"}

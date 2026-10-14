@@ -46,8 +46,19 @@ _RAW_CHECKS = (
 )
 
 
+# The Word path's short labels for a rewrite its checks turned down (docx_bullet_tailorer).
+_TURN_DOWN_LABELS = {
+    "semantic drift": "It dropped part of what your original says.",
+    "length cap exceeded": "It made the line too long.",
+    "unverified content": "It added words your facts don't show.",
+    "unsupported requirement term": "It named a skill you haven't shown evidence for.",
+}
+
+
 def readable_reason(reason: str) -> str:
     """A change's reason or a check finding in plain words; other text is left as written."""
+    if (reason or "").strip() in _TURN_DOWN_LABELS:  # "— semantic drift" in the list (round 6 bug hunt)
+        return _TURN_DOWN_LABELS[reason.strip()]
     text = reason or ""
     for pattern, plain in _RAW_CHECKS:
         text = pattern.sub(plain, text)

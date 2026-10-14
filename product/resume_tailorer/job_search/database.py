@@ -6,7 +6,7 @@ from contextlib import contextmanager
 from datetime import datetime
 from typing import Optional, List
 from resume_tailorer.job_search.models import JobSource, SearchGoals, JobPosting, UserSelection
-from resume_tailorer.job_search.places import canonical_place, place_matches
+from resume_tailorer.job_search.places import canonical_place, fold, place_matches
 
 
 def add_column_if_missing(cursor, table: str, column: str, definition: str) -> None:
@@ -481,18 +481,18 @@ class JobDatabase:
         cursor = self.connection.cursor()
         cursor.execute("SELECT location FROM job_postings WHERE location IS NOT NULL AND location != ''")
         counts: Counter = Counter()
-        shown: dict = {}
+        spellings: dict = {}
         for (location,) in cursor.fetchall():
             for piece in re.split(r"\s*(?:[,;|/·•]|\s-\s)\s*", str(location)):
                 piece = canonical_place(piece.strip(" .()"))
                 # Work modes aren't places; the Work mode dropdown covers them.
                 if len(piece) < 3 or piece.isdigit() or piece.casefold() in _NOT_PLACES:
                     continue
-                key = piece.casefold()
-                shown.setdefault(key, piece)
+                key = fold(piece)  # "Zürich" and "Zurich" are one choice, shown as postings mostly write it
+                spellings.setdefault(key, Counter())[piece] += 1
                 counts[key] += 1
         ranked = sorted(counts, key=lambda key: (-counts[key], key))
-        return [shown[key] for key in ranked[:limit]]
+        return [spellings[key].most_common(1)[0][0] for key in ranked[:limit]]
 
     def close(self) -> None:
         """Close the database connection."""

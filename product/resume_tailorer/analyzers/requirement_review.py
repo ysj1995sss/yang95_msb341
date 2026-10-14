@@ -210,8 +210,10 @@ class RequirementReview:
 
     @property
     def targets(self) -> tuple[RequirementRow, ...]:
-        """Rows a tailored resume may make clearer: supported by confirmed evidence."""
-        return tuple(r for r in self.rows if r.supported and r.evidence and all(e.confirmed for e in r.evidence))
+        """Rows a tailored resume may make clearer: supported by confirmed evidence, and by more than one
+        broad word (whose requirement's wording the evidence doesn't back; round 6 bug hunt)."""
+        return tuple(r for r in self.rows if r.supported and r.evidence and all(e.confirmed for e in r.evidence)
+                     and not broad_only(r))
 
     @property
     def not_to_add(self) -> tuple[RequirementRow, ...]:
@@ -289,6 +291,10 @@ _COMMON_NOUNS = {
 }
 
 
+# Words that close a list of examples rather than name one: "(Looker, Tableau, or similar)".
+_NOT_NAMES = {"similar", "equivalent", "comparable", "etc", "others", "other", "related", "any"}
+
+
 def _could_be_product(name: str) -> bool:
     return name.lower() not in _COMMON_NOUNS and not _ORDINARY_WORD.match(name)
 
@@ -302,6 +308,16 @@ def explicit_platform_terms(text: str) -> tuple[str, ...]:
         for part in re.split(r",|\band\b|\bor\b", examples.group(1)):
             name = part.strip().strip("() ")
             if name and len(name.split()) <= 3 and not terms_in(name):
+                found.append(name)
+    # Products in brackets after tool wording: "LLM-based tools (Claude Code, Cursor, GitHub Copilot)".
+    # Missed, the requirement's only term was "reporting", and a rewrite claiming GitHub Copilot on a
+    # reporting bullet passed every check (round 6 bug hunt). Only names: "(or similar)" isn't one.
+    for bracket in re.finditer(r"\b(?:platforms?|tools?|software|apps?|applications)\s*\(([^()]{2,160})\)",
+                               text, re.IGNORECASE):
+        for part in re.split(r",|/|\band\b|\bor\b", bracket.group(1)):
+            name = re.sub(r"^(?:e\.g\.?|i\.e\.?|such as|like|including)\s*", "", part.strip(), flags=re.I).strip(" .")
+            if (name and len(name.split()) <= 3 and not terms_in(name) and name.lower() not in _NOT_NAMES
+                    and (name[0].isupper() or re.search(r"[a-z][A-Z]", name))):
                 found.append(name)
     # A proper/camel-case product after an explicit usage pattern is also not generic evidence.
     for usage in re.finditer(r"\b(?:experience with|proficiency in|using)\s+(?:(?:any|some|the|a|an|these|those)\s+)?([A-Za-z][A-Za-z0-9+#.-]*)([^.;\n]*)", text, re.I):
@@ -392,6 +408,34 @@ def _term_state(term: str, all_passages: list[_Passage]) -> str:
     return NONE
 
 
+def _in_own_words(competency: str, requirement: str) -> str:
+    """The competency as the requirement says it: "Strong communication skills" matched the
+    "executive communication" competency, and the review named a qualifier the posting never used
+    (round 6 bug hunt). All of the competency's words in the requirement: its full name."""
+    words = competency.split()
+    said = [w for w in words if re.search(rf"\b{re.escape(w)}", requirement, re.IGNORECASE)]
+    return " ".join(said) if said and len(said) < len(words) else competency
+
+
+def _listing(text: str, terms: list[str]) -> str:
+    """The part of a requirement that lists its named terms, from the first to the last, with a closing
+    "or similar". "business intelligence and data visualization tools (Looker, Hex, Tableau, or similar)"
+    lists "Looker, Hex, Tableau, or similar": the "and" before it describes the tools, it doesn't join
+    them, and reading it as "all of these" made the row "check yourself" (round 6 bug hunt)."""
+    spans = []
+    for term in terms:
+        for form in _search_forms(term):
+            found = re.search(rf"(?<![\w-]){re.escape(form)}(?![\w-])", text, re.IGNORECASE)
+            if found:
+                spans.append(found.span())
+                break
+    if len(spans) < 2:
+        return text
+    start, end = min(s for s, _e in spans), max(e for _s, e in spans)
+    closing = re.match(r",?\s*(?:or|and)\s+(?:similar|equivalent|comparable|other)\b", text[end:], re.IGNORECASE)
+    return text[start:end + (closing.end() if closing else 0)]
+
+
 def _row(rid: str, text: str, section: str, hard_gate: bool, job_analysis: Optional[JobAnalysis],
          profile: CareerTruthProfile, all_passages: list[_Passage], posting: str) -> RequirementRow:
     """The row with each named term's own status (spec 011): a requirement whose named terms are
@@ -399,18 +443,27 @@ def _row(rid: str, text: str, section: str, hard_gate: bool, job_analysis: Optio
     from dataclasses import replace
 
     row = _row_status(rid, text, section, hard_gate, job_analysis, profile, all_passages, posting)
+    if broad_only(row):
+        # One broad word is shown, not the requirement: partly supported, never a target whose wording
+        # a rewrite may borrow (round 6 bug hunt: "using LLM-based tools" rode in on "reporting").
+        return replace(row, status=PARTIAL, reason=f"Shown only as “{', '.join(row.terms)}”; the rest of what "
+                                                   "it asks for isn't in your facts.")
     specific = [t for t in row.terms if t not in GENERIC_TERMS]
     if not specific:
         return row
     states = tuple((t, CHECK if row.status == CHECK and t.lower() in AMBIGUOUS_ACRONYMS else _term_state(t, all_passages))
                    for t in specific)
     example = bool(re.search(r"\bsuch as\b|\be\.g\.", text, re.I))
-    alternative = bool(re.search(r"\bor\b", text, re.I)) and len(specific) > 1
-    mixed = alternative and bool(re.search(r"\band\b", text, re.I))
+    listing = _listing(text, specific)
+    alternative = bool(re.search(r"\bor\b", listing, re.I)) and len(specific) > 1
+    mixed = alternative and bool(re.search(r"\band\b", listing, re.I))
     relation = "uncertain" if mixed else "example" if example else "any" if alternative else "all"
     row = replace(row, term_status=states, term_relation=relation)
     known = {label.lower() for label in VOCABULARY.values()}
     unknown = [t for t in explicit_platform_terms(text) if t.lower() not in known]
+    # One shown tool answers a list of alternatives; the ones not shown stay unclaimed (blocked_terms).
+    if unknown and relation in ("any", "example") and any(st == DIRECT for _t, st in states):
+        unknown = []
     if unknown or mixed:
         return replace(row, status=CHECK, reason="Check the named platform or alternative wording; generic "
                        "experience does not verify it.")
@@ -489,7 +542,7 @@ def _row_status(rid: str, text: str, section: str, hard_gate: bool, job_analysis
         if transferable:
             hit = [p for p in context if p.text == transferable.evidence_text]
             strength = "Strongly shows" if transferable.level == "strong" else "Partly shows"
-            return make(TRANSFERABLE, hit, f"{strength} “{transferable.competency}” in other words.")
+            return make(TRANSFERABLE, hit, f"{strength} “{_in_own_words(transferable.competency, text)}” in other words.")
 
         if deciding:
             listed = [p for p in lists if any(_mentions_any(t, p.text) for t in deciding)]
@@ -565,8 +618,9 @@ def is_work_authorization(row: RequirementRow) -> bool:
 def broad_only(row: RequirementRow) -> bool:
     """Direct only through a broad word ("Reporting") in a work passage that shows little else the
     requirement asks for: "healthcare analytics and reporting" from "migrated reporting workloads"
-    (dogfood, 2026-10-13). The word is shown; the requirement mostly isn't."""
-    if row.status != DIRECT or not row.terms or any(t not in GENERIC_TERMS for t in row.terms):
+    (dogfood, 2026-10-13). The word is shown; the requirement mostly isn't. The review marks such a row
+    partly supported; reviews saved before that still say direct."""
+    if row.status not in (DIRECT, PARTIAL) or not row.terms or any(t not in GENERIC_TERMS for t in row.terms):
         return False
     work = [e for e in row.evidence if e.kind == "experience"]
     if not work or len(work) < len(row.evidence):
@@ -679,8 +733,23 @@ def requirement_wording(passage: str, review: Optional[RequirementReview]) -> st
             if term not in row.shown_terms:
                 for form in _search_forms(term):
                     text = re.sub(rf"(?<![\w-]){re.escape(form)}(?![\w-])", " ", text, flags=re.IGNORECASE)
-        parts.append(text)
+        parts.append(_without_names(text, passage))
     return " ".join(parts)
+
+
+def _without_names(text: str, passage: str) -> str:
+    """The requirement's wording without the names the passage doesn't have. A capitalized word or an
+    acronym ("Hex", "Sigma Computing", "AI") names a product, a company or a skill, never wording to
+    borrow: "dashboards … in Hex and Mode" let "…in Tableau and Hex" pass every check (round 6 bug
+    hunt). Ordinary words that open a sentence ("Experience") are dropped too, which costs nothing."""
+    have = {w.lower() for w in re.findall(r"[A-Za-z][\w+#.-]*", passage)}
+    kept = []
+    for word in text.split():
+        core = word.strip(".,;:!?()[]{}\"'")
+        if core[:1].isupper() and core.lower() not in have:
+            continue
+        kept.append(word)
+    return " ".join(kept)
 
 
 def _same_passage(evidence: str, flat_passage: str) -> bool:

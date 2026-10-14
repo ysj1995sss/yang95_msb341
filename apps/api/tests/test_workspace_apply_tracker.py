@@ -44,12 +44,13 @@ def test_ready_track_and_mark_applied(jobs_client, tmp_path):  # noqa: F811
     assert page["view"]["stage"] == "ready" and page["view"]["can_track"] is True
     assert page["handoff"] == {"version": 2, "has_file": True}
     labels = {f["label"]: f for f in page["kit"]}
-    assert labels["Email"]["value"] and labels["Resume"]["value"] == "tailored_resume_v2.pdf"
+    # The file an employer receives carries the person's name, not "tailored" (round 6 bug hunt).
+    assert labels["Email"]["value"] and labels["Resume"]["value"] == "Riley_Park_Resume.pdf"
     assert '"jobCopilotKit": 1' in page["helper_code"]
     import base64
     import json
     resume = json.loads(page["helper_code"])["resume"]
-    assert resume["filename"] == "tailored_resume_v2.pdf" and base64.b64decode(resume["data"]).startswith(b"%PDF")
+    assert resume["filename"] == "Riley_Park_Resume.pdf" and base64.b64decode(resume["data"]).startswith(b"%PDF")
     assert {m["name"]: m["available"] for m in page["view"]["modes"]}["Auto"] is False
     assert jobs_client.post("/v2/apply/applied").status_code == 409  # track first
 
@@ -57,7 +58,8 @@ def test_ready_track_and_mark_applied(jobs_client, tmp_path):  # noqa: F811
     assert tracked["view"]["stage"] == "tracked" and tracked["view"]["can_mark_applied"] is True
     assert jobs_client.post("/v2/apply/track").status_code == 409
     assert jobs_client.post("/v2/apply/applied").json()["view"]["stage"] == "applied"
-    assert jobs_client.get("/v2/apply/resume").content.startswith(b"%PDF")
+    download = jobs_client.get("/v2/apply/resume")
+    assert download.content.startswith(b"%PDF") and 'filename="Riley_Park_Resume.pdf"' in download.headers["content-disposition"]
 
 
 def test_tracker_views_detail_next_action_and_status(jobs_client, tmp_path):  # noqa: F811
@@ -91,3 +93,41 @@ def test_a_pasted_email_is_only_a_suggestion_until_confirmed(jobs_client, tmp_pa
         "application_id": app_id, "status": "rejected", "email_date": reading["email_date"], "evidence": reading["subject"]}).json()
     assert confirmed["row"]["status"] == "rejected"
     assert confirmed["history"][0]["who"] == "you, from an email" and "Oct 01, 2026" in confirmed["history"][0]["note"]
+
+
+def test_a_name_beyond_latin_1_still_downloads(jobs_client, tmp_path):  # noqa: F811
+    """Round 6 bug hunt: the file name came from the person's name, and a header can't carry "Ł", so
+    downloading the resume failed with a server error for a name like "Łukasz Nowak"."""
+    from resume_tailorer.profile_import import store_for
+
+    _with_tailored_resume(jobs_client, tmp_path)
+    store = store_for("local")
+    record = store.load()
+    record["profile"]["contact_info"]["name"] = "Łukasz Nowak"
+    store.save(record)
+    download = jobs_client.get("/v2/apply/resume")
+    assert download.status_code == 200
+    disposition = download.headers["content-disposition"]
+    assert "filename*=UTF-8''%C5%81ukasz_Nowak_Resume.pdf" in disposition and 'filename="ukasz_Nowak_Resume.pdf"' in disposition
+
+
+PASTED = ("Retail Insights Analyst. Fernwood Outfitters is hiring an analyst to turn store data into decisions for our "
+          "merchandising team. You will build and maintain weekly sales dashboards for regional managers, write SQL "
+          "to pull and clean point-of-sale data, and present trends to merchandising leads every month. "
+          "Requirements: 3+ years of retail analytics, strong SQL and Excel skills, Tableau, clear communication.")
+
+
+def test_a_pasted_job_without_a_link_can_get_one_on_apply(jobs_client):  # noqa: F811
+    """Round 6 bug hunt: a job pasted without its link could never be opened or tracked from Apply, and
+    pasting it again made a new job, losing the tailored resume."""
+    jobs_client.post("/v2/profile/resume", files={"file": ("r.docx", resume_docx(), "application/octet-stream")})
+    assert jobs_client.post("/v2/tailor/pasted", json={"title": "Retail Insights Analyst", "company": "Fernwood",
+                                                        "description": PASTED}).status_code == 200
+    page = jobs_client.get("/v2/apply").json()
+    link = next(i for i in page["view"]["checklist"] if i["label"] == "Employer application link")
+    assert link["state"] == "blocked"
+    assert jobs_client.post("/v2/apply/link", json={"url": "jobs.example.com/123"}).status_code == 400
+    added = jobs_client.post("/v2/apply/link", json={"url": "https://jobs.example.com/123"}).json()
+    assert added["job"]["url"] == "https://jobs.example.com/123"
+    link = next(i for i in added["view"]["checklist"] if i["label"] == "Employer application link")
+    assert link["state"] == "ok"

@@ -63,6 +63,18 @@ function PastedJobForm({ onDone }: { onDone: (page: TailorPage) => void }) {
   );
 }
 
+/** Jobs tells people "Found this role somewhere else? Paste its description in Tailor", but once a job
+ *  was chosen, Tailor showed only that job and the paste form was gone (round 6 bug hunt). */
+function AnotherJob({ onDone }: { onDone: (page: TailorPage) => void }) {
+  return (
+    <details className="mt-6 rounded-[var(--radius-card)] border border-line bg-paper p-4">
+      <summary className="cursor-pointer font-semibold">Tailor for a role you found somewhere else</summary>
+      <p className="mt-2 mb-4 text-muted">Paste its description and it becomes the job you&apos;re working on. This job and its review stay saved; choose it again in Jobs.</p>
+      <PastedJobForm onDone={onDone} />
+    </details>
+  );
+}
+
 export default function TailorPageView() {
   const toast = useToast();
   const { data, error, loading, reload, set } = useResource<TailorPage>("/tailor");
@@ -176,6 +188,7 @@ export default function TailorPageView() {
           <div className="mb-4"><Alert tone="review" title="Profile changed" role="status">{data.stale_message}</Alert></div>
         )}
         <ReviewRoom review={data.review} onChange={(r: Review) => set({ ...data, review: r })} onReload={reload} onDiscard={discard} />
+        <AnotherJob onDone={set} />
       </>
     );
   }
@@ -270,6 +283,7 @@ export default function TailorPageView() {
           </Card>
         </div>
       )}
+      {!running && <AnotherJob onDone={set} />}
     </>
   );
 }

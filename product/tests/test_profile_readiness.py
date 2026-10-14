@@ -86,3 +86,20 @@ def test_provenance_is_summarised_once_per_section():
     assert provenance_summary(record, "skills") == "From your resume, 1 edited by you"
     assert provenance_summary(record, "contact") == "Confirmed by you"
     assert provenance_summary(record, "links") == ""
+
+
+def test_section_details_read_as_words():
+    """Round 6 bug hunt: "6 skills · 1 tools", a bare "1" under Certifications, and "Added" under the
+    summary next to an "Added" badge."""
+    from resume_tailorer.ui.profile_readiness import section_rows
+
+    profile = dict(GOOD, tools=["AWS"], certifications=["AWS Certified Cloud Practitioner"],
+                   summary="Data analyst with 5 years of experience turning messy data into decisions for retail teams.")
+    rows = {r.key: r for r in section_rows({"profile": profile, "resume": {}})}
+    assert rows["skills"].detail == "1 skill · 1 tool"
+    assert rows["certifications"].detail == "1 certification"
+    assert rows["summary"].detail.startswith("Data analyst with 5 years")
+    assert rows["summary"].detail.endswith("…") and len(rows["summary"].detail) <= 50
+    two = {r.key: r for r in section_rows({"profile": dict(profile, skills=["SQL", "Excel"],
+                                                           tools=["AWS", "dbt"], certifications=["A", "B"])})}
+    assert two["skills"].detail == "2 skills · 2 tools" and two["certifications"].detail == "2 certifications"

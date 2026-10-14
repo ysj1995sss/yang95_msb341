@@ -18,7 +18,8 @@ export function SearchForm({ setup, busy, error, onSearch, onCancel, onBoardsCha
   const [form, setForm] = useState<JobForm>(setup.form);
   const [boards, setBoards] = useState<CustomBoard[]>(setup.custom_boards);
   const set = (patch: Partial<JobForm>) => setForm((f) => ({ ...f, ...patch }));
-  const roleMissing = !form.job_title.trim();
+  // A role needs a letter or digit: "!!!" searched every job (round 6 bug hunt).
+  const roleMissing = !/[\p{L}\p{N}]/u.test(form.job_title);
   const count = boardsInScope(setup, form, boards);
   const help = setup.help;
   const placesId = useId();

@@ -644,6 +644,24 @@ class DiffGenerator:
             for w in genuinely_new:
                 already_reported.add(f"word:{self._stem(w)}")
 
+        # Short names: the word check above skips words of 3 letters or fewer, so a new "Hex" or "AI"
+        # went unnoticed (round 6 bug hunt). A capitalized short word after the opening verb ("Led")
+        # is a name or an acronym, and a claim like any other.
+        trusted_words = set(re.findall(r"[a-z0-9+#]+", f"{trusted_blob} {(grounded or '').lower()}"))
+        short_names = sorted({
+            m.group(0) for m in re.finditer(r"\b[A-Z][A-Za-z]{1,2}\b", new)
+            # A word opening the bullet or a sentence ("• Led", "… . Ran") is a verb, not a name.
+            if not re.search(r"(?:^|[.;:!?•\-–—])\W*$", new[:m.start()])
+            and m.group(0).lower() not in trusted_words and f"word:{m.group(0).lower()}" not in already_reported
+        })
+        if short_names:
+            issues.append(
+                f"⚠️ POSSIBLY UNVERIFIED: new term(s) {short_names} in '{new}' "
+                "not grounded in the original bullet or profile -- review before using"
+            )
+            for w in short_names:
+                already_reported.add(f"word:{w.lower()}")
+
         return issues
 
     @staticmethod
