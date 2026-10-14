@@ -42,6 +42,15 @@ def test_setup_before_any_search(jobs_client):
     assert jobs_client.get("/v2/jobs").json()["state"] == "no_goals"
 
 
+def test_location_suggestions_start_common_and_learn_from_postings(jobs_client):
+    # Location dropdown (2026-10-13): common places before any search, then the places real postings name.
+    before = jobs_client.get("/v2/jobs/setup").json()["options"]["locations"]
+    assert "United States" in before and "Remote" in before
+    _search(jobs_client)
+    after = jobs_client.get("/v2/jobs/setup").json()["options"]["locations"]
+    assert after[0] == "Remote" and "US" not in after  # from "Remote, US"; two letters would match too much
+
+
 def test_search_lists_matching_roles_and_remembers_the_search(jobs_client):
     result = _search(jobs_client)
     assert [r["title"] for r in result["rows"]] == ["Senior Data Analyst"]

@@ -36,6 +36,19 @@ def _fit_cache(owner_id: str) -> dict:
         return cache
 
 
+# Places suggested before any search has stored postings to learn from.
+COMMON_LOCATIONS = ("Remote", "United States", "New York", "San Francisco", "Seattle", "Austin", "Chicago",
+                    "Boston", "Los Angeles", "Denver", "Toronto", "Canada", "London", "United Kingdom")
+
+
+def _location_options(ws: Workspace) -> list[str]:
+    """The Location dropdown's suggestions: places real postings name, most common first, then the
+    common ones. A suggestion is only a starting point; any typed text still works."""
+    seen = ws.service.db.common_locations(limit=40)
+    known = {place.casefold() for place in seen}
+    return (seen + [place for place in COMMON_LOCATIONS if place.casefold() not in known])[:50]
+
+
 def _profile(ws: Workspace):
     from resume_tailorer.session_profile import get_career_profile
 
@@ -147,6 +160,7 @@ def search_setup(ws: Workspace = Depends(workspace)):
         "options": {
             "experience_levels": EXPERIENCE_LEVEL_OPTIONS, "industries": INDUSTRY_OPTIONS,
             "employment_types": EMPLOYMENT_TYPE_OPTIONS,
+            "locations": _location_options(ws),
             "work_modes": [{"value": "any", "label": "No preference"}, {"value": "remote", "label": "Remote"},
                            {"value": "hybrid", "label": "Hybrid"}, {"value": "onsite", "label": "On-site"}],
             "sources": [{"value": s.value, "label": sh.source_label(s.value), "curated_count": count}

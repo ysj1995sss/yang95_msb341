@@ -406,3 +406,19 @@ def test_only_jobs_that_state_the_work_mode_when_asked(temp_db):
 
     assert found(False) == {"stated", "unstated"}
     assert found(True) == {"stated"}
+
+
+def test_location_suggestions_come_from_the_places_postings_name(temp_db):
+    """Location dropdown (2026-10-13): suggestions are the places real postings name, most common
+    first, so picking one always matches jobs. Pieces too short to match safely ("CA") are left out."""
+    temp_db.create_tables()
+    for n, place in enumerate(("San Francisco, CA", "San Francisco, California, United States", "New York, NY",
+                               "Remote - United States", "Toronto, Canada", "Hybrid - London", "")):
+        temp_db.save_job_posting(JobPosting(source=JobSource.GREENHOUSE, source_id=str(n), company="Acme",
+                                            title="Analyst", location=place, description="x",
+                                            url=f"https://boards.greenhouse.io/acme/jobs/{n}"))
+    suggestions = temp_db.common_locations(limit=5)
+    assert suggestions[:2] == ["San Francisco", "United States"]
+    assert "CA" not in suggestions and "NY" not in suggestions
+    assert "Hybrid" not in temp_db.common_locations()  # a work mode, not a place
+    assert len(suggestions) == 5

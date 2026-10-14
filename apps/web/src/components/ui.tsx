@@ -2,8 +2,8 @@
 "use client";
 
 import Link from "next/link";
-import { Loader2 } from "lucide-react";
-import { createContext, useCallback, useContext, useId, useState, type ReactNode } from "react";
+import { ChevronDown, Loader2 } from "lucide-react";
+import { createContext, useCallback, useContext, useEffect, useId, useRef, useState, type ReactNode } from "react";
 
 export type Tone = "neutral" | "verified" | "review" | "blocked" | "primary";
 
@@ -187,6 +187,56 @@ export function SelectField({ label, help, error, className, options, ...rest }:
         {options.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
       </select>
     </FieldShell>
+  );
+}
+
+const firstUpper = (text: string) => text.charAt(0).toUpperCase() + text.slice(1);
+
+/** A dropdown button that opens a list of tick boxes: several choices, shown on the button
+ * ("Level: Mid, Senior"). Closes on Escape (focus returns to the button) or a click outside. */
+export function MultiSelect({ label, options, value, onChange, anyLabel = "Any" }: {
+  label: string; options: string[]; value: string[]; onChange: (value: string[]) => void; anyLabel?: string;
+}) {
+  const id = useId();
+  const [open, setOpen] = useState(false);
+  const root = useRef<HTMLDivElement>(null);
+  const button = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    const outside = (e: PointerEvent) => { if (!root.current?.contains(e.target as Node)) setOpen(false); };
+    const escape = (e: KeyboardEvent) => {
+      if (e.key === "Escape") { setOpen(false); button.current?.focus(); }
+    };
+    document.addEventListener("pointerdown", outside);
+    document.addEventListener("keydown", escape);
+    return () => { document.removeEventListener("pointerdown", outside); document.removeEventListener("keydown", escape); };
+  }, [open]);
+  const summary = value.length ? value.map(firstUpper).join(", ") : anyLabel;
+  return (
+    <div ref={root} className="relative flex flex-col gap-1">
+      <span id={`${id}-label`} className="text-[15px] font-semibold">{label}</span>
+      <button ref={button} type="button" aria-expanded={open} aria-controls={`${id}-panel`}
+        aria-labelledby={`${id}-label ${id}-value`} onClick={() => setOpen((o) => !o)}
+        className={cx(control, "flex min-h-11 cursor-pointer items-center justify-between gap-2 text-left")}>
+        <span id={`${id}-value`} className="truncate">{summary}</span>
+        <ChevronDown aria-hidden className={cx("size-4 shrink-0 transition-transform duration-150", open && "rotate-180")} />
+      </button>
+      {open && (
+        <div id={`${id}-panel`} role="group" aria-label={label}
+          className="absolute top-full left-0 z-30 mt-1 max-h-72 w-full min-w-52 overflow-y-auto rounded-[var(--radius-card)] border border-line bg-paper px-3 py-1 shadow-lg">
+          {options.map((o) => (
+            <Checkbox key={o} label={firstUpper(o)} checked={value.includes(o)}
+              onChange={(on) => onChange(on ? [...value, o] : value.filter((v) => v !== o))} />
+          ))}
+          {value.length > 0 && (
+            <button type="button" onClick={() => onChange([])}
+              className="mb-1 min-h-11 cursor-pointer text-[14px] font-semibold text-primary hover:underline">
+              Clear {label.toLowerCase()}
+            </button>
+          )}
+        </div>
+      )}
+    </div>
   );
 }
 

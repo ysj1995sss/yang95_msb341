@@ -1,32 +1,9 @@
 "use client";
 
-import { useState } from "react";
-import { Alert, Button, Checkbox, SelectField, TextField, cx } from "@/components/ui";
+import { useId, useState } from "react";
+import { Alert, Button, Checkbox, MultiSelect, SelectField, TextField } from "@/components/ui";
 import type { CustomBoard, JobForm, JobsSetup } from "@/lib/types";
 import { CompanyBoards } from "./boards";
-
-function Toggles({ legend, options, value, onChange }: {
-  legend: string; options: string[]; value: string[]; onChange: (v: string[]) => void;
-}) {
-  return (
-    <fieldset className="flex flex-col gap-2">
-      <legend className="text-[15px] font-semibold">{legend}</legend>
-      <div className="flex flex-wrap gap-2">
-        {options.map((o) => {
-          const on = value.includes(o);
-          return (
-            <button key={o} type="button" aria-pressed={on}
-              onClick={() => onChange(on ? value.filter((v) => v !== o) : [...value, o])}
-              className={cx("min-h-11 rounded-full border px-3.5 text-[14px] font-semibold capitalize transition-colors duration-150 cursor-pointer",
-                on ? "border-primary bg-primary-soft text-primary" : "border-line-strong bg-paper hover:bg-canvas")}>
-              {o}
-            </button>
-          );
-        })}
-      </div>
-    </fieldset>
-  );
-}
 
 /** Boards a search with these choices asks (spec 013): curated boards on the ticked sources plus added ones. */
 export function boardsInScope(setup: JobsSetup, form: JobForm, boards: CustomBoard[]) {
@@ -44,6 +21,8 @@ export function SearchForm({ setup, busy, error, onSearch, onCancel, onBoardsCha
   const roleMissing = !form.job_title.trim();
   const count = boardsInScope(setup, form, boards);
   const help = setup.help;
+  const placesId = useId();
+  const places = setup.options.locations ?? []; // absent on older servers: a plain text box
   return (
     <form className="flex flex-col gap-5" onSubmit={(e) => { e.preventDefault(); if (!roleMissing) onSearch(form); }}>
       {setup.suggested_titles.length > 0 && (
@@ -54,26 +33,39 @@ export function SearchForm({ setup, busy, error, onSearch, onCancel, onBoardsCha
           </div>
         </div>
       )}
-      <div className="grid grid-cols-1 gap-4 md:grid-cols-[1.4fr_1.2fr_1fr]">
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-[2fr_1fr]">
         <TextField label="Target role" required value={form.job_title} placeholder="e.g. Product marketing manager"
           help={help.title_rule} onChange={(e) => set({ job_title: e.target.value })} />
-        <TextField label="Location" value={form.location} placeholder="City, state or country"
-          onChange={(e) => set({ location: e.target.value })} />
         <SelectField label="Work mode" value={form.remote_preference} options={setup.options.work_modes}
+          className="md:self-end"
           onChange={(e) => set({ remote_preference: e.target.value, work_mode_stated_only: e.target.value === "remote" })} />
+        {form.remote_preference !== "any" && (
+          // Most job boards don't state a work mode. Remote starts with only jobs that say so (a city-only
+          // listing is rarely remote; dogfood, 2026-10-13); untick to include "Work mode not stated" jobs.
+          // Sits in the Work mode column, under the choice it belongs to.
+          <div className="-mt-3 md:col-start-2">
+            <Checkbox label={`Only jobs that say they're ${setup.options.work_modes.find((m) => m.value === form.remote_preference)?.label.toLowerCase() ?? form.remote_preference}`}
+              checked={Boolean(form.work_mode_stated_only)} onChange={(v) => set({ work_mode_stated_only: v })} />
+          </div>
+        )}
       </div>
-      {form.remote_preference !== "any" && (
-        // Most job boards don't state a work mode. Remote starts with only jobs that say so (a city-only
-        // listing is rarely remote; dogfood, 2026-10-13); untick to include "Work mode not stated" jobs.
-        <Checkbox label={`Only jobs that say they're ${setup.options.work_modes.find((m) => m.value === form.remote_preference)?.label.toLowerCase() ?? form.remote_preference}`}
-          checked={Boolean(form.work_mode_stated_only)} onChange={(v) => set({ work_mode_stated_only: v })} />
-      )}
+      {/* The main filters as dropdowns (2026-10-13). Location suggests places real postings name, and any
+          typed text still works; the others open tick boxes, so several can be chosen. */}
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <TextField label="Location" value={form.location} placeholder="City, state or country"
+          list={places.length ? placesId : undefined} autoComplete="off"
+          onChange={(e) => set({ location: e.target.value })} />
+        {places.length > 0 && <datalist id={placesId}>{places.map((p) => <option key={p} value={p} />)}</datalist>}
+        <MultiSelect label="Level" options={setup.options.experience_levels} value={form.experience_level}
+          onChange={(v) => set({ experience_level: v })} />
+        <MultiSelect label="Job type" options={setup.options.employment_types} value={form.employment_type}
+          onChange={(v) => set({ employment_type: v })} />
+        <MultiSelect label="Industry" options={setup.options.industries} value={form.industries}
+          onChange={(v) => set({ industries: v })} />
+      </div>
       <details className="rounded-[var(--radius-card)] border border-line p-4">
         <summary className="cursor-pointer font-semibold">More filters</summary>
         <div className="mt-4 flex flex-col gap-5">
-          <Toggles legend="Level" options={setup.options.experience_levels} value={form.experience_level} onChange={(v) => set({ experience_level: v })} />
-          <Toggles legend="Industry" options={setup.options.industries} value={form.industries} onChange={(v) => set({ industries: v })} />
-          <Toggles legend="Job type" options={setup.options.employment_types} value={form.employment_type} onChange={(v) => set({ employment_type: v })} />
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
             <TextField label="Minimum salary (USD)" type="number" min={0} step={5000} value={form.min_salary}
               onChange={(e) => set({ min_salary: Math.max(0, Number(e.target.value) || 0) })} />

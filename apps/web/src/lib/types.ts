@@ -111,6 +111,8 @@ export type JobsSetup = {
   options: {
     experience_levels: string[]; industries: string[]; employment_types: string[]; work_modes: Option[];
     sources: Array<Option & { curated_count: number }>;
+    /** Location suggestions from real postings (absent on older servers). */
+    locations?: string[];
   };
 };
 

@@ -18,6 +18,10 @@ def add_column_if_missing(cursor, table: str, column: str, definition: str) -> N
             raise
 
 
+# Location pieces that name a work mode, not a place (left out of the Location suggestions).
+_NOT_PLACES = {"hybrid", "on-site", "onsite", "in-office", "in office", "flexible"}
+
+
 class JobDatabase:
     """Manages SQLite persistence for job postings and user selections."""
 
@@ -462,6 +466,30 @@ class JobDatabase:
             return datetime.fromisoformat(str(value))
         except ValueError:
             return None
+
+    def common_locations(self, limit: int = 40) -> List[str]:
+        """Places stored postings name, most common first ("San Francisco", "United States"), for the
+        Location dropdown. Location search matches part of a posting's location, so each piece of
+        "San Francisco, CA" is a choice that finds real jobs; pieces under 3 letters ("CA") would match
+        inside other words, so they're left out."""
+        import re
+        from collections import Counter
+
+        cursor = self.connection.cursor()
+        cursor.execute("SELECT location FROM job_postings WHERE location IS NOT NULL AND location != ''")
+        counts: Counter = Counter()
+        shown: dict = {}
+        for (location,) in cursor.fetchall():
+            for piece in re.split(r"\s*(?:[,;|/·•]|\s-\s)\s*", str(location)):
+                piece = piece.strip(" .()")
+                # Work modes aren't places; the Work mode dropdown covers them.
+                if len(piece) < 3 or piece.isdigit() or piece.casefold() in _NOT_PLACES:
+                    continue
+                key = piece.casefold()
+                shown.setdefault(key, piece)
+                counts[key] += 1
+        ranked = sorted(counts, key=lambda key: (-counts[key], key))
+        return [shown[key] for key in ranked[:limit]]
 
     def close(self) -> None:
         """Close the database connection."""
