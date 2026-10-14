@@ -134,13 +134,15 @@ def _groups(state: dict, show_all: bool = False):
 
 
 def _finding_text(finding, reviewable) -> str:
-    """A finding's message, with the number of the change it is about (as shown in the review
-    queue) so two similar findings can be told apart."""
+    """A finding's message, in plain words, with the number of the change it is about (as shown in
+    the review queue) so two similar findings can be told apart."""
+    from resume_tailorer.ui.tailor_progress import readable_reason
+
     change_id = (getattr(finding, "details", None) or {}).get("change_id")
     for number, change in enumerate(reviewable, 1):
         if change.change_id == change_id:
-            return f"{finding.message} (Change {number} in the list.)"
-    return finding.message
+            return f"{readable_reason(finding.message)} (Change {number} in the list.)"
+    return readable_reason(finding.message)
 
 
 def _review_view(ws: Workspace, state: dict, show_all: bool = False, stale_message: str | None = None) -> dict:
@@ -149,7 +151,7 @@ def _review_view(ws: Workspace, state: dict, show_all: bool = False, stale_messa
     from resume_tailorer.ui.pdf_preview import pdf_page_images
     from resume_tailorer.ui.tailor_progress import (
         DECISION_DONE, VERBS, artifact_status_text, artifact_tone, empty_queue_message, next_undecided,
-        readable_requirement, rejected_by_checks, review_progress, supporting_fact, validation_word,
+        readable_reason, readable_requirement, rejected_by_checks, review_progress, supporting_fact, validation_word,
         change_section_label, change_title,
     )
 
@@ -174,7 +176,7 @@ def _review_view(ws: Workspace, state: dict, show_all: bool = False, stale_messa
             "requirement": readable_requirement(change),
             "full_requirement": change.job_requirement or "General fit with the posting",
             "fact": supporting_fact(change, state["profile"]),
-            "reason": change.reason or "Reworded to match the posting",
+            "reason": readable_reason(change.reason) or "Reworded to match the posting",
             "original": change.original_text or "",
             "proposed": change.proposed_text or "",
             "check": validation_word(change.validation_status),
@@ -224,7 +226,7 @@ def _review_view(ws: Workspace, state: dict, show_all: bool = False, stale_messa
         "next_undecided": next_undecided(groups.reviewable, decided),
         "changes": [change_view(c, i) for i, c in enumerate(groups.reviewable, 1)],
         "empty_message": empty_queue_message(state["changes"]),
-        "turned_down": [{"original": c.original_text, "reason": c.reason or "did not pass the checks"}
+        "turned_down": [{"original": c.original_text, "reason": readable_reason(c.reason) or "did not pass the checks"}
                         for c in rejected_by_checks(state["changes"])],
         # Spec 011: one gap system on every screen; the requirement review decides what's missing.
         "true_gaps": (missing_list(review, adjacent, ws.record.get("authorization")) if review is not None else

@@ -219,6 +219,15 @@ test("the privacy page is public, readable and accessible", async ({ page }) => 
   await expect(page.getByRole("contentinfo").getByRole("link", { name: "Privacy" })).toHaveAttribute("href", "/privacy");
 });
 
+test("a mistyped link says so and offers a way back", async ({ page }) => {
+  await page.goto("/no-such-page");
+  await expect(page.getByRole("heading", { level: 1, name: "Page not found" })).toBeVisible();
+  await expect(page).toHaveTitle("Page not found · Job Copilot");
+  await expectAccessible(page, "not found");
+  await page.getByRole("link", { name: "Go to Home" }).click();
+  await expect(page).toHaveURL(/\/$/);
+});
+
 test("a batch: select two jobs, tailor them, open one, prepare from Apply (nothing is submitted)", async ({ page }) => {
   await page.goto("/jobs");
   await page.getByRole("button", { name: "Select jobs to tailor together" }).click();

@@ -90,10 +90,16 @@ def build_kit(
     return tuple(fields)
 
 
+# The questions' short names, for a list: "Missing: work authorization, visa sponsorship." rather than
+# "Missing: Legally authorized to work here?, Will you need visa sponsorship?." (dogfood round 5).
+_SHORT_LABELS = {"Legally authorized to work here?": "work authorization",
+                 "Will you need visa sponsorship?": "visa sponsorship"}
+
+
 def kit_summary(fields: Iterable[KitField]) -> str:
     fields = tuple(fields)
     ready = sum(f.state == READY for f in fields)
-    missing = [f.label for f in fields if f.state == MISSING]
+    missing = [_SHORT_LABELS.get(f.label, f.label) for f in fields if f.state == MISSING]
     line = f"{ready} answers ready to copy."
     if missing:
         line += f" Missing: {', '.join(missing)}."

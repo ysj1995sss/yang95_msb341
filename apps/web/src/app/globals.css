@@ -33,6 +33,19 @@
 html {
   -webkit-text-size-adjust: 100%;
   color-scheme: light;
+  /* Keyboard focus never hides behind the pinned header, the phone's bottom menu or Tailor's pinned
+     bar (WCAG 2.4.11; dogfood round 5): scrolling to a focused control leaves room for them. */
+  scroll-padding-top: 5rem;
+  scroll-padding-bottom: 5rem;
+}
+
+@media (min-width: 640px) {
+  html:has([data-pinned-bar]) { scroll-padding-bottom: 10rem; } /* the bar sits above the bottom menu */
+}
+
+@media (min-width: 768px) {
+  html { scroll-padding-bottom: 1rem; } /* no bottom menu */
+  html:has([data-pinned-bar]) { scroll-padding-bottom: 7rem; }
 }
 
 /* Dark theme: follows the device setting (decision 030). Same names, so components don't

@@ -78,3 +78,9 @@ def test_the_browser_helper_cannot_submit():
             assert re.search(r"\bpick\.click\(\)", line), line
     manifest = (extension / "manifest.json").read_text(encoding="utf-8")
     assert '"host_permissions"' not in manifest and '"content_scripts"' not in manifest  # runs only on request
+
+
+def test_missing_questions_read_as_a_list_not_question_marks():
+    """Dogfood round 5: "Missing: Legally authorized to work here?, Will you need visa sponsorship?."."""
+    fields = [f for f in build_kit({}, None) if f.label.endswith("?")]
+    assert kit_summary(fields) == "0 answers ready to copy. Missing: work authorization, visa sponsorship."

@@ -14,6 +14,51 @@ VERBS = {"ACCEPTED": "Accept change", "MANUALLY_EDITED": "Edit manually", "REJEC
 DECISION_DONE = {"ACCEPTED": "Accepted", "MANUALLY_EDITED": "Edited by you", "REJECTED": "Original kept"}
 
 
+def _listed(raw: str) -> str:
+    return ", ".join(term.strip().strip("'\"") for term in raw.split(",") if term.strip())
+
+
+def _as_written(term: str, text: str) -> str:
+    """The check's lower-case term as the proposed text spells it ("kubernetes" -> "Kubernetes")."""
+    found = re.search(re.escape(term), text, re.IGNORECASE)
+    return found.group(0) if found else term
+
+
+# The checks' own messages (diff_generator) name the whole bullet and print Python lists; the review
+# showed them as they were (dogfood round 5). Each becomes what the person needs to know.
+_WARNING = "⚠️?\\s*"
+_RAW_CHECKS = (
+    (re.compile(_WARNING + r"POSSIBLY UNVERIFIED: new term\(s\) \[(.*?)\] in '.*?' not grounded in the original "
+                r"bullet or profile -- review before using", re.S),
+     lambda m: f"Adds words your facts don't show: {_listed(m.group(1))}."),
+    (re.compile(_WARNING + r"FABRICATION RISK: metric '(.*?)' mentioned in '.*?' but not in the original bullet or "
+                r"profile", re.S),
+     lambda m: f"Adds a number your facts don't show: {m.group(1)}."),
+    (re.compile(_WARNING + r"FABRICATION RISK: '(.*?)' mentioned in '(.*?)' but not in the original bullet or "
+                r"profile", re.S),
+     lambda m: f"Names {_as_written(m.group(1), m.group(2))}, which your facts don't show."),
+    (re.compile(r"SEMANTIC DRIFT: dropped metric\(s\) \[(.*?)\] from the original bullet '.*?' -- a number/scale "
+                r"disappearing changes the claim", re.S),
+     lambda m: f"Drops a number from your original: {_listed(m.group(1))}."),
+    (re.compile(r"SEMANTIC DRIFT: dropped word\(s\) \[(.*?)\] from the original bullet's core claim '.*?' -- "
+                r"rewrite changes what was claimed, not just how it's phrased", re.S),
+     lambda m: f"Drops part of what you did: {_listed(m.group(1))}."),
+)
+
+
+def readable_reason(reason: str) -> str:
+    """A change's reason or a check finding in plain words; other text is left as written."""
+    text = reason or ""
+    for pattern, plain in _RAW_CHECKS:
+        text = pattern.sub(plain, text)
+    if text == (reason or ""):
+        return text
+    text = " ".join(text.split())
+    # Each issue starts a sentence: "…don't show. adds “dbt”…" -> "…don't show. Adds “dbt”…".
+    text = re.sub(r"(^|[.!?] )([a-z])", lambda m: m.group(1) + m.group(2).upper(), text)
+    return text if text.endswith((".", "!", "?")) else text + "."
+
+
 def change_section_label(change: ResumeChange) -> str:
     return {"summary": "Summary", "skills": "Skills"}.get(change.section, "Work experience")
 

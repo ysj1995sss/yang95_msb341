@@ -42,18 +42,30 @@ test("filters are dropdowns, and several levels can still be chosen", async ({ p
   await expect(level).toHaveAttribute("aria-expanded", "false");
   await level.click();
   await expect(level).toHaveAttribute("aria-expanded", "true");
-  await page.getByRole("checkbox", { name: "Mid" }).check();
   await page.getByRole("checkbox", { name: "Senior" }).check();
+  await page.getByRole("checkbox", { name: "Mid" }).check();
   await expectAccessible(page, "level dropdown open");
   await page.keyboard.press("Escape");
   await expect(level).toHaveAttribute("aria-expanded", "false");
   await expect(level).toBeFocused();
-  await expect(level).toHaveText(/Mid, Senior/);
+  await expect(level).toHaveText(/Mid, Senior/); // list order, whichever was ticked first (dogfood round 5)
 
-  await page.getByRole("button", { name: /^Job type/ }).click();
+  const jobType = page.getByRole("button", { name: /^Job type/ });
+  await jobType.click();
+  await page.getByRole("checkbox", { name: "Part-Time" }).check();
+  await page.getByRole("button", { name: "Clear job type" }).click();
+  await expect(jobType).toBeFocused(); // not dropped to the top of the page
+  await expect(jobType).toHaveText(/Any/);
   await page.getByRole("checkbox", { name: "Contract" }).check();
   await page.getByRole("heading", { name: "Find a role worth preparing for" }).click(); // a click outside closes it
   await expect(page.getByRole("checkbox", { name: "Contract" })).toHaveCount(0);
+
+  // Tabbing away closes it too; left open, it covered the next fields (dogfood round 5).
+  const industry = page.getByRole("button", { name: /^Industry/ });
+  await industry.click();
+  await page.getByRole("checkbox", { name: "Technology" }).focus();
+  await page.keyboard.press("Tab"); // past the last choice: out of the list
+  await expect(industry).toHaveAttribute("aria-expanded", "false");
 
   await page.getByRole("button", { name: "Find matching jobs" }).click();
   await expect.poll(() => sent).toMatchObject({

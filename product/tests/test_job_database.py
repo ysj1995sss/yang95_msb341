@@ -408,6 +408,19 @@ def test_only_jobs_that_state_the_work_mode_when_asked(temp_db):
     assert found(True) == {"stated"}
 
 
+def test_a_country_finds_postings_that_name_it_another_way(temp_db):
+    """Dogfood round 5: "United States" hid "Remote - USA" and "Foster City, CA" postings."""
+    temp_db.create_tables()
+    for n, place in enumerate(("Remote - USA", "Foster City, CA", "Seattle, Washington, United States",
+                               "Toronto, Canada")):
+        temp_db.save_job_posting(JobPosting(source=JobSource.GREENHOUSE, source_id=str(n), company="Acme",
+                                            title="Analyst", location=place, description="x",
+                                            url=f"https://boards.greenhouse.io/acme/jobs/{n}"))
+    goals = SearchGoals(job_title="Analyst", industries=[], min_salary=0, max_salary=0, location="United States",
+                        remote_preference="any", sponsorship_required=False, experience_level="", company_size="")
+    assert {job.source_id for job in temp_db.search_jobs(goals)} == {"0", "1", "2"}
+
+
 def test_location_suggestions_come_from_the_places_postings_name(temp_db):
     """Location dropdown (2026-10-13): suggestions are the places real postings name, most common
     first, so picking one always matches jobs. Pieces too short to match safely ("CA") are left out."""
@@ -419,6 +432,11 @@ def test_location_suggestions_come_from_the_places_postings_name(temp_db):
                                             url=f"https://boards.greenhouse.io/acme/jobs/{n}"))
     suggestions = temp_db.common_locations(limit=5)
     assert suggestions[:2] == ["San Francisco", "United States"]
+    temp_db.save_job_posting(JobPosting(source=JobSource.GREENHOUSE, source_id="usa", company="Acme",
+                                        title="Analyst", location="Remote - USA", description="x",
+                                        url="https://boards.greenhouse.io/acme/jobs/usa"))
+    assert "USA" not in temp_db.common_locations()  # one name per country: it counts as United States
+    assert temp_db.common_locations(limit=1) == ["United States"]
     assert "CA" not in suggestions and "NY" not in suggestions
     assert "Hybrid" not in temp_db.common_locations()  # a work mode, not a place
     assert len(suggestions) == 5

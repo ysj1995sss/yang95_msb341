@@ -96,3 +96,12 @@ def test_a_requirement_shown_only_by_one_broad_word_is_a_partial_match():
     assert not any("healthcare" in s.requirement for s in detail.strong)
     partial = next(p for p in detail.partial if "healthcare" in p.requirement)
     assert "Reporting" in partial.evidence
+
+
+def test_the_headline_names_partial_matches_instead_of_no_gaps():
+    """Dogfood round 5: "No gaps found against the stated requirements" sat beside Match 54%, with four
+    partial matches listed under it."""
+    partly = FitResult(overall_fit=54.0, strong_matches=["education"], partial_matches=["sql", "communication"])
+    assert build_detail(job(), partly, "save", {}).summary == "Strong on 1, partial on 2, nothing missing."
+    fully = FitResult(overall_fit=100.0, strong_matches=["sql"])
+    assert build_detail(job(), fully, "save", {}).summary == "No gaps found against the stated requirements."

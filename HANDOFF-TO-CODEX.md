@@ -52,6 +52,27 @@ Local commits on `main`, **not pushed**; the backend needs a Cloud Run rebuild a
   - **Not checked:**
     - Word-to-PDF on Cloud Run (needs one live Word run);
     - Vercel's function time limit (300 s if Fluid compute is on, 60 s if off).
+- **Search filters as dropdowns (design approved by the builder):** Location suggests places that
+  postings name; Level, Job type and Industry are tick-box dropdowns; the remote box sits under
+  Work mode.
+- **Dogfood round 5 (local):** 14 issues, all fixed (report outside the repo, `dogfood-output-5`).
+  - **Location:** a country, state or province also matches its other names
+    (`job_search/places.py`).
+    - "United States" matched 408 of the stored jobs; it now matches 2,317, including "USA",
+      "Remote - US", "Foster City, CA" and "Seattle".
+    - Suggestions use one name per country.
+  - **Dropdowns:** close when focus leaves; choices stay in list order; Clear keeps focus.
+  - **Tailor:**
+    - check messages read as plain words (`readable_reason`);
+    - a PDF section heading the model renamed is no longer part of a change.
+  - **Tracker:** dates copied from mail apps ("Oct 13, 2026") are read; the fallback date is the
+    person's own day, not UTC.
+  - **Smaller fixes:**
+    - the Jobs headline no longer says "No gaps" beside partial matches;
+    - no more "Remote · Remote";
+    - the Apply kit lists missing answers by short name;
+    - a real "Page not found" page;
+    - keyboard focus stays clear of the pinned bars.
 
 ## START HERE (2026-10-13, evening) — live on Vercel + Cloud Run; review, dogfood and bug fixes
 

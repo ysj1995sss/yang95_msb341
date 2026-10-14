@@ -148,10 +148,12 @@ def run_tailoring(
                 profile, job_analysis, initial, gap_report, conservative=conservative, review=review
             )
             from resume_tailorer.artifacts.changes import revert_grammar_only_rewrites
-            from resume_tailorer.artifacts.freeform_sections import with_certifications, with_skill_additions
+            from resume_tailorer.artifacts.freeform_sections import (
+                with_certifications, with_profile_headings, with_skill_additions,
+            )
 
             # Credentials are facts: one the model dropped is put back, never proposed for removal.
-            tailored_text = with_certifications(optimization.tailored_resume, profile)
+            tailored_text = with_certifications(with_profile_headings(optimization.tailored_resume), profile)
             tailored_text = revert_grammar_only_rewrites(profile, tailored_text)
             # Spec 022 levels 2-3, computed by code as on the Word path.
             tailored_text, skill_additions = with_skill_additions(tailored_text, review)

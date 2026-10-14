@@ -6,7 +6,7 @@ import { useState } from "react";
 import { Alert, Button, Card, Chip, ErrorBox, PageHeader, Spinner, cx, toneOf, useToast } from "@/components/ui";
 import { api, useResource } from "@/lib/api";
 import type { JobForm, JobsList, JobsSetup } from "@/lib/types";
-import { JobDetailPanel } from "./job-detail";
+import { JobDetailPanel, workModeNote } from "./job-detail";
 import { SearchHelpPanel } from "./narrowing";
 import { SearchForm } from "./search-form";
 
@@ -218,7 +218,7 @@ export default function JobsPage() {
                         active ? "border-primary bg-primary-soft" : "border-transparent hover:bg-canvas", r.status === "Passed" && "opacity-60")}>
                       <span className="font-semibold">{r.title}</span>
                       <span className="text-[14px] text-muted">
-                        {[r.company, r.location, r.work_mode !== "Work mode not stated" ? r.work_mode : "", r.salary !== "No salary stated" ? r.salary : "", r.freshness].filter(Boolean).join(" · ")}
+                        {[r.company, r.location, workModeNote(r.location, r.work_mode), r.salary !== "No salary stated" ? r.salary : "", r.freshness].filter(Boolean).join(" · ")}
                       </span>
                       <span className="flex flex-wrap gap-1.5">
                         <Chip tone={toneOf(r.fit_tone)}>{r.fit}</Chip>

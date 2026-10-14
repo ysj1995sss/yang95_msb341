@@ -93,6 +93,28 @@ def comparable_content(text: str, name: str) -> str | tuple[str, ...]:
                  if term.strip())
 
 
+_PROFILE_HEADINGS = {"summary": "SUMMARY", "skills": "SKILLS"}
+
+
+def with_profile_headings(text: str) -> str:
+    """`text` with its summary and skills headings as profile_section writes them, with no blank line
+    under them. The review compares those sections with the profile's, so a heading the model renamed
+    ("PROFESSIONAL SUMMARY") rode along in the change, and accepting the rewording kept it (dogfood
+    round 5). The PDF is rebuilt from this text, so the heading is layout, not the person's words."""
+    try:
+        sections = find_sections(text)
+    except SectionAmbiguity:
+        return text  # the review reports it
+    for span in sorted(sections.values(), key=lambda item: item.start, reverse=True):
+        lines = span.text.splitlines(keepends=True)
+        body = lines[1:]
+        while body and not body[0].strip():
+            body.pop(0)
+        newline = lines[0][len(lines[0].rstrip("\r\n")):] or "\n"
+        text = text[:span.start] + _PROFILE_HEADINGS[span.name] + newline + "".join(body) + text[span.end:]
+    return text
+
+
 def with_skill_additions(text: str, review) -> tuple[str, list]:
     """`text` with the skills Job Copilot computes (spec 022 levels 2-3) added to the first line of
     its skills section, and those additions. The same code the Word path uses chooses them; until

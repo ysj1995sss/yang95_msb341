@@ -128,3 +128,27 @@ def test_freeform_diff_ordinal_is_not_treated_as_a_source_anchor():
     key = getattr(tailor_progress, "duplicate_key", None)
     assert callable(key)
     assert key(replace(change("freeform:0"), source_index=0)) is None
+
+
+def test_check_reasons_read_as_plain_words():
+    """Dogfood round 5: a change's "Resume change" box showed the raw check output, Python list and all."""
+    from resume_tailorer.ui.tailor_progress import readable_reason
+
+    raw = ("⚠️ POSSIBLY UNVERIFIED: new term(s) ['communicate', 'recurring'] in 'Led a team of 3 analysts "
+           "building weekly sales dashboards in Tableau to communicate sales trends' not grounded in the original "
+           "bullet or profile -- review before using")
+    assert readable_reason(raw) == "Adds words your facts don't show: communicate, recurring."
+    assert readable_reason("⚠️ FABRICATION RISK: 'kubernetes' mentioned in 'Ran Kubernetes clusters' but not in "
+                           "the original bullet or profile") == "Names Kubernetes, which your facts don't show."
+    assert readable_reason("⚠️ FABRICATION RISK: metric '40%' mentioned in 'Cut costs 40%' but not in the original "
+                           "bullet or profile") == "Adds a number your facts don't show: 40%."
+    assert readable_reason("SEMANTIC DRIFT: dropped metric(s) ['120'] from the original bullet 'Built SQL for 120 "
+                           "stores' -- a number/scale disappearing changes the claim") == (
+        "Drops a number from your original: 120.")
+    assert readable_reason("SEMANTIC DRIFT: dropped word(s) ['pricing'] from the original bullet's core claim "
+                           "'Built SQL pipelines feeding pricing reviews' -- rewrite changes what was claimed, not "
+                           "just how it's phrased") == "Drops part of what you did: pricing."
+    # Several issues, and messages that are already plain words, stay readable.
+    both = readable_reason(raw + " adds “dbt”, which you haven't shown evidence for")
+    assert both == "Adds words your facts don't show: communicate, recurring. Adds “dbt”, which you haven't shown evidence for."
+    assert readable_reason("Names the tool the posting asks for") == "Names the tool the posting asks for"

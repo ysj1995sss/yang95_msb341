@@ -98,6 +98,10 @@ def _header(text: str, name: str) -> str:
     return found.group(1).strip() if found else ""
 
 
+_MONTHS = {name: number for number, name in enumerate(
+    ("jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"), 1)}
+
+
 def _email_date(text: str) -> Optional[date]:
     raw = _header(text, "Date") or _header(text, "Sent")
     if not raw:
@@ -111,6 +115,17 @@ def _email_date(text: str) -> Optional[date]:
             return datetime.strptime(raw.split(" at ")[0].strip(), fmt).date()
         except ValueError:
             continue
+    # Mail apps show a short month ("Oct 13, 2026, 9:14 AM", "13 Oct 2026"), which none of the
+    # formats above read; the email then got today's date instead (dogfood round 5).
+    for pattern, order in ((r"\b([A-Za-z]{3,9})\.?\s+(\d{1,2}),?\s+(\d{4})\b", (2, 1, 3)),
+                           (r"\b(\d{1,2})\s+([A-Za-z]{3,9})\.?,?\s+(\d{4})\b", (1, 2, 3))):
+        found = re.search(pattern, raw)
+        month = _MONTHS.get(found.group(order[1])[:3].lower()) if found else None
+        if month:
+            try:
+                return date(int(found.group(order[2])), month, int(found.group(order[0])))
+            except ValueError:
+                continue
     return None
 
 

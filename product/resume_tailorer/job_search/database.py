@@ -6,6 +6,7 @@ from contextlib import contextmanager
 from datetime import datetime
 from typing import Optional, List
 from resume_tailorer.job_search.models import JobSource, SearchGoals, JobPosting, UserSelection
+from resume_tailorer.job_search.places import canonical_place, place_matches
 
 
 def add_column_if_missing(cursor, table: str, column: str, definition: str) -> None:
@@ -41,6 +42,8 @@ class JobDatabase:
         # per session; there's no genuine concurrent access to guard against.
         self.connection = sqlite3.connect(db_path, check_same_thread=False)
         self.connection.row_factory = sqlite3.Row
+        # The Location filter knows a place's other names ("USA", "Foster City, CA"; dogfood round 5).
+        self.connection.create_function("place_match", 2, place_matches, deterministic=True)
 
     def create_tables(self) -> None:
         """Initialize SQLite schema with job_postings, user_selections, and search_goals tables."""
@@ -235,10 +238,10 @@ class JobDatabase:
             where_clauses.append("(salary_min IS NULL OR salary_min <= ?)")
             params.append(goals.max_salary)
 
-        # Filter by location (LIKE)
+        # Location: part of the posting's location, or another name for the same place
         if goals.location:
-            where_clauses.append("location LIKE ?")
-            params.append(f"%{goals.location}%")
+            where_clauses.append("place_match(location, ?)")
+            params.append(goals.location)
 
         # Filter by work mode if not "any"
         if goals.remote_preference and goals.remote_preference != "any":
@@ -469,9 +472,9 @@ class JobDatabase:
 
     def common_locations(self, limit: int = 40) -> List[str]:
         """Places stored postings name, most common first ("San Francisco", "United States"), for the
-        Location dropdown. Location search matches part of a posting's location, so each piece of
-        "San Francisco, CA" is a choice that finds real jobs; pieces under 3 letters ("CA") would match
-        inside other words, so they're left out."""
+        Location dropdown. Each piece of "San Francisco, CA" is a choice that finds real jobs. A country
+        appears under one name ("USA" counts as United States), and two-letter pieces ("CA") are left
+        out: typed alone they read as a state, which a person picking from a list rarely means."""
         import re
         from collections import Counter
 
@@ -481,7 +484,7 @@ class JobDatabase:
         shown: dict = {}
         for (location,) in cursor.fetchall():
             for piece in re.split(r"\s*(?:[,;|/·•]|\s-\s)\s*", str(location)):
-                piece = piece.strip(" .()")
+                piece = canonical_place(piece.strip(" .()"))
                 # Work modes aren't places; the Work mode dropdown covers them.
                 if len(piece) < 3 or piece.isdigit() or piece.casefold() in _NOT_PLACES:
                     continue

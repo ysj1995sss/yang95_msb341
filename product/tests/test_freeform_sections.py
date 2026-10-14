@@ -251,3 +251,18 @@ def test_a_computed_skills_line_passes_the_pdf_content_check():
                         added_skills=(("PostgreSQL", 3, "You have SQL; the job asks for PostgreSQL."),))
     findings = validate_pdf_content("Sam Example\nSKILLS\nSQL, Excel, PostgreSQL\n", person, [line])
     assert "UNSUPPORTED_TOOL_ATTRIBUTION" not in {f.code for f in findings}
+
+
+def test_a_renamed_section_heading_is_not_part_of_the_change():
+    """Dogfood round 5: the model renamed SUMMARY to PROFESSIONAL SUMMARY while rewording it, so the
+    review showed (and accepting would keep) a heading change nobody asked for."""
+    from resume_tailorer.artifacts.freeform_sections import with_profile_headings
+
+    model_text = ("Riley Park\nPROFESSIONAL SUMMARY\n\nRetail analyst focused on reporting\nEXPERIENCE\n"
+                  "- Built SQL reports\nTECHNICAL SKILLS\nSQL, Tableau, Power BI\n")
+    kept = with_profile_headings(model_text)
+    assert "PROFESSIONAL SUMMARY" not in kept and "TECHNICAL SKILLS" not in kept
+    changes = {c.section: c for c in build_freeform_changes(_profile(), kept, GapReport([], ""))}
+    assert changes["summary"].proposed_text == "SUMMARY\nRetail analyst focused on reporting\n"
+    assert changes["skills"].proposed_text.startswith("SKILLS\n")
+    assert with_profile_headings(kept) == kept

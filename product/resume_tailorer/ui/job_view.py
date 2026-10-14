@@ -251,6 +251,8 @@ def build_detail(job: JobPosting, fit: Optional[FitResult], action: Optional[str
         summary = f"{len(hard)} hard {'requirement' if len(hard) == 1 else 'requirements'} may rule this out. Check before preparing an application."
     elif gaps:
         summary = f"Strong on {len(strong)}, partial on {len(partial)}, missing {len(gaps)}. Missing items will not be added to your resume."
+    elif partial:  # "No gaps" read as a full match beside a Match of 54% (dogfood round 5)
+        summary = f"Strong on {len(strong)}, partial on {len(partial)}, nothing missing."
     else:
         summary = "No gaps found against the stated requirements."
     return JobDetail(

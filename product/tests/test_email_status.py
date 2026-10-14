@@ -73,3 +73,15 @@ def test_moving_backwards_is_flagged():
     assert not read_email(SCREEN, APPS).moves_backwards(S.APPLIED)
 
 
+
+
+@pytest.mark.parametrize("header", [
+    "Date: Oct 13, 2026",                              # dogfood round 5: read as no date at all
+    "Date: Tue, Oct 13, 2026, 9:14 AM",                # as Gmail shows a message
+    "Date: Oct 13, 2026, 9:14 AM (2 hours ago)",
+    "Sent: Tuesday, October 13, 2026 9:14 AM",         # as Outlook copies it
+    "Date: October 13, 2026 at 9:14 AM",
+    "Date: 13 Oct 2026",
+])
+def test_the_dates_people_copy_from_their_mail_are_read(header):
+    assert read_email(f"{header}\nSubject: Next steps\n\nHi Riley", APPS).email_date == date(2026, 10, 13)

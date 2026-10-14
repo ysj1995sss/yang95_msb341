@@ -203,13 +203,19 @@ export function MultiSelect({ label, options, value, onChange, anyLabel = "Any" 
   const button = useRef<HTMLButtonElement>(null);
   useEffect(() => {
     if (!open) return;
-    const outside = (e: PointerEvent) => { if (!root.current?.contains(e.target as Node)) setOpen(false); };
+    // Closes on a click or Tab outside it (left open, it covered the next fields; dogfood round 5).
+    const outside = (e: Event) => { if (!root.current?.contains(e.target as Node)) setOpen(false); };
     const escape = (e: KeyboardEvent) => {
       if (e.key === "Escape") { setOpen(false); button.current?.focus(); }
     };
     document.addEventListener("pointerdown", outside);
+    document.addEventListener("focusin", outside);
     document.addEventListener("keydown", escape);
-    return () => { document.removeEventListener("pointerdown", outside); document.removeEventListener("keydown", escape); };
+    return () => {
+      document.removeEventListener("pointerdown", outside);
+      document.removeEventListener("focusin", outside);
+      document.removeEventListener("keydown", escape);
+    };
   }, [open]);
   const summary = value.length ? value.map(firstUpper).join(", ") : anyLabel;
   return (
@@ -223,13 +229,15 @@ export function MultiSelect({ label, options, value, onChange, anyLabel = "Any" 
       </button>
       {open && (
         <div id={`${id}-panel`} role="group" aria-label={label}
-          className="absolute top-full left-0 z-30 mt-1 max-h-72 w-full min-w-52 overflow-y-auto rounded-[var(--radius-card)] border border-line bg-paper px-3 py-1 shadow-lg">
+          className="absolute top-full left-0 z-30 mt-1 max-h-80 w-full min-w-52 overflow-y-auto rounded-[var(--radius-card)] border border-line bg-paper px-3 py-1 shadow-lg">
           {options.map((o) => (
+            // Choices stay in list order ("Mid, Senior"), whichever was ticked first.
             <Checkbox key={o} label={firstUpper(o)} checked={value.includes(o)}
-              onChange={(on) => onChange(on ? [...value, o] : value.filter((v) => v !== o))} />
+              onChange={(on) => onChange(on ? options.filter((x) => x === o || value.includes(x)) : value.filter((v) => v !== o))} />
           ))}
           {value.length > 0 && (
-            <button type="button" onClick={() => onChange([])}
+            // The button disappears once cleared, so focus goes back to the dropdown, not the page top.
+            <button type="button" onClick={() => { onChange([]); button.current?.focus(); }}
               className="mb-1 min-h-11 cursor-pointer text-[14px] font-semibold text-primary hover:underline">
               Clear {label.toLowerCase()}
             </button>

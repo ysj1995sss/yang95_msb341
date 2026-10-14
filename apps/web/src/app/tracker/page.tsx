@@ -12,6 +12,13 @@ const STATUS_TONE: Record<string, "verified" | "review" | "blocked" | "primary" 
   recruiter_screen: "primary", assessment: "review", ready_to_apply: "review", applied: "neutral",
 };
 
+/** Today on the person's own calendar, as YYYY-MM-DD. toISOString() is UTC: in the evening in the
+ *  Americas it's already tomorrow (dogfood round 5). */
+function localToday() {
+  const now = new Date();
+  return [now.getFullYear(), now.getMonth() + 1, now.getDate()].map((n) => String(n).padStart(2, "0")).join("-");
+}
+
 function EmailPanel({ onApplied }: { onApplied: () => void }) {
   const toast = useToast();
   const [text, setText] = useState("");
@@ -24,7 +31,7 @@ function EmailPanel({ onApplied }: { onApplied: () => void }) {
     try {
       const r = await api<EmailReading>("/tracker/email/read", { method: "POST", json: { text } });
       setReading(r);
-      setChoice({ application_id: r.chosen ?? "", status: r.status ?? "", email_date: r.email_date ?? new Date().toISOString().slice(0, 10) });
+      setChoice({ application_id: r.chosen ?? "", status: r.status ?? "", email_date: r.email_date ?? localToday() });
     } catch (e) { toast((e as Error).message); } finally { setBusy(false); }
   }
   async function confirm() {

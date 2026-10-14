@@ -8,6 +8,13 @@ import { api, useResource } from "@/lib/api";
 import { AtsExplainer } from "@/components/ats-explainer";
 import type { Evidence, JobDetail as Detail } from "@/lib/types";
 
+/** The work mode, unless it's unstated or the location already says it: "Remote U.S. · Remote" said
+ *  it twice (dogfood round 5). */
+export function workModeNote(location: string, workMode: string) {
+  if (!workMode || workMode === "Work mode not stated") return "";
+  return location.toLowerCase().includes(workMode.toLowerCase()) ? "" : workMode;
+}
+
 const MARKS = {
   strong: { icon: Check, className: "bg-verified-soft text-verified", label: "Strong match" },
   partial: { icon: CircleAlert, className: "bg-review-soft text-review", label: "Partial match" },
@@ -67,7 +74,7 @@ export function JobDetailPanel({ jobId, onChanged }: { jobId: string; onChanged:
   if (loading && !data) return <Spinner label="Loading the posting" />;
   if (!data) return null;
   const { row } = data;
-  const meta = [row.company, row.location, row.work_mode === "Work mode not stated" ? "" : row.work_mode, row.freshness]
+  const meta = [row.company, row.location, workModeNote(row.location, row.work_mode), row.freshness]
     .filter(Boolean).join(" · ");
 
   return (
