@@ -117,7 +117,8 @@ def build_freeform_changes(
                 evidence_source=(
                     f"gap_category_{related.category.name}" if related else "career_profile"
                 ),
-                evidence_text=related.candidate_evidence if related else change.original,
+                # A rewrite rests on its own original bullet; another bullet only for added text.
+                evidence_text=change.original or (related.candidate_evidence if related else ""),
                 validation_status=status,
                 disposition=disposition,
                 scope_issues=tuple(scope_issues),

@@ -104,3 +104,21 @@ def test_an_example_explains_generic_support_without_authorizing_the_product():
     assert row.status in ("partial", "check")
     assert "Qualtrics" not in row.shown_terms
     assert "Qualtrics" in blocked_terms(review)[0]
+
+
+@pytest.mark.parametrize("requirement", [
+    "1+ years of technical work experience using analytical tools and writing analytical reports",
+    "Experience in BaaS, DevRel or open source dev tool companies, connecting marketing spend to revenue",
+    "Experience using statistical software and visualization tools",
+])
+def test_ordinary_words_after_tool_wording_are_not_product_names(requirement):
+    # Dogfood round 4: "analytical" and "companies" were read as unknown platforms, which made
+    # the rows "check yourself" instead of being judged.
+    from resume_tailorer.analyzers.requirement_review import explicit_platform_terms
+    assert explicit_platform_terms(requirement) == ()
+
+
+def test_e_g_is_not_a_product_name():
+    from resume_tailorer.analyzers.requirement_review import explicit_platform_terms
+    found = explicit_platform_terms("Advanced proficiency in enterprise HR platforms e.g. Workday, ServiceNow, Greenhouse.")
+    assert "e.g" not in found and "ServiceNow" in found

@@ -116,3 +116,42 @@ def test_the_pdf_instructions_no_longer_ask_to_leave_most_bullets_unchanged():
         assert rule in prompt
     conservative = ResumeTailorer(llm=object())._build_system_prompt(conservative=True)
     assert "CONSERVATIVE MODE" in conservative  # the person's choice of minimal edits still holds
+
+
+# Dogfood round 4: a real run proposed nothing because every target was "[already shown; keep it]".
+# Requirements shown "in other words" counted as shown just because their evidence bullet was there.
+
+def test_a_requirement_shown_only_in_other_words_is_not_yet_shown():
+    from resume_tailorer.analyzers.requirement_review import (
+        TRANSFERABLE, EvidenceRef, RequirementRow, shown_in,
+    )
+    bullet = "Led a team of 3 analysts building weekly sales dashboards in Tableau"
+    row = RequirementRow("r4", "Collaboration: Demonstrated success working cross-functionally and building "
+                         "relationships across business teams. Comfortable engaging stakeholders.", "required", False,
+                         TRANSFERABLE, (), (EvidenceRef(bullet, "Analyst, bullet 1", "work_experience[0]", "experience", True),),
+                         "Partly shows “collaboration” in other words.")
+    assert shown_in(row, f"EXPERIENCE\n- {bullet}\n") is False  # the evidence is there; the requirement isn't named
+    named = ("Led a cross-functionally aligned team of 3 analysts building relationships with business teams and "
+             "engaging stakeholders through weekly sales dashboards")
+    assert shown_in(row, f"EXPERIENCE\n- {named}\n") is True
+
+
+def test_a_rewrite_that_changes_only_grammar_is_not_proposed(review):
+    # Dogfood round 4: "to explain sales trends" -> ", explaining sales trends" cost a review for nothing.
+    changed, reason = _check(review, "Partnered with merchandising leads to explain sales trends",
+                             "Partnered with merchandising leads, explaining sales trends")
+    assert not changed and reason is None
+    changed, reason = _check(review, DASHBOARDS, "Built SQL dashboards that let 40 regional managers track weekly campaign results")
+    assert changed, reason  # different words: still a proposal
+
+
+def test_the_requirements_word_family_is_grounded_too():
+    # Dogfood round 4: "to communicate sales insights" was refused for a job asking for a "clear and
+    # effective communicator", because "communicate" and "communicator" didn't match.
+    from resume_tailorer.diff_generator import DiffGenerator
+    issues = DiffGenerator().check_bullet_pair_fabrication_risk(
+        LAUNCH, LAUNCH + " to communicate risks", profile(), grounded="Clear and effective communicator.")
+    assert issues == []
+    unrelated = DiffGenerator().check_bullet_pair_fabrication_risk(
+        LAUNCH, LAUNCH + " to communicate risks", profile(), grounded="Strong commercial instincts.")
+    assert unrelated  # "communicate" isn't in the family of anything grounded

@@ -60,11 +60,11 @@ export function SearchForm({ setup, busy, error, onSearch, onCancel, onBoardsCha
         <TextField label="Location" value={form.location} placeholder="City, state or country"
           onChange={(e) => set({ location: e.target.value })} />
         <SelectField label="Work mode" value={form.remote_preference} options={setup.options.work_modes}
-          onChange={(e) => set({ remote_preference: e.target.value })} />
+          onChange={(e) => set({ remote_preference: e.target.value, work_mode_stated_only: e.target.value === "remote" })} />
       </div>
       {form.remote_preference !== "any" && (
-        // Most job boards don't state a work mode, so by default those jobs are kept (labelled
-        // "Work mode not stated"); this keeps only jobs that say it.
+        // Most job boards don't state a work mode. Remote starts with only jobs that say so (a city-only
+        // listing is rarely remote; dogfood, 2026-10-13); untick to include "Work mode not stated" jobs.
         <Checkbox label={`Only jobs that say they're ${setup.options.work_modes.find((m) => m.value === form.remote_preference)?.label.toLowerCase() ?? form.remote_preference}`}
           checked={Boolean(form.work_mode_stated_only)} onChange={(v) => set({ work_mode_stated_only: v })} />
       )}

@@ -122,7 +122,9 @@ def search_setup(ws: Workspace = Depends(workspace)):
         "min_salary": int(goals.get("min_salary") or 0), "employment_type": list(goals.get("employment_type") or []),
         "sponsorship_required": bool(goals.get("sponsorship_required", auth.get("sponsorship_required") is True)),
         "relocation_willing": bool(goals.get("relocation_willing")),
-        "work_mode_stated_only": bool(((ws.record.get(LAST_SEARCH_FIELD) or {}).get("form") or {}).get("work_mode_stated_only")),
+        # Remote starts with only jobs that say so (dogfood, 2026-10-13); a past choice is kept.
+        "work_mode_stated_only": bool(((ws.record.get(LAST_SEARCH_FIELD) or {}).get("form") or {}).get(
+            "work_mode_stated_only", (goals.get("remote_preference") or "any") == "remote")),
         "target_companies": goals.get("target_companies") or "", "exclude_companies": goals.get("exclude_companies") or "",
         "sources": list((ws.record.get(LAST_SEARCH_FIELD) or {}).get("sources", [s.value for s, _, _ in _live_sources()])),
         "include_custom": bool((ws.record.get(LAST_SEARCH_FIELD) or {}).get("include_custom", True)),

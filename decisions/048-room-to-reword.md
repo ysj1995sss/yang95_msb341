@@ -44,6 +44,11 @@ exactly that.
      one long change.
 4. **The PDF instructions match the Word ones:** rephrase every bullet whose evidence supports a
    "make clearer" target or required qualification. Conservative mode still overrides this.
+5. **A requirement shown "in other words" isn't shown yet** (dogfood round 4). A real run proposed
+   nothing, because every target was marked "[already shown; keep it]". Transferable requirements
+   ("Collaboration: working cross-functionally…") counted as shown just because their evidence
+   bullet was in the resume. Now they count as shown only when the resume names most of what the
+   requirement asks for, so naming it becomes the improvement.
 
 ## Unchanged
 

@@ -24,7 +24,7 @@ _CLASSES = [
     (REQUIRED, r"require|qualification|must|what you'?ll need|what you need|looking for|who you are|"
                r"you might thrive|you have|about you|your background|skills and experience|experience you|"
                r"what you'?ll have|basic qual|minimum|look for|^experience\b|great fit|good fit|"
-               r"successful in this role"),
+               r"successful in this role|^(?:technical |key |core |required )?skills\b"),
     (RESPONSIBILITIES, r"responsib|what you'?ll do|what you will do|in this role|you will\b|your role|"
                        r"day[\s-]to[\s-]day|you'?ll be doing|objectives|what you'?ll own|the work"),
 ]
@@ -40,7 +40,8 @@ _INLINE_HEADING = re.compile(r"^([A-Za-z][^:]{2,70}?):\s*(\S.*)$")
 
 
 def classify_heading(text: str) -> str:
-    lowered = text.lower().replace("’", "'")
+    # "Skills & Experience" is "skills and experience" (dogfood, 2026-10-13: its 9 requirements were dropped).
+    lowered = text.lower().replace("’", "'").replace("&", "and")
     for label, pattern in _CLASSES:
         if re.search(pattern, lowered):
             return label

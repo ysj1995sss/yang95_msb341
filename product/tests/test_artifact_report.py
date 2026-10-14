@@ -100,3 +100,20 @@ def test_ambiguous_freeform_pairing_requires_review_instead_of_being_accepted():
     assert changes[0].category is ChangeCategory.REJECTED
     assert changes[0].validation_status is ValidationStatus.FAIL
     assert "ambiguous" in changes[0].reason.lower()
+
+
+def test_a_rephrased_bullet_is_supported_by_itself_not_by_another_bullet():
+    # Dogfood round 4: a rewrite of "Built SQL pipelines…" showed "Led a team… dashboards" as its
+    # supporting fact, because that was the evidence of the requirement the wording matched best.
+    profile = CareerTruthProfile(
+        contact_info={}, education=[], skills=[], tools=[], certifications=[], accomplishments=[],
+        work_experience=[WorkExperience(employer="Example Co", title="Analyst", dates="2021-2024", accomplishments=[],
+                                        responsibilities=["Led a team of 3 analysts building weekly dashboards",
+                                                          "Built SQL pipelines feeding pricing reviews for 120 stores"])])
+    gaps = GapReport(items=[GapItem(requirement="SQL and dashboards for pricing teams", category=GapCategory.A,
+                                    reason="Shown", candidate_evidence="Led a team of 3 analysts building weekly dashboards")],
+                     summary="")
+    tailored = ("- Led a team of 3 analysts building weekly dashboards\n"
+                "- Built SQL pipelines supporting pricing reviews across 120 stores\n")
+    change = next(c for c in build_freeform_changes(profile, tailored, gaps) if "pipelines" in (c.proposed_text or ""))
+    assert change.evidence_text == "Built SQL pipelines feeding pricing reviews for 120 stores"

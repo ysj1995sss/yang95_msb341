@@ -437,6 +437,16 @@ class DiffGenerator:
             return text, ""
         return text[: match.start()], text[match.start() :]
 
+    @classmethod
+    def same_wording(cls, original: str, new: str) -> bool:
+        """True when `new` uses the same content words, in the same order, as `original`: only
+        grammar, punctuation or small words changed."""
+        def stems(text: str) -> list:
+            # Every word but the small ones in _STOPWORDS: "SQL" and "AWS" are short and matter.
+            return [cls._stem(w) for w in re.findall(r"[a-zA-Z'+#]+|\d[\d.,%$xkKmM+]*", text.lower())
+                    if w not in cls._STOPWORDS]
+        return stems(original) == stems(new)
+
     def check_semantic_drift(self, original: str, new: str) -> List[str]:
         """
         Hard, code-level guard against narrowing or changing an existing
@@ -616,11 +626,14 @@ class DiffGenerator:
         safe_stems = {self._stem(w) for w in self._SAFE_REPHRASE_WORDS} | {
             self._stem(w) for w in competency_backed_words
         } | self._content_stems(grounded)
+        # The grounded wording's word family: "communicate" for a job asking for a "communicator".
+        families = {w[:7] for w in self._content_words(grounded) if len(w) >= 7}
         genuinely_new = {
             w for w in self._content_words(new)
             if self._stem(w) not in trusted_stems
             and self._stem(w) not in original_stems
             and self._stem(w) not in safe_stems
+            and not (len(w) >= 7 and w[:7] in families)
             and f"word:{self._stem(w)}" not in already_reported
         }
         if genuinely_new:

@@ -29,7 +29,14 @@ the number, so the two disagreed.
      - related experience in other words (transferable), or a skill only listed: ½;
      - partly supported: the share of its named terms shown (½ when only the general capability is shown);
      - facts not yet confirmed, or no evidence: 0.
-   - **"Check yourself" rows** (years of experience, ambiguous wording) aren't counted either way.
+   - **Shown only by one broad word:** ½. Example: "healthcare analytics and reporting" from a
+     bullet about "reporting workloads".
+   - **"Check yourself" rows:**
+     - alternative wording or an unknown platform: counted by the skills they name. "SQL … or R
+       or Python" with SQL and Python shown gets at least ½.
+     - years of experience, or only ambiguous acronyms: not counted.
+   - **Work authorization:** not counted. It's eligibility, answered in Career Profile and shown
+     with the hard requirements.
    - **Weights:** required requirements count twice as much as preferred ones.
    - **Fallback:** a posting with nothing countable in its requirement list (only years, say)
      is counted on the skills and tools it names.
@@ -52,6 +59,14 @@ the number, so the two disagreed.
    is shown as "(older fit measure)", never relabelled as a Match.
 5. **Compatibility.** Match uses the same `FitResult` shape, so snapshots, batch, Apply and
    Tracker keep working. `scoring_version` is `match-v1`. The legacy `/v2/fit` scorer is unchanged.
+
+## Dogfood round 4 (same day)
+
+A real search scored one job 75% from 3 of its 10 requirements: 7 were "check yourself", and one
+bullet containing "reporting" counted fully for "healthcare analytics and reporting". The rules
+above for broad words and "check yourself" rows came from that run; the job is now 38%. The same
+run found that "using analytical tools" and "dev tool companies" were read as unknown products,
+and that work authorization was shown as missing when the person simply hadn't answered.
 
 ## How this fits decision 032
 

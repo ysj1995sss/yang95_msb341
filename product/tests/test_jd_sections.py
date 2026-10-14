@@ -94,3 +94,19 @@ def test_more_real_heading_names_and_legal_text_boundary():
         "Have launched developer products",
         "5 years in B2B SaaS.",
     ]
+
+
+def test_a_skills_heading_written_with_an_ampersand_is_a_requirements_section():
+    # Dogfood round 4: "Skills & Experience" (9 requirements: Tableau, SQL, Excel...) was dropped
+    # because only "skills and experience" was recognized, so Match counted 2 requirements.
+    from resume_tailorer.analyzers.jd_sections import OTHER, REQUIRED
+
+    text = ("Qualifications\nRequired\n- Bachelor's degree in Statistics or a related field.\n"
+            "Skills & Experience\n- Advanced proficiency in Tableau, Excel and SQL.\n"
+            "- Experience developing dashboards for business audiences.\n"
+            "Technical Skills\n- Experience with dbt.\n")
+    sections = split_sections(text)
+    assert "Advanced proficiency in Tableau, Excel and SQL." in sections[REQUIRED]
+    assert "Experience with dbt." in sections[REQUIRED]
+    assert classify_heading("Skills & Qualifications") == REQUIRED
+    assert classify_heading("Benefits & Perks") == OTHER

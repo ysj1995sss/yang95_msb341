@@ -16,7 +16,8 @@ from typing import Mapping, Optional
 from resume_tailorer.analyzers.ats_keywords import VOCABULARY, profile_text
 from resume_tailorer.analyzers.job_analyzer import JobAnalysis, JobAnalyzer
 from resume_tailorer.analyzers.requirement_review import (
-    CHECK, DIRECT, MENTION, NONE, PARTIAL, TRANSFERABLE, UNCONFIRMED, RequirementReview, build_review,
+    _YEARS, CHECK, DIRECT, MENTION, NONE, PARTIAL, TRANSFERABLE, UNCONFIRMED, RequirementReview, broad_only,
+    build_review, is_work_authorization,
 )
 from resume_tailorer.job_search.models import (
     DIRECT_VERIFIED, FitEvidence, FitResult, JobPosting, TRANSFERABLE_PARTIAL, UNSUPPORTED, WEAK_INFERRED,
@@ -33,10 +34,11 @@ SECTION_WEIGHT = {"required": 2.0, "preferred": 1.0}
 
 MATCH_NOTE = (
     "Match is the share of this posting's stated requirements that your confirmed facts show. Required "
-    "ones count twice as much as preferred ones. Direct evidence counts fully; related experience, or a "
-    "skill you only list, counts half. Requirements you need to check yourself, such as years of "
-    "experience, aren't counted. It's Job Copilot's reading of the posting, not an employer's ATS "
-    "score: each employer's system is set up differently."
+    "ones count twice as much as preferred ones. Direct evidence counts fully; related experience, a "
+    "skill you only list, or a requirement shown only by one broad word counts half. A requirement to "
+    "check yourself counts by the skills it names; years of experience and work authorization aren't "
+    "counted. It's Job Copilot's reading of the posting, not an employer's ATS score: each employer's "
+    "system is set up differently."
 )
 
 _LEVELS = {DIRECT: DIRECT_VERIFIED, TRANSFERABLE: TRANSFERABLE_PARTIAL, PARTIAL: TRANSFERABLE_PARTIAL,
@@ -54,14 +56,33 @@ class Match:
 
 def row_credit(row) -> Optional[float]:
     """0-1 credit for one requirement row, or None when it isn't counted."""
+    if is_work_authorization(row):
+        return None  # eligibility, answered in Career Profile and shown as a hard requirement
     if row.status == CHECK:
-        return None
+        return _named_terms_credit(row)
+    if broad_only(row):
+        return 0.5
     if row.status == PARTIAL:
         named = [status for _term, status in row.term_status]
         shown = sum(status == DIRECT for status in named)
         # Some named terms shown: that share. General capability shown but not the named example: half.
         return shown / len(named) if shown else 0.5
     return CREDIT.get(row.status, 0.0)
+
+
+def _named_terms_credit(row) -> Optional[float]:
+    """A "check yourself" row (alternative wording, an unknown platform) still names terms the
+    person may show: "SQL ... or R or Python" with SQL and Python shown is not unknown. Rows that
+    name nothing (years) or only ambiguous acronyms stay uncounted (dogfood, 2026-10-13: 7 of 10
+    rows uncounted made a 75% Match from the other 3)."""
+    states = [status for _term, status in row.term_status if status != CHECK]
+    if not states or _YEARS.search(row.text):
+        return None  # years are the person's to check, whatever tools the row also names
+    shown = sum(status == DIRECT for status in states)
+    if row.term_relation == "any":
+        return 1.0 if shown else 0.5 if MENTION in states else 0.0
+    share = (shown + 0.5 * sum(status == MENTION for status in states)) / len(states)
+    return max(share, 0.5) if shown else share
 
 
 def match_from_review(review: RequirementReview) -> Match:

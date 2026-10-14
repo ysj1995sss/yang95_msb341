@@ -7,7 +7,8 @@ from dataclasses import replace
 import pytest
 
 from resume_tailorer.analyzers.requirement_review import (
-    CHECK, DIRECT, MENTION, NONE, PARTIAL, TRANSFERABLE, UNCONFIRMED, RequirementReview, RequirementRow,
+    CHECK, DIRECT, MENTION, NONE, PARTIAL, TRANSFERABLE, UNCONFIRMED, EvidenceRef, RequirementReview,
+    RequirementRow,
 )
 from resume_tailorer.job_search.models import JobPosting, JobSource
 from resume_tailorer.job_search.requirement_match import MatchScorer, match_from_review, quick_match_score
@@ -114,3 +115,56 @@ def test_match_results_are_a_drop_in_for_the_old_fit_snapshot():
     snapshot = fit.to_dict()
     assert snapshot["overall_fit"] == fit.overall_fit and snapshot["scoring_version"] == fit.scoring_version
     assert replace(fit, overall_fit=None).overall_fit is None
+
+
+# Dogfood round 4 (2026-10-13): a posting scored 75% from 3 of its 10 requirements, because the 7
+# "check yourself" rows weren't counted and "reporting" in one bullet counted fully for
+# "healthcare analytics and reporting".
+
+def _check_row(term_status, relation="all", section="required") -> RequirementRow:
+    return RequirementRow("r9", "A requirement to check", section, False, CHECK, tuple(t for t, _s in term_status), (),
+                          "", term_status=tuple(term_status), term_relation=relation)
+
+
+def test_a_check_yourself_row_with_named_terms_counts_by_those_terms():
+    either = _check_row((("SQL", DIRECT), ("R", NONE), ("Python", DIRECT), ("pandas", NONE)), "uncertain")
+    assert match_from_review(RequirementReview((either,))).percent == 50  # SQL and Python shown, R and pandas not
+    listed = _check_row((("Excel", MENTION), ("Google Sheets", NONE)), "uncertain")
+    assert match_from_review(RequirementReview((listed,))).percent == 25
+    alternative = _check_row((("Looker", NONE), ("Tableau", DIRECT)), "any")
+    assert match_from_review(RequirementReview((alternative,))).percent == 100
+    # An ambiguous acronym, or years with nothing named: still left for the person, not counted.
+    assert match_from_review(RequirementReview((_check_row((("PM", CHECK),)),))).percent is None
+    assert match_from_review(RequirementReview((_check_row(()),))).percent is None
+    years = replace(_check_row((("FP&A", NONE), ("SaaS", NONE)), "any"),
+                    text="4+ years of experience in data analysis. Exposure to FP&A or SaaS metrics is a plus.")
+    assert match_from_review(RequirementReview((years,))).percent is None  # years are the person's to check
+
+
+def _evidenced(text: str, terms, passage: str, kind: str = "experience") -> RequirementRow:
+    ref = EvidenceRef(passage, "Analyst at Example Co, bullet 1", "work_experience[0]", kind, True)
+    return RequirementRow("r1", text, "required", False, DIRECT, tuple(terms), (ref,), "")
+
+
+def test_a_broad_word_alone_is_half_credit_when_the_rest_of_the_requirement_is_not_shown():
+    healthcare = _evidenced("1+ years experience in preparing healthcare analytics and reporting", ("Reporting",),
+                            "Migrated reporting workloads to AWS Redshift, cutting query time by 40%")
+    assert match_from_review(RequirementReview((healthcare,))).percent == 50
+
+
+def test_a_broad_word_counts_fully_when_the_passage_shows_the_requirement():
+    dashboards = _evidenced("Experience building weekly dashboards for sales teams", ("Dashboards",),
+                            "Built weekly dashboards for 12 regional sales teams in Tableau")
+    assert match_from_review(RequirementReview((dashboards,))).percent == 100
+    named = _evidenced("Working proficiency in Python for data transformation", ("Python",),
+                       "Automated monthly KPI reporting in Python")
+    assert match_from_review(RequirementReview((named,))).percent == 100  # a named skill shown: full credit
+    degree = _evidenced("Bachelor's degree in Business, Economics, or a related field", (),
+                        "BS Economics, State University, 2019", kind="education")
+    assert match_from_review(RequirementReview((degree,))).percent == 100
+
+
+def test_work_authorization_is_eligibility_not_a_skill_so_match_leaves_it_out():
+    authorized = RequirementRow("r1", "Must be authorized to work in the U.S.", "required", True, NONE, (), (), "")
+    skill = _row(2, DIRECT)
+    assert match_from_review(RequirementReview((authorized, skill))).percent == 100

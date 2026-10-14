@@ -137,6 +137,16 @@ def test_saving_a_job_counts_as_saved_on_home_and_tracker(jobs_client):
     assert jobs_client.get("/v2/tracker").json()["weekly"]["saved"] == 1
 
 
+def test_a_remote_search_starts_with_only_jobs_that_say_they_are_remote(jobs_client):
+    # Dogfood round 4: with Remote chosen, 20 of 27 results were city-only listings (Gurugram,
+    # Toronto) until the person found the checkbox. Remote now starts with it ticked.
+    jobs_client.put("/v2/profile/goals", json={"job_title": "Data Analyst", "remote_preference": "remote"})
+    assert jobs_client.get("/v2/jobs/setup").json()["form"]["work_mode_stated_only"] is True
+    jobs_client.post("/v2/jobs/search", json={"job_title": "Data Analyst", "remote_preference": "remote",
+                                              "work_mode_stated_only": False})
+    assert jobs_client.get("/v2/jobs/setup").json()["form"]["work_mode_stated_only"] is False  # their choice is kept
+
+
 def test_only_jobs_that_state_the_work_mode_is_a_remembered_search_option(jobs_client):
     # Dogfood round 2, 2026-10-13: "Remote" mostly listed jobs whose work mode isn't stated.
     stated = jobs_client.post("/v2/jobs/search", json={"job_title": "Data Analyst", "remote_preference": "hybrid",

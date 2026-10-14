@@ -26,6 +26,16 @@ Local commits on `main`, **not pushed**; the backend needs a Cloud Run rebuild a
   bullet that is its evidence (not years, numbers or unshown terms); filler words may be dropped;
   the Word length cap is 25% (was 15%); the PDF instructions ask for every supported rephrase.
   One real Codex pass on the fixture: 2 rewrites accepted, both blocked under the old rules.
+- **Dogfood round 4 (local):** 12 issues, 11 fixed (report outside the repo, `dogfood-output-4`).
+  - **Match:** "check yourself" rows count by the skills they name (years stay uncounted); one broad
+    word alone is half credit; work authorization is left out.
+  - **Tailoring:** a requirement shown only "in other words" is no longer "already shown", so it gets
+    rewritten (a real run had proposed nothing).
+  - **Requirement sections:** "Skills & Experience" requirements are read.
+  - **Remote:** the "only jobs that say they're remote" box starts ticked.
+  - **Rewrites:** word-family grounding; grammar-only Word rewrites dropped.
+  - **Supporting fact:** a rewrite's supporting fact is its own bullet.
+  - **Still open:** Tailor's requirement review calls unanswered work authorization "missing".
 
 ## START HERE (2026-10-13, evening) — live on Vercel + Cloud Run; review, dogfood and bug fixes
 

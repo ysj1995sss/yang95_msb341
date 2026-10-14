@@ -232,7 +232,7 @@ def build_detail(job: JobPosting, fit: Optional[FitResult], action: Optional[str
             ("Evidence found", pct(fit.evidence_confidence)),
         )
     if review is not None:
-        strong, partial, review_gaps, review_hard, review_unknowns = review_lists(review)
+        strong, partial, review_gaps, review_hard, review_unknowns = review_lists(review, authorization)
         hard = sponsorship_conflict + review_hard
         gaps = review_gaps
         unknowns = review_unknowns
@@ -258,22 +258,38 @@ def build_detail(job: JobPosting, fit: Optional[FitResult], action: Optional[str
     )
 
 
-def review_lists(review) -> tuple:
-    """(strong, partial, gaps, hard, unknowns) for the Jobs panel, from the requirement review."""
+def review_lists(review, authorization: Optional[Mapping[str, Any]] = None) -> tuple:
+    """(strong, partial, gaps, hard, unknowns) for the Jobs panel, from the requirement review.
+    Work authorization comes from the person's answer in Career Profile, never from the resume, and
+    a requirement shown only by one broad word is a partial match (dogfood, 2026-10-13)."""
     from resume_tailorer.analyzers.requirement_review import (
-        CHECK, DIRECT, MENTION, NONE, PARTIAL, TRANSFERABLE, UNCONFIRMED,
+        CHECK, DIRECT, MENTION, NONE, PARTIAL, TRANSFERABLE, UNCONFIRMED, broad_only, is_work_authorization,
     )
     from resume_tailorer.analyzers.term_match import short_requirement
 
     def quote(row) -> str:
         return row.evidence[0].text if row.evidence else ""
 
-    strong = tuple(EvidenceLine(short_requirement(r.text), quote(r)) for r in review.rows if r.status == DIRECT)
-    partial = tuple(EvidenceLine(short_requirement(r.text), (r.reason if r.status == PARTIAL else quote(r)))
-                    for r in review.rows if r.status in (TRANSFERABLE, PARTIAL))
-    gaps = tuple(short_requirement(r.text) for r in review.rows if r.status == NONE and not r.hard_gate)
-    hard = [f"Missing a hard requirement: {short_requirement(r.text)}" for r in review.rows
+    authorization = authorization or {}
+    work_rows = [r for r in review.rows if is_work_authorization(r)]
+    rows = [r for r in review.rows if r not in work_rows]
+    strong = [EvidenceLine(short_requirement(r.text), quote(r)) for r in rows if r.status == DIRECT and not broad_only(r)]
+    partial = [EvidenceLine(short_requirement(r.text),
+                            f"Shown only as “{', '.join(r.terms)}”: {quote(r)}" if broad_only(r)
+                            else r.reason if r.status == PARTIAL else quote(r))
+               for r in rows if r.status in (TRANSFERABLE, PARTIAL) or broad_only(r)]
+    gaps = tuple(short_requirement(r.text) for r in rows if r.status == NONE and not r.hard_gate)
+    hard = [f"Missing a hard requirement: {short_requirement(r.text)}" for r in rows
             if r.status == NONE and r.hard_gate]
     words = {MENTION: "Only listed in your skills", UNCONFIRMED: "Not confirmed yet", CHECK: "Check yourself"}
-    unknowns = tuple(f"{words[r.status]}: {short_requirement(r.text)}" for r in review.rows if r.status in words)
-    return strong, partial, gaps, hard, unknowns
+    unknowns = [f"{words[r.status]}: {short_requirement(r.text)}" for r in rows if r.status in words]
+    for r in work_rows:
+        authorized = authorization.get("authorized_to_work")
+        needs_sponsor = authorization.get("sponsorship_required") is True and "sponsor" in r.text.lower()
+        if authorized is True and not needs_sponsor:
+            strong.append(EvidenceLine(short_requirement(r.text), "You said you're authorized to work (Career Profile)"))
+        elif authorized is False or needs_sponsor:
+            hard.append(f"Check your work authorization: {short_requirement(r.text)}")
+        else:
+            unknowns.append(f"Work authorization not answered in your Career Profile: {short_requirement(r.text)}")
+    return tuple(strong), tuple(partial), gaps, hard, tuple(unknowns)

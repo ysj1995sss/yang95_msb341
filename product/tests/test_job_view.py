@@ -62,3 +62,37 @@ def test_unknown_salary_sponsorship_and_fit_are_named_as_unknowns():
     detail = build_detail(job(), None, None, {})
     assert detail.unknowns == ("Salary was not stated", "Sponsorship was not stated",
                                "Match couldn't be worked out from what the posting says")
+
+
+def _authorization_review():
+    from resume_tailorer.analyzers.requirement_review import (
+        DIRECT, NONE, EvidenceRef, RequirementReview, RequirementRow,
+    )
+    gate = RequirementRow("r1", "Must be authorized to work in the U.S. without sponsorship.", "required", True, NONE,
+                          (), (), "A required credential, license or degree that isn't in your Career Profile.")
+    ref = EvidenceRef("Migrated reporting workloads to AWS Redshift", "Analyst, bullet 3", "work_experience[0]",
+                      "experience", True)
+    broad = RequirementRow("r2", "1+ years experience in preparing healthcare analytics and reporting", "required",
+                           False, DIRECT, ("Reporting",), (ref,), "Reporting named in a passage that shows you using it.")
+    return RequirementReview((gate, broad))
+
+
+def test_work_authorization_comes_from_the_persons_answer_not_the_resume():
+    # Dogfood round 4: "Missing a hard requirement: Must be authorized to work in the U.S" for someone
+    # who simply hadn't answered the question yet.
+    review = _authorization_review()
+    unanswered = build_detail(job(), None, None, {}, None, review=review)
+    assert not any("authorized" in h for h in unanswered.hard_gates)
+    assert any("work authorization" in u.lower() and "Career Profile" in u for u in unanswered.unknowns)
+    yes = build_detail(job(), None, None, {"authorized_to_work": True, "sponsorship_required": False}, None, review=review)
+    assert not any("authorized" in h for h in yes.hard_gates)
+    assert any("authorized" in s.requirement for s in yes.strong)
+    no = build_detail(job(), None, None, {"authorized_to_work": False}, None, review=review)
+    assert any("authorized" in h for h in no.hard_gates)
+
+
+def test_a_requirement_shown_only_by_one_broad_word_is_a_partial_match():
+    detail = build_detail(job(), None, None, {}, None, review=_authorization_review())
+    assert not any("healthcare" in s.requirement for s in detail.strong)
+    partial = next(p for p in detail.partial if "healthcare" in p.requirement)
+    assert "Reporting" in partial.evidence

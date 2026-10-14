@@ -275,6 +275,15 @@ def passages(profile: CareerTruthProfile, provenance: Optional[Mapping[str, str]
 _CONTEXT_KINDS = ("experience", "education", "certification")
 
 
+# A lower-case word with an ordinary English ending ("analytical", "companies", "visualization") after
+# tool wording is a description, not a product name (dogfood, 2026-10-13).
+_ORDINARY_WORD = re.compile(r"^[a-z]+(?:al|ive|ous|ic|ies|ment|tion|sion|ing|ed|ful|able|ible|ary|ors|ers)$")
+
+
+def _could_be_product(name: str) -> bool:
+    return not _ORDINARY_WORD.match(name)
+
+
 def explicit_platform_terms(text: str) -> tuple[str, ...]:
     """Keep explicit product examples, even outside the vocabulary, out of generic fallback."""
     found = [label for label in ("Qualtrics", "SurveyMonkey") if mentions(label, text)]
@@ -291,14 +300,15 @@ def explicit_platform_terms(text: str) -> tuple[str, ...]:
         snippet = name + usage.group(2)
         known_leading = any(key.split()[0] == name.lower() and mentions(key, snippet) for key in VOCABULARY)
         generic_suffix = bool(re.match(r'\s+(?:analytics|platforms?|tools?|software)\b', usage.group(2), re.I))
-        if name.lower() not in {'any', 'some', 'the', 'a', 'an', 'these', 'those'} and not known_leading and (name[0].isupper() or re.search(r'[a-z][A-Z]', name) or generic_suffix):
+        if name.lower() not in {'any', 'some', 'the', 'a', 'an', 'these', 'those'} and not known_leading and (name[0].isupper() or re.search(r'[a-z][A-Z]', name) or (generic_suffix and _could_be_product(name))):
             found.append(name)
     for descriptor in re.finditer(r'\b(?:platforms?|tools?|software)\s+([A-Za-z][A-Za-z0-9+#.-]*)', text, re.I):
         name = descriptor.group(1).rstrip('.')
-        if name.lower() not in {'such', 'including', 'like', 'e', 'and', 'or', 'for', 'with', 'in',
-                                'to', 'of', 'is', 'are', 'experience', 'proficiency', 'knowledge', 'skills',
+        if name.lower() not in {'such', 'including', 'like', 'e', 'e.g', 'i.e', 'etc', 'and', 'or', 'for', 'with',
+                                'in', 'to', 'of', 'is', 'are', 'experience', 'proficiency', 'knowledge', 'skills',
                                 'development', 'engineering', 'unless', 'when', 'if', 'that', 'which', 'any',
-                                'some', 'the', 'a', 'an', 'these', 'those'} and not terms_in(name):
+                                'some', 'the', 'a', 'an', 'these', 'those'} and not terms_in(name) \
+                and _could_be_product(name):
             found.append(name)
     return tuple(dict.fromkeys(found))
 
@@ -534,6 +544,27 @@ def build_review(job_analysis: JobAnalysis, profile: CareerTruthProfile, *,
     return with_resume(review, resume_text) if resume_text is not None else review
 
 
+_AUTHORIZATION = re.compile(r"\b(?:authori[sz](?:ed|ation)\s+to\s+work|work\s+authori[sz]ation|eligib(?:le|ility)\s+"
+                            r"to\s+work|right\s+to\s+work|visa\s+sponsorship|require\s+sponsorship)\b", re.IGNORECASE)
+
+
+def is_work_authorization(row: RequirementRow) -> bool:
+    """A requirement about the right to work, which the person answers in Career Profile, not in a resume."""
+    return bool(_AUTHORIZATION.search(row.text))
+
+
+def broad_only(row: RequirementRow) -> bool:
+    """Direct only through a broad word ("Reporting") in a work passage that shows little else the
+    requirement asks for: "healthcare analytics and reporting" from "migrated reporting workloads"
+    (dogfood, 2026-10-13). The word is shown; the requirement mostly isn't."""
+    if row.status != DIRECT or not row.terms or any(t not in GENERIC_TERMS for t in row.terms):
+        return False
+    work = [e for e in row.evidence if e.kind == "experience"]
+    if not work or len(work) < len(row.evidence):
+        return False
+    return max(qualification_match_ratio(e.text, row.text) for e in work) < 0.5
+
+
 def _order(row: RequirementRow) -> tuple:
     # Required first; within it, missing hard gates first so they're never buried.
     return (row.section != "required", not (row.hard_gate and row.status == NONE), int(row.id[1:]))
@@ -549,6 +580,11 @@ def shown_in(row: RequirementRow, resume_text: str) -> bool:
         return any(_mentions_any(t, resume_text) for t in row.terms)
     if row.evidence and all(e.kind in ("education", "certification") for e in row.evidence):
         return True  # a degree or credential sits in its own section; bullet edits can't add it
+    if row.status == TRANSFERABLE:
+        # Shown "in other words": the evidence bullet is there, but until the resume names what the
+        # requirement asks for, naming it is the improvement. Counting it as shown told the model
+        # "keep it", and a real run proposed nothing (dogfood, 2026-10-13).
+        return qualification_match_ratio(resume_text, row.text) >= 0.5
     flat = _flat(resume_text)
     return any(_flat(e.text)[:60] in flat for e in row.evidence if e.kind in _CONTEXT_KINDS and len(e.text) > 20)
 

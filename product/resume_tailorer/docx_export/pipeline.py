@@ -134,7 +134,9 @@ def changes_from_bullet_edits(
                 ),
                 job_requirement=gap.requirement if gap else "",
                 evidence_source="career_truth_profile" if gap else "original_resume",
-                evidence_text=gap.candidate_evidence if gap else edit.original_text,
+                # A rewritten bullet rests on itself; a competency swap on the action that shows it.
+                evidence_text=(gap.candidate_evidence if gap and bullet.section == "competencies"
+                               else edit.original_text),
                 validation_status=(ValidationStatus.FAIL if rejected else ValidationStatus.PASS),
             )
         )

@@ -513,6 +513,12 @@ Return the JSON array now:"""
                 )
                 continue
 
+            if self._diff_gen.same_wording(bullet.text, new_text):
+                # Only grammar or punctuation changed ("to explain" -> ", explaining"): nothing for the
+                # job, and a review the person has to spend time on (dogfood, 2026-10-13).
+                resolved[paragraph_index] = BulletEdit(paragraph_index, bullet.text, bullet.text, changed=False)
+                continue
+
             if bullet.section == "competencies":
                 # Reorder AND up to 2 evidence-backed swaps (Problem 6/10:
                 # "keep approximately the same number of competencies, only

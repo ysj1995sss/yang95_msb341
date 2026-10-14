@@ -131,7 +131,7 @@ def _first_time_action(index: int, inputs: HomeInputs) -> NextAction:
     if index == 2:
         return NextAction(
             "Set your job goals", "A few short questions, one at a time.",
-            "Your search starts ready to go, and fit scores reflect what you want.",
+            "Your job search starts with these answers already filled in.",
             "Answer questions", inline="goals",
         )
     if index == 3:
