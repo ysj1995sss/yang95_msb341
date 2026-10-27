@@ -7,3 +7,11 @@
 **New done looks like:** By October 28, a working Closer website with a homepage, 10 question categories, and at least 10 questions per category. A tester can open the website, select any category, answer or skip each question, and move to the next one with Next, without errors.
 
 **New predicted difficulty:** 3
+
+---
+
+**Actual difficulty:** 2.
+
+**Why it differed:** I changed my goal to a demo of Closer, and the demo was easier than I expected.
+
+**Retro:** Yes, I hit the goal for this sprint. Next sprint I will build more complicated functions and have more people test the app.
