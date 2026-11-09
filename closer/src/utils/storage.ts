@@ -69,3 +69,66 @@ export function saveDailyAnswer(
   all[dateKey] = { questionId, text };
   return write(DAILY, all, store);
 }
+
+// ---- Favorites -------------------------------------------------------------------------------
+// Hearted question ids, kept in localStorage. When the browser refuses storage the hearts still
+// work for the visit (held in memory) and simply aren't remembered.
+
+const FAVORITES = "closer.favorites";
+const SESSION_PREFIX = "closer.session.";
+
+export interface FavoritesStore {
+  get(): readonly string[];
+  has(id: string): boolean;
+  /** Adds or removes `id`; returns whether it is now a favorite. */
+  toggle(id: string): boolean;
+  subscribe(listener: () => void): () => void;
+}
+
+export function createFavoritesStore(store: KeyValueStore | null = browserStore()): FavoritesStore {
+  const stored = read<unknown>(FAVORITES, store);
+  let ids: readonly string[] = Array.isArray(stored)
+    ? [...new Set(stored.filter((x): x is string => typeof x === "string"))]
+    : [];
+  const listeners = new Set<() => void>();
+  return {
+    get: () => ids,
+    has: (id) => ids.includes(id),
+    toggle(id) {
+      const now = !ids.includes(id);
+      ids = now ? [...ids, id] : ids.filter((x) => x !== id);
+      write(FAVORITES, ids, store);
+      listeners.forEach((l) => l());
+      return now;
+    },
+    subscribe(listener) {
+      listeners.add(listener);
+      return () => void listeners.delete(listener);
+    },
+  };
+}
+
+export const favorites = createFavoritesStore();
+
+// ---- Session progress ------------------------------------------------------------------------
+// A category round survives a refresh while the tab stays open (sessionStorage).
+
+function sessionStore(): KeyValueStore | null {
+  try {
+    return typeof window !== "undefined" ? window.sessionStorage : null;
+  } catch {
+    return null;
+  }
+}
+
+export function loadSession(key: string, store: KeyValueStore | null = sessionStore()): unknown {
+  return read<unknown>(SESSION_PREFIX + key, store);
+}
+
+export function saveSession(key: string, state: unknown, store: KeyValueStore | null = sessionStore()): boolean {
+  return write(SESSION_PREFIX + key, state, store);
+}
+
+export function clearSession(key: string, store: KeyValueStore | null = sessionStore()): void {
+  write(SESSION_PREFIX + key, null, store);
+}

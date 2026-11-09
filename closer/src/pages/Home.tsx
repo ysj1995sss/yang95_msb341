@@ -1,6 +1,7 @@
 import { ArrowRight } from "lucide-react";
 import { CategoryCard } from "../components/CategoryCard";
 import { DailyQuestion } from "../components/DailyQuestion";
+import { GuessPromo } from "../components/GuessPromo";
 import { HowItWorks } from "../components/HowItWorks";
 import { categories } from "../data/categories";
 import { href } from "../utils/router";
@@ -54,13 +55,15 @@ export function Home() {
           <div className="flex flex-wrap items-end justify-between gap-3">
             <div>
               <h2 id="explore-heading" className="text-3xl font-extrabold tracking-tight sm:text-4xl">Explore experiences</h2>
-              <p className="mt-2 text-muted">Ten ways to start a conversation. Pick one and dive in.</p>
+              <p className="mt-2 text-muted">Ten ways to start a conversation, 500 questions in all. Pick one and dive in.</p>
             </div>
           </div>
           <div className="mt-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
             {categories.map((category, i) => <CategoryCard key={category.id} category={category} index={i} />)}
           </div>
         </section>
+
+        <GuessPromo />
 
         <HowItWorks id="how-it-works" />
       </div>

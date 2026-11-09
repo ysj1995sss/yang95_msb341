@@ -3,13 +3,15 @@ import { Footer } from "./components/Footer";
 import { Header } from "./components/Header";
 import { About } from "./pages/About";
 import { Explore } from "./pages/Explore";
+import { Favorites, FavoritesPlay } from "./pages/Favorites";
+import { GuessMyAnswer } from "./pages/GuessMyAnswer";
 import { Home } from "./pages/Home";
 import { QuestionExperience } from "./pages/QuestionExperience";
 import { href, useRoute } from "./utils/router";
 
 export default function App() {
   const route = useRoute();
-  const key = route.page === "play" ? `play-${route.categoryId}` : route.page;
+  const key = route.page === "play" ? `play-${route.categoryId}` : route.page === "favorites-play" ? `fav-${route.categoryId}` : route.page;
 
   // A new page starts at the top, with focus on its heading for keyboard and screen-reader users.
   // Not on the first visit: there the browser already starts at the top of the page.
@@ -32,6 +34,9 @@ export default function App() {
         {route.page === "explore" && <Explore />}
         {route.page === "about" && <About />}
         {route.page === "play" && <QuestionExperience key={route.categoryId} categoryId={route.categoryId} />}
+        {route.page === "favorites" && <Favorites />}
+        {route.page === "favorites-play" && <FavoritesPlay key={route.categoryId ?? "all"} categoryId={route.categoryId} />}
+        {route.page === "guess" && <GuessMyAnswer />}
         {route.page === "not-found" && (
           <div className="mx-auto max-w-3xl px-4 pt-16 sm:px-6">
             <h1 tabIndex={-1} className="text-3xl font-extrabold">Page not found</h1>
