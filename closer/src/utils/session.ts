@@ -5,7 +5,8 @@ import { shuffle } from "./shuffle";
 // seen, switching depth never re-asks a question) are tested without a browser.
 
 export type Level = Depth | "mix";
-export type Outcome = "answered" | "skipped" | "correct" | "incorrect";
+/** "moved" is a question left on screen by a depth change: seen, but neither answered nor skipped. */
+export type Outcome = "answered" | "skipped" | "moved" | "correct" | "incorrect";
 
 /** The least the session needs to know about a question. */
 export interface PoolItem {
@@ -94,16 +95,21 @@ export function advance(state: SessionState, pool: PoolItem[]): SessionState {
   return settle(recordOutcome(state, "skipped"), pool);
 }
 
+/** Moves on from a conversation question the group talked through: it counts as "answered", not skipped. */
+export function discuss(state: SessionState, pool: PoolItem[]): SessionState {
+  return advance(recordOutcome(state, "answered"), pool);
+}
+
 export const skip = advance;
 
-/** Switches depth. The question on screen stays if it fits the new level; otherwise it counts as
- *  skipped and the next unseen question at the new level is shown. */
+/** Switches depth. The question on screen stays if it fits the new level; otherwise it is marked
+ *  "moved" (seen, never scored or counted as skipped) and the next unseen question at the new level is shown. */
 export function changeLevel(state: SessionState, pool: PoolItem[], level: Level): SessionState {
   if (level === state.level) return state;
   let next: SessionState = { ...state, level };
   const current = state.currentId ? pool.find((q) => q.id === state.currentId) : undefined;
   if (current && matches(current, level)) return next;
-  if (state.currentId) next = recordOutcome(next, "skipped");
+  if (state.currentId) next = recordOutcome(next, "moved");
   return settle({ ...next, currentId: null }, pool);
 }
 
@@ -134,6 +140,13 @@ export function summarize(state: SessionState): Summary {
   const answered = values.filter((o) => o === "answered").length + correct + incorrect;
   const skipped = values.filter((o) => o === "skipped").length;
   return { answered, skipped, correct, incorrect, percent: answered ? Math.round((correct / answered) * 100) : 0 };
+}
+
+/** The headline for a finished quiz. It uses the same base as the score (answered questions),
+ *  so "4 of 8 right" and "50%" always agree. */
+export function resultTitle(s: Summary): string {
+  if (s.answered === 0) return "You skipped every question";
+  return `You got ${s.correct} of ${s.answered} right`;
 }
 
 /** Rebuilds a saved session if it still fits the pool; otherwise null (start fresh). */

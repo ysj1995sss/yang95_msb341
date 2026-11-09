@@ -5,7 +5,7 @@ import { levelsFor } from "../data/depth";
 import type { Category, Question } from "../types";
 import { href } from "../utils/router";
 import {
-  advance, changeLevel, progress, recordOutcome, remainingByLevel, restoreSession, startSession, summarize,
+  advance, changeLevel, discuss, progress, recordOutcome, remainingByLevel, restoreSession, resultTitle, startSession, summarize,
   type Level, type SessionState,
 } from "../utils/session";
 import { clearSession, loadSession, saveSession } from "../utils/storage";
@@ -123,8 +123,7 @@ export function SessionView({ category, heading, description, pool, persistKey, 
             onSkip={next} onNext={next} />
         ) : (
           <OpenStep key={question.id} question={question} eyebrow={eyebrow(question)} isLast={prog.done >= prog.total}
-            onSaved={() => setState((s) => recordOutcome(s, "answered"))}
-            onSkip={next} onNext={next} />
+            onSkip={next} onNext={() => setState((s) => discuss(s, pool))} />
         )}
       </div>
 
@@ -155,7 +154,6 @@ function ResultCard({ title, message, children, actions }: { title: string; mess
 /** Trivia finished: the numbers, then play again or leave. */
 function QuizResults({ state, onRestart, backHref, backLabel }: { state: SessionState; onRestart: () => void; backHref: string; backLabel: string }) {
   const s = summarize(state);
-  const total = s.answered + s.skipped;
   const message =
     s.percent >= 80 ? "Brilliant. You're a trivia natural." : s.percent >= 50 ? "Solid round. A rematch could push you higher." : "Every round teaches you something. Try again?";
   const stats: [string, number | string][] = [
@@ -163,7 +161,7 @@ function QuizResults({ state, onRestart, backHref, backLabel }: { state: Session
   ];
   return (
     <ResultCard
-      title={`You got ${s.correct} of ${total} right`}
+      title={resultTitle(s)}
       message={message}
       actions={
         <>
@@ -201,7 +199,7 @@ function Completion({ state, remaining, names, onLevel, onRestart, backHref, bac
   return (
     <ResultCard
       title={atLevel ? `You've finished ${atLevel}` : "You've been through them all"}
-      message={`You answered ${s.answered} and skipped ${s.skipped}. ${others.length ? "More questions are waiting at other levels." : "Good conversations take time."}`}
+      message={`You talked through ${s.answered} and skipped ${s.skipped}. ${others.length ? "More questions are waiting at other levels." : "Good conversations take time."}`}
       actions={
         <>
           <button type="button" onClick={onRestart} className={primary}><RotateCcw aria-hidden className="size-5" /> Start over with a fresh shuffle</button>

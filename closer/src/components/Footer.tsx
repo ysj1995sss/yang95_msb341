@@ -27,7 +27,7 @@ export function Footer() {
             ))}
           </ul>
         </nav>
-        <p className="text-sm text-plum-200">Your answers and favorites stay on this device.</p>
+        <p className="text-sm text-plum-200">Your favorites stay on this device.</p>
       </div>
     </footer>
   );

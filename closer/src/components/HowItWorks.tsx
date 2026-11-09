@@ -3,7 +3,7 @@ import { Compass, MessageCircleHeart, SkipForward } from "lucide-react";
 const steps = [
   { icon: Compass, title: "Choose your experience", text: "Ten ways in: date night, a party, a family dinner, a new team, or just you." },
   { icon: MessageCircleHeart, title: "Discover interesting questions", text: "One question at a time, picked fresh each round so it never feels repetitive." },
-  { icon: SkipForward, title: "Answer, skip, keep going", text: "Talk it out, jot down an answer, or skip. No sign-up, no pressure." },
+  { icon: SkipForward, title: "Talk, skip, keep going", text: "Read it out loud, talk it over, or skip it. No sign-up, no typing, no pressure." },
 ];
 
 export function HowItWorks({ id }: { id?: string }) {

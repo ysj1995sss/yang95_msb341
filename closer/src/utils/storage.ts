@@ -1,18 +1,13 @@
-// Answers live only in this browser (localStorage). Private windows and blocked storage throw,
-// so every read and write is wrapped: the page keeps working, it just doesn't remember.
+// Favorites and small bits of state live only in this browser (localStorage). Private windows and
+// blocked storage throw, so every read and write is wrapped: the page keeps working, it just
+// doesn't remember.
 
 export interface KeyValueStore {
   getItem(key: string): string | null;
   setItem(key: string, value: string): void;
 }
 
-export interface SavedAnswer {
-  text: string;
-  savedAt: string;
-}
-
-const ANSWERS = "closer.answers";
-const DAILY = "closer.daily";
+const DAILY_REVEALED = "closer.daily.revealed";
 
 function browserStore(): KeyValueStore | null {
   try {
@@ -41,33 +36,13 @@ function write(key: string, value: unknown, store: KeyValueStore | null): boolea
   }
 }
 
-export function loadAnswers(store: KeyValueStore | null = browserStore()): Record<string, SavedAnswer> {
-  return read<Record<string, SavedAnswer>>(ANSWERS, store) ?? {};
+/** Whether today's question was already revealed on this device (so a refresh doesn't hide it again). */
+export function loadDailyRevealed(dateKey: string, store: KeyValueStore | null = browserStore()): boolean {
+  return read<string>(DAILY_REVEALED, store) === dateKey;
 }
 
-/** Saves an answer; false when the browser won't keep it. */
-export function saveAnswer(questionId: string, text: string, store: KeyValueStore | null = browserStore()): boolean {
-  const answers = loadAnswers(store);
-  answers[questionId] = { text, savedAt: new Date().toISOString() };
-  return write(ANSWERS, answers, store);
-}
-
-export function loadDailyAnswer(
-  dateKey: string,
-  store: KeyValueStore | null = browserStore(),
-): { questionId: string; text: string } | null {
-  return read<Record<string, { questionId: string; text: string }>>(DAILY, store)?.[dateKey] ?? null;
-}
-
-export function saveDailyAnswer(
-  dateKey: string,
-  questionId: string,
-  text: string,
-  store: KeyValueStore | null = browserStore(),
-): boolean {
-  const all = read<Record<string, { questionId: string; text: string }>>(DAILY, store) ?? {};
-  all[dateKey] = { questionId, text };
-  return write(DAILY, all, store);
+export function saveDailyRevealed(dateKey: string, store: KeyValueStore | null = browserStore()): void {
+  write(DAILY_REVEALED, dateKey, store);
 }
 
 // ---- Favorites -------------------------------------------------------------------------------

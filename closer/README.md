@@ -2,10 +2,12 @@
 
 **Every connection starts with a question.**
 
-Closer is a question-based social experience: pick one of ten experiences, choose how deep to go,
-then answer, skip or move to the next question. It has no backend, no accounts and no paid
-services: all questions live in the code, and anything a person writes or saves is kept only in
-their own browser (localStorage / sessionStorage).
+Closer is a free app of questions and games for couples, friends, families and teams: pick one of
+ten experiences, choose how deep to go, then read each question out loud, talk it over, skip it or
+move on. There is nothing to type. It has no backend, no accounts and no paid services: all
+questions live in the code, and the only things kept are a person's favorites and play progress,
+in their own browser (localStorage / sessionStorage). It can be installed to a phone or computer
+and opens without a connection once it has been visited.
 
 ## What's in it (Sprint 4)
 
@@ -35,8 +37,17 @@ their own browser (localStorage / sessionStorage).
   secretly picks one of four answers, the device is handed over, the other guesses; a match scores
   a point, and roles swap each round. 60 questions in six themes, 4 to 10 rounds, final score and
   replay. Nothing is graded from free text.
-- **Question of the Day**, **Home**, **Explore**, **About** are unchanged in spirit; Home and
-  Explore now point to Guess My Answer, and the header has a Favorites link with a count.
+- **Conversation, not a form:** the question cards have no text box. A card has Skip and Next; a
+  finished round says how many you "talked through" and how many you skipped. (Feedback from a
+  tester: the text box got in the way of a spoken conversation. Accounts to save answers were
+  considered and left for later.)
+- **Installable app:** a web app manifest, home-screen icons and a service worker. Add it to a
+  home screen (the About page has the steps), and after one visit it opens offline, including
+  the question library and the page's font. Every path is relative, so it also works from a
+  subfolder such as GitHub Pages.
+- **Question of the Day**, **Home**, **Explore**, **About**: the home page opens with a plain line
+  saying what Closer is; Home and Explore point to Guess My Answer; the header has a Favorites
+  link with a count.
 - **Pages:** `#/`, `#/explore`, `#/about`, `#/play/<category>`, `#/favorites`,
   `#/favorites/play[/<category>]`, `#/guess`. Pages live after the "#", so links, refresh and the
   Back button work on any static host with no server setup.
@@ -61,7 +72,7 @@ On this project's own computer, npm isn't on PATH. It lives in `D:\Yang\Software
 npm test
 ```
 
-This runs 46 automated checks:
+This runs 54 automated checks:
 
 - **Content (`src/data.test.ts`):** ten categories; exactly 500 questions and 50 per category;
   unique, stable ids and preserved Sprint 3 ids and wording; clean writing; no exact duplicates
@@ -71,8 +82,10 @@ This runs 46 automated checks:
 - **Logic (`src/utils.test.ts`):** the shuffle is a fair Fisher–Yates; a session never repeats a
   question, counts skips as seen, keeps its place when depth changes, reports progress, finishes
   and restarts; a trivia question scores once; favorites toggle, never duplicate, persist and
-  survive blocked storage; Guess My Answer phases, secrecy, scoring once, alternating roles and
-  final winner; page addresses.
+  survive blocked storage; talked-through versus skipped; a depth change is never counted as a
+  skip; the quiz headline and score use the same base; Guess My Answer phases, secrecy, scoring
+  once, alternating roles and final winner; page addresses.
+- **Installable app (`src/pwa.test.ts`):** the manifest, icons, page links and service worker.
 
 ```bash
 npm run build
@@ -92,6 +105,10 @@ This type-checks the code and builds the site into `dist/`.
    and the percentage.
 5. **Guess My Answer:** start a 4-round game. The secret answer is hidden on the hand-off screen.
 6. **Phone:** try all of the above at phone width. Nothing should scroll sideways.
+7. **Install and offline:** run `npm run build` then `npm run preview`, open the preview address in
+   Chrome, reload once, and install it from the address bar. Turn the network off (DevTools,
+   Network, Offline) and reload: the app still opens and plays. The service worker is off in
+   `npm run dev` on purpose.
 
 ## Deploy it
 
@@ -122,5 +139,7 @@ in a subfolder. The existing deployment setup is unchanged.
 
 - **Real testers:** watch 3–5 people use it and note where they hesitate.
 - **More questions:** extend each experience beyond 50, and add more Guess My Answer themes.
-- **History:** let people see their saved answers in one place.
-- **Mobile app:** the same experience packaged as an installable web app.
+- **Self-host the font:** the page's typeface still comes from Google Fonts. Bundling it removes
+  a third-party request and makes the very first offline visit match.
+- **Journal mode:** only if testers ask for it. It would need accounts and a backend.
+- **App stores:** the installable web app can later be wrapped for the Apple and Google stores.

@@ -1,61 +1,34 @@
 import { ArrowRight, Check, SkipForward, X } from "lucide-react";
-import { useId, useMemo, useState, type ReactNode } from "react";
+import { useId, useState, type ReactNode } from "react";
 import type { OpenQuestion, TriviaQuestion } from "../types";
-import { loadAnswers, saveAnswer } from "../utils/storage";
 import { FavoriteButton } from "./FavoriteButton";
 import { QuestionCard } from "./QuestionCard";
-import { primary, quiet, secondary } from "./ui";
+import { primary, quiet } from "./ui";
 
-/** A conversation question: think it over, optionally write an answer, skip or move on. */
-export function OpenStep({ question, eyebrow, isLast, onSaved, onSkip, onNext }: {
+/** A conversation question: read it out, talk it over, then move on or skip. Nothing to type. */
+export function OpenStep({ question, eyebrow, isLast, onSkip, onNext }: {
   question: OpenQuestion;
   eyebrow: ReactNode;
   isLast: boolean;
-  onSaved: () => void;
   onSkip: () => void;
   onNext: () => void;
 }) {
-  const earlier = useMemo(() => loadAnswers()[question.id]?.text ?? "", [question.id]);
-  const [text, setText] = useState(earlier);
-  const [status, setStatus] = useState<"idle" | "saved" | "failed">("idle");
-  const fieldId = useId();
-
-  function save() {
-    setStatus(saveAnswer(question.id, text.trim()) ? "saved" : "failed");
-    onSaved();
-  }
-
   return (
     <QuestionCard eyebrow={eyebrow} text={question.text} action={<FavoriteButton questionId={question.id} />}>
-      {question.depth === 4 && (
-        <p className="mt-3 rounded-2xl bg-coral-50 px-4 py-2.5 text-sm font-semibold text-coral-700">
+      {question.depth === 4 ? (
+        <p className="mt-4 rounded-2xl bg-coral-50 px-4 py-2.5 text-sm font-semibold text-coral-700">
           Bold questions are always optional. Skip this one any time you like.
         </p>
+      ) : (
+        <p className="mt-4 text-[15px] text-muted">Read it out loud and talk it over. Move on when you're ready.</p>
       )}
-      <label htmlFor={fieldId} className="mt-6 block text-sm font-semibold text-muted">Your answer (optional)</label>
-      <textarea id={fieldId} rows={4} value={text} maxLength={2000}
-        onChange={(e) => { setText(e.target.value); setStatus("idle"); }}
-        placeholder="Talk it out, or write it down here…"
-        className="mt-2 w-full resize-y rounded-2xl border border-plum-100 bg-cream/60 p-4 text-[16px] placeholder:text-muted/80 focus-visible:border-plum-400" />
-      {earlier && status === "idle" && text === earlier && (
-        <p className="mt-2 text-sm text-muted">This is the answer you saved last time.</p>
-      )}
-      <p role="status" className="mt-2 min-h-5 text-sm font-semibold text-plum-700">
-        {status === "saved" && <span className="inline-flex items-center gap-1"><Check aria-hidden className="size-4" /> Saved on this device.</span>}
-        {status === "failed" && <span className="text-coral-700">Your browser isn't letting this page save, so this answer won't be kept.</span>}
-      </p>
-      <div className="mt-4 flex flex-col-reverse gap-3 sm:flex-row sm:items-center sm:justify-between">
+      <div className="mt-6 flex flex-col-reverse gap-3 sm:flex-row sm:items-center sm:justify-between">
         <button type="button" onClick={onSkip} className={quiet}>
           <SkipForward aria-hidden className="size-5" /> Skip
         </button>
-        <div className="flex flex-col gap-3 sm:flex-row">
-          <button type="button" onClick={save} disabled={!text.trim() || status === "saved"} className={secondary}>
-            Save answer
-          </button>
-          <button type="button" onClick={onNext} className={primary}>
-            {isLast ? "Finish" : "Next question"} <ArrowRight aria-hidden className="size-5" />
-          </button>
-        </div>
+        <button type="button" onClick={onNext} className={primary}>
+          {isLast ? "Finish" : "Next question"} <ArrowRight aria-hidden className="size-5" />
+        </button>
       </div>
     </QuestionCard>
   );

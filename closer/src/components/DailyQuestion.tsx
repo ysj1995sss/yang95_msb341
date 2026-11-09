@@ -1,21 +1,18 @@
-import { Check, Eye, Sun } from "lucide-react";
-import { useId, useMemo, useState } from "react";
+import { Eye, Sun } from "lucide-react";
+import { useMemo, useState } from "react";
 import { dailyQuestions } from "../data/dailyQuestions";
 import { dailyFor } from "../utils/daily";
-import { loadDailyAnswer, saveDailyAnswer } from "../utils/storage";
+import { loadDailyRevealed, saveDailyRevealed } from "../utils/storage";
 
-/** Today's question: the same all day (by the local date), with an optional answer kept in this browser. */
+/** Today's question: the same all day (by the local date). Read it, talk about it, come back tomorrow. */
 export function DailyQuestion() {
   const { question, dateKey } = useMemo(() => dailyFor(new Date(), dailyQuestions), []);
-  const saved = useMemo(() => loadDailyAnswer(dateKey), [dateKey]);
-  const [revealed, setRevealed] = useState(Boolean(saved));
-  const [text, setText] = useState(saved?.questionId === question.id ? saved.text : "");
-  const [status, setStatus] = useState<"idle" | "saved" | "failed">(saved ? "saved" : "idle");
-  const fieldId = useId();
+  const [revealed, setRevealed] = useState(() => loadDailyRevealed(dateKey));
   const today = new Date().toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric" });
 
-  function save() {
-    setStatus(saveDailyAnswer(dateKey, question.id, text.trim()) ? "saved" : "failed");
+  function reveal() {
+    setRevealed(true);
+    saveDailyRevealed(dateKey);
   }
 
   return (
@@ -34,7 +31,7 @@ export function DailyQuestion() {
       {!revealed ? (
         <div className="relative mt-6">
           <p className="max-w-xl text-lg text-plum-50">A new question every day. Answer it alone, or ask the person next to you.</p>
-          <button type="button" onClick={() => setRevealed(true)}
+          <button type="button" onClick={reveal}
             className="mt-6 inline-flex min-h-12 cursor-pointer items-center gap-2 rounded-full bg-cream px-6 font-bold text-plum-800 shadow-md transition hover:bg-white">
             <Eye aria-hidden className="size-5" /> Reveal today's question
           </button>
@@ -42,21 +39,7 @@ export function DailyQuestion() {
       ) : (
         <div className="relative mt-6 animate-fade-up">
           <p className="max-w-3xl text-2xl font-extrabold leading-snug sm:text-3xl">{question.text}</p>
-          <label htmlFor={fieldId} className="mt-6 block text-sm font-semibold text-plum-50">Your answer (optional)</label>
-          <textarea id={fieldId} rows={3} value={text} maxLength={1000}
-            onChange={(e) => { setText(e.target.value); setStatus("idle"); }}
-            placeholder="Write a few words, or just think about it…"
-            className="mt-2 w-full resize-y rounded-2xl border-0 bg-white/95 p-4 text-[16px] text-ink placeholder:text-muted focus-visible:outline-cream" />
-          <div className="mt-4 flex flex-wrap items-center gap-3">
-            <button type="button" onClick={save} disabled={!text.trim()}
-              className="inline-flex min-h-12 cursor-pointer items-center gap-2 rounded-full bg-cream px-6 font-bold text-plum-800 shadow-md transition hover:bg-white disabled:cursor-not-allowed disabled:opacity-60">
-              Save answer
-            </button>
-            <p role="status" className="text-sm font-semibold text-plum-50">
-              {status === "saved" && <span className="inline-flex items-center gap-1"><Check aria-hidden className="size-4" /> Saved on this device for today.</span>}
-              {status === "failed" && "Your browser isn't letting this page save. Your answer stays here until you leave."}
-            </p>
-          </div>
+          <p className="mt-5 text-plum-50">Read it out loud and talk it over. A new question arrives tomorrow.</p>
         </div>
       )}
     </section>

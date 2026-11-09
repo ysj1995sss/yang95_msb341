@@ -4,6 +4,7 @@ import { DailyQuestion } from "../components/DailyQuestion";
 import { GuessPromo } from "../components/GuessPromo";
 import { HowItWorks } from "../components/HowItWorks";
 import { categories } from "../data/categories";
+import { questions } from "../data/questions";
 import { href } from "../utils/router";
 
 const sampleCards = [
@@ -24,7 +25,11 @@ export function Home() {
             <h1 tabIndex={-1} className="mt-5 text-4xl font-extrabold leading-[1.08] tracking-tight sm:text-6xl">
               Better questions. <span className="bg-gradient-to-r from-plum-600 to-coral-500 bg-clip-text text-transparent">Stronger connections.</span>
             </h1>
-            <p className="mt-5 max-w-xl text-lg leading-relaxed text-muted">
+            <p className="mt-5 max-w-xl text-xl font-semibold leading-snug text-ink">
+              Closer is a free app of {questions.length} questions and games for couples, friends, families and teams. Pick an
+              experience, read a question out loud, and start talking.
+            </p>
+            <p className="mt-3 max-w-xl text-lg leading-relaxed text-muted">
               Turn ordinary moments into unforgettable conversations. Explore questions for every relationship, mood, and occasion.
             </p>
             <div className="mt-8 flex flex-wrap gap-3">
@@ -55,7 +60,7 @@ export function Home() {
           <div className="flex flex-wrap items-end justify-between gap-3">
             <div>
               <h2 id="explore-heading" className="text-3xl font-extrabold tracking-tight sm:text-4xl">Explore experiences</h2>
-              <p className="mt-2 text-muted">Ten ways to start a conversation, 500 questions in all. Pick one and dive in.</p>
+              <p className="mt-2 text-muted">Ten ways to start a conversation, {questions.length} questions in all. Pick one and dive in.</p>
             </div>
           </div>
           <div className="mt-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">

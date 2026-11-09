@@ -5,12 +5,12 @@ import { dailyFor, localDateKey } from "./utils/daily";
 import * as game from "./utils/guessGame";
 import { parseRoute } from "./utils/router";
 import {
-  advance, changeLevel, progress, recordOutcome, remainingByLevel, restoreSession, startSession, summarize,
+  advance, changeLevel, discuss, progress, recordOutcome, remainingByLevel, restoreSession, startSession, summarize, resultTitle,
   type PoolItem, type SessionState,
 } from "./utils/session";
 import { shuffle } from "./utils/shuffle";
 import {
-  createFavoritesStore, loadAnswers, loadDailyAnswer, loadSession, saveAnswer, saveDailyAnswer, saveSession,
+  createFavoritesStore, loadDailyRevealed, loadSession, saveDailyRevealed, saveSession,
   type KeyValueStore,
 } from "./utils/storage";
 
@@ -142,8 +142,14 @@ describe("a play session", () => {
     expect(changeLevel(s, pool, "mix").currentId).toBe(current);
     s = changeLevel(s, pool, 4);
     expect(s.currentId).not.toBe(current);
-    expect(s.outcomes[current]).toBe("skipped");
+    expect(s.outcomes[current]).toBe("moved");
     expect(depthOf(s.currentId)).toBe(4);
+  });
+
+  it("does not count a question left behind by a depth change as skipped", () => {
+    let s = startSession("love", pool, { level: 2, random: seeded() });
+    s = changeLevel(s, pool, 4);
+    expect(summarize(s)).toMatchObject({ skipped: 0, answered: 0 });
   });
 
   it("reports completion when a depth has nothing left, and resumes at another depth", () => {
@@ -191,6 +197,23 @@ describe("a play session", () => {
     s = advance(s, pool); // skipped
     expect(summarize(s)).toEqual({ answered: 3, skipped: 1, correct: 2, incorrect: 1, percent: 67 });
     expect(s.done).toBe(true);
+  });
+
+  it("counts a conversation question as talked through when the group moves on, and as skipped when passed", () => {
+    let s = startSession("love", pool, { random: seeded() });
+    const first = s.currentId!;
+    s = discuss(s, pool);
+    expect(s.outcomes[first]).toBe("answered");
+    const second = s.currentId!;
+    s = advance(s, pool);
+    expect(s.outcomes[second]).toBe("skipped");
+    expect(summarize(s)).toMatchObject({ answered: 1, skipped: 1 });
+    expect(playAll(s).shown).not.toContain(first);
+  });
+
+  it("titles a finished quiz by the questions answered, the same base as its score", () => {
+    expect(resultTitle({ answered: 8, skipped: 2, correct: 4, incorrect: 4, percent: 50 })).toBe("You got 4 of 8 right");
+    expect(resultTitle({ answered: 0, skipped: 10, correct: 0, incorrect: 0, percent: 0 })).toBe("You skipped every question");
   });
 
   it("restores a saved session only when it still matches the pool", () => {
@@ -315,20 +338,18 @@ describe("Guess My Answer", () => {
   });
 });
 
-describe("saved answers", () => {
-  it("keeps question answers and the day's answer", () => {
+describe("question of the day", () => {
+  it("remembers that today's question was revealed, for that day only", () => {
     const store = memoryStore();
-    saveAnswer("love-1", "Walks by the lake", store);
-    expect(loadAnswers(store)["love-1"].text).toBe("Walks by the lake");
-    saveDailyAnswer("2026-10-25", "daily-3", "My sister", store);
-    expect(loadDailyAnswer("2026-10-25", store)).toEqual({ questionId: "daily-3", text: "My sister" });
-    expect(loadDailyAnswer("2026-10-26", store)).toBeNull();
+    expect(loadDailyRevealed("2026-10-25", store)).toBe(false);
+    saveDailyRevealed("2026-10-25", store);
+    expect(loadDailyRevealed("2026-10-25", store)).toBe(true);
+    expect(loadDailyRevealed("2026-10-26", store)).toBe(false);
   });
 
   it("never breaks the page when the browser blocks storage", () => {
-    expect(() => saveAnswer("x", "y", blocked)).not.toThrow();
-    expect(loadAnswers(blocked)).toEqual({});
-    expect(loadDailyAnswer("2026-10-25", blocked)).toBeNull();
+    expect(() => saveDailyRevealed("2026-10-25", blocked)).not.toThrow();
+    expect(loadDailyRevealed("2026-10-25", blocked)).toBe(false);
   });
 });
 
