@@ -7,3 +7,9 @@
 **Done looks like:** A tester can open Closer, choose any of the 10 categories, access 50 unique questions, select different question depths, save favorite questions, and navigate through randomized questions without repeats. They can also play Guess My Answer and complete a trivia session with an accurate final score. All the features are on the website, and two more people test it and report what they found.
 
 **Predicted difficulty:** 4
+
+**Actual difficulty:** 3.
+
+**Why it differed:** I got input from friends, which made the process easier.
+
+**Retro:** Yes, I hit the goal.
