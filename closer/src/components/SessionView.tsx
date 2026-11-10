@@ -85,6 +85,9 @@ export function SessionView({ category, heading, description, pool, limit: limit
   const question = state.currentId ? byId.get(state.currentId) : undefined;
   const isOpen = question?.kind === "open";
 
+  // The play area. Shortcuts only work while focus is inside it, and clicking anywhere in it puts focus here.
+  const root = useRef<HTMLDivElement>(null);
+
   const [table, setTable] = useState(false);
   useEffect(() => { if (!isOpen) setTable(false); }, [isOpen]);
 
@@ -103,6 +106,7 @@ export function SessionView({ category, heading, description, pool, limit: limit
       speak: () => document.querySelector<HTMLButtonElement>("[data-speak]")?.click(),
     },
     !state.done && !!question,
+    root,
   );
   const swipe = useSwipe((direction) => (direction === "left" ? talked() : next()), isOpen && !table);
 
@@ -129,7 +133,7 @@ export function SessionView({ category, heading, description, pool, limit: limit
   const position = state.done ? "Round complete" : `Question ${prog.done} of ${prog.total}`;
 
   return (
-    <div className="mx-auto max-w-3xl px-4 pb-4 pt-8 sm:px-6 sm:pt-12">
+    <div ref={root} tabIndex={-1} className="mx-auto max-w-3xl px-4 pb-4 pt-8 outline-none sm:px-6 sm:pt-12">
       <a href={backHref} className={`${quiet} -ml-3`}>
         <ArrowLeft aria-hidden className="size-5" /> {backLabel}
       </a>

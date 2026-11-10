@@ -22,7 +22,9 @@ Seventeen additions, all working without a server:
 - **Continue where you left off:** a home-page card that resumes the last set played, at the
   question you were on. Progress is now kept in localStorage, so it survives closing the app.
 - **Swipe and keyboard shortcuts:** swipe left for next and right to skip on a phone; `→` next,
-  `←` skip, `F` favorite, `T` table mode, `R` read aloud on a computer. Shortcuts never take over
+  `←` skip, `F` favorite, `T` table mode, `R` read aloud on a computer. Shortcuts only work while
+  keyboard focus is inside the play area (click the card or press Tab to reach it), never anywhere
+  else on the page, so a single letter can't fire by accident (WCAG 2.1.4). They never take over
   typing, browser shortcuts, or the arrow keys on the depth selector.
 - **Progress per category:** the Explore cards show a ring and "18 of 50 seen", and say Continue.
 - **Dark mode:** follows the device, with a toggle in the header that remembers the choice.

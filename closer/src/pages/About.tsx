@@ -65,7 +65,9 @@ export function About() {
         <h2 id="shortcuts-heading" className="flex items-center gap-3 text-3xl font-extrabold tracking-tight sm:text-4xl">
           <Keyboard aria-hidden className="size-8 text-plum-600 dark:text-onplum-soft" /> Shortcuts
         </h2>
-        <p className="mt-3 text-lg leading-relaxed text-muted">On any conversation question:</p>
+        <p className="mt-3 text-lg leading-relaxed text-muted">
+          On any conversation question, once you've clicked on the card or pressed Tab to reach it. They never fire anywhere else on the page.
+        </p>
         <dl className="mt-4 grid gap-3 sm:grid-cols-2">
           {shortcuts.map((s) => (
             <div key={s.keys} className="flex items-center gap-4 rounded-2xl bg-surface/80 p-4 ring-1 ring-plum-100">

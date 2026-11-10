@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore, type RefObject } from "react";
 import { customQuestions, type CustomQuestion } from "./utils/custom";
 import { currentInstallMode, promptInstall, subscribeInstall, type InstallMode } from "./utils/install";
 import type { Setting } from "./utils/settings";
@@ -88,12 +88,17 @@ export function useCountdown(seconds: number, resetKey: unknown): Countdown {
   return { seconds, left: state.left, running: state.endAt !== null, finished, start, pause, reset };
 }
 
-/** Arrow keys, F, T and R on a question card. Handlers can change on every render. */
-export function useShortcuts(handlers: Partial<Record<Shortcut, () => void>>, enabled = true): void {
+/** Arrow keys, F, T and R on a question card. Handlers can change on every render.
+ *
+ *  The keys only work while keyboard focus is inside `scope` (the play area), never anywhere else on
+ *  the page. That keeps single-letter shortcuts from firing by accident for people using speech
+ *  input or assistive technology (WCAG 2.1.4, Character Key Shortcuts). */
+export function useShortcuts(handlers: Partial<Record<Shortcut, () => void>>, enabled: boolean, scope: RefObject<HTMLElement | null>): void {
   const latest = useRef(handlers);
   useEffect(() => { latest.current = handlers; });
   useEffect(() => {
-    if (!enabled) return;
+    const element = scope.current;
+    if (!enabled || !element) return;
     const onKey = (event: KeyboardEvent) => {
       const action = shortcutFor({
         key: event.key, ctrlKey: event.ctrlKey, metaKey: event.metaKey, altKey: event.altKey, target: event.target as HTMLElement | null,
@@ -104,9 +109,9 @@ export function useShortcuts(handlers: Partial<Record<Shortcut, () => void>>, en
         run();
       }
     };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [enabled]);
+    element.addEventListener("keydown", onKey);
+    return () => element.removeEventListener("keydown", onKey);
+  }, [enabled, scope]);
 }
 
 /** Touch handlers that report a quick left or right swipe. Spread them on the element to watch. */
