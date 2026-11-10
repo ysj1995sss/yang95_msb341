@@ -9,7 +9,7 @@ export function QuestionCard({ eyebrow, text, action, children }: {
   children?: ReactNode;
 }) {
   return (
-    <article className="animate-fade-up rounded-[2rem] border border-plum-100 bg-white p-6 shadow-lg sm:p-10">
+    <article className="animate-fade-up rounded-[2rem] border border-plum-100 bg-surface p-6 shadow-lg sm:p-10">
       <div className="flex items-start justify-between gap-3">
         <p className="flex flex-wrap items-center gap-x-3 gap-y-1 pt-3 text-sm font-bold uppercase tracking-wider text-coral-700">{eyebrow}</p>
         {action}

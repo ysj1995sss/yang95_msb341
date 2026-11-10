@@ -12,10 +12,10 @@ export function HowItWorks({ id }: { id?: string }) {
       <h2 id={`${id ?? "how"}-heading`} className="text-3xl font-extrabold tracking-tight sm:text-4xl">How it works</h2>
       <ol className="mt-8 grid gap-4 sm:grid-cols-3">
         {steps.map((step, i) => (
-          <li key={step.title} className="rounded-3xl bg-white/80 p-6 shadow-sm ring-1 ring-plum-100">
+          <li key={step.title} className="rounded-3xl bg-surface/80 p-6 shadow-sm ring-1 ring-plum-100">
             <div className="flex items-center gap-3">
               <span className="inline-flex size-10 items-center justify-center rounded-full bg-coral-100 font-extrabold text-coral-700">{i + 1}</span>
-              <step.icon aria-hidden className="size-6 text-plum-600" />
+              <step.icon aria-hidden className="size-6 text-plum-600 dark:text-onplum-soft" />
             </div>
             <h3 className="mt-4 text-lg font-bold">{step.title}</h3>
             <p className="mt-1 text-[15px] leading-relaxed text-muted">{step.text}</p>

@@ -1,16 +1,18 @@
-import { ArrowRight } from "lucide-react";
+import { ArrowRight, Shuffle } from "lucide-react";
 import { CategoryCard } from "../components/CategoryCard";
 import { DailyQuestion } from "../components/DailyQuestion";
-import { GuessPromo } from "../components/GuessPromo";
+import { ContinueCard } from "../components/ContinueCard";
 import { HowItWorks } from "../components/HowItWorks";
+import { InstallButton } from "../components/InstallButton";
+import { ModeCards } from "../components/ModeCards";
 import { categories } from "../data/categories";
 import { questions } from "../data/questions";
 import { href } from "../utils/router";
 
 const sampleCards = [
-  { text: "When do you feel most loved?", tone: "bg-white text-ink", turn: "-rotate-6", pos: "left-0 top-8" },
+  { text: "When do you feel most loved?", tone: "bg-surface text-ink", turn: "-rotate-6", pos: "left-0 top-8" },
   { text: "Would you rather read minds or be invisible for a day?", tone: "bg-plum-600 text-cream", turn: "rotate-3", pos: "left-14 top-36" },
-  { text: "What's your most ridiculous hidden talent?", tone: "bg-coral-400 text-ink", turn: "-rotate-2", pos: "left-4 top-64" },
+  { text: "What's your most ridiculous hidden talent?", tone: "bg-coral-400 text-plum-900", turn: "-rotate-2", pos: "left-4 top-64" },
 ];
 
 export function Home() {
@@ -36,10 +38,17 @@ export function Home() {
               <a href={href.explore} className="inline-flex min-h-12 items-center gap-2 rounded-full bg-plum-600 px-7 font-bold text-white shadow-lg shadow-plum-600/25 transition hover:bg-plum-700">
                 Start Exploring <ArrowRight aria-hidden className="size-5" />
               </a>
+              <a href={href.surprise}
+                className="inline-flex min-h-12 items-center gap-2 rounded-full border-2 border-plum-200 bg-surface/70 px-7 font-bold text-plum-800 transition hover:border-plum-300 hover:bg-surface">
+                <Shuffle aria-hidden className="size-5" /> Surprise me
+              </a>
+            </div>
+            <div className="mt-4 flex flex-wrap items-start gap-3">
               <button type="button" onClick={() => document.getElementById("how-it-works")?.scrollIntoView()}
-                className="inline-flex min-h-12 cursor-pointer items-center rounded-full border-2 border-plum-200 bg-white/70 px-7 font-bold text-plum-800 transition hover:border-plum-300 hover:bg-white">
+                className="inline-flex min-h-12 cursor-pointer items-center rounded-full px-5 font-bold text-muted transition hover:bg-sand hover:text-ink">
                 How It Works
               </button>
+              <InstallButton className="inline-flex min-h-12 cursor-pointer items-center gap-2 rounded-full px-5 font-bold text-plum-700 transition hover:bg-sand dark:text-onplum-soft" />
             </div>
           </div>
           <div aria-hidden className="relative mx-auto hidden h-96 w-full max-w-sm sm:block">
@@ -54,6 +63,8 @@ export function Home() {
       </section>
 
       <div className="mx-auto max-w-6xl space-y-20 px-4 sm:px-6">
+        <ContinueCard />
+
         <DailyQuestion />
 
         <section aria-labelledby="explore-heading">
@@ -68,7 +79,13 @@ export function Home() {
           </div>
         </section>
 
-        <GuessPromo />
+        <section aria-labelledby="modes-heading">
+          <h2 id="modes-heading" className="text-3xl font-extrabold tracking-tight sm:text-4xl">More ways to play</h2>
+          <p className="mt-2 text-muted">Games for a group, a seasonal pack, or questions you write yourself.</p>
+          <div className="mt-8">
+            <ModeCards />
+          </div>
+        </section>
 
         <HowItWorks id="how-it-works" />
       </div>

@@ -11,6 +11,12 @@ export type Route =
   | { page: "favorites" }
   | { page: "favorites-play"; categoryId: string | null }
   | { page: "guess" }
+  | { page: "debate" }
+  | { page: "surprise" }
+  | { page: "packs" }
+  | { page: "pack"; packId: string }
+  | { page: "mine" }
+  | { page: "mine-play" }
   | { page: "not-found" };
 
 export function parseRoute(hash: string): Route {
@@ -20,6 +26,13 @@ export function parseRoute(hash: string): Route {
   if (path === "/about") return { page: "about" };
   if (path === "/favorites") return { page: "favorites" };
   if (path === "/guess") return { page: "guess" };
+  if (path === "/debate") return { page: "debate" };
+  if (path === "/surprise") return { page: "surprise" };
+  if (path === "/packs") return { page: "packs" };
+  if (path === "/mine") return { page: "mine" };
+  if (path === "/mine/play") return { page: "mine-play" };
+  const pack = path.match(/^\/packs\/([a-z0-9-]+)$/);
+  if (pack) return { page: "pack", packId: pack[1] };
   if (path === "/favorites/play") return { page: "favorites-play", categoryId: null };
   const favoritesPlay = path.match(/^\/favorites\/play\/([a-z-]+)$/);
   if (favoritesPlay) return { page: "favorites-play", categoryId: favoritesPlay[1] };
@@ -44,6 +57,12 @@ export const href = {
   about: "#/about",
   favorites: "#/favorites",
   guess: "#/guess",
+  debate: "#/debate",
+  surprise: "#/surprise",
+  packs: "#/packs",
+  pack: (packId: string) => `#/packs/${packId}`,
+  mine: "#/mine",
+  minePlay: "#/mine/play",
   play: (categoryId: string) => `#/play/${categoryId}`,
   playFavorites: (categoryId?: string) => (categoryId ? `#/favorites/play/${categoryId}` : "#/favorites/play"),
 };

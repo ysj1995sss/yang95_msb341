@@ -7,7 +7,7 @@ import { SessionView } from "../components/SessionView";
 import { primary, secondary } from "../components/ui";
 import { categories, categoryById } from "../data/categories";
 import { levelsFor } from "../data/depth";
-import { questionById } from "../data/questions";
+import { findQuestion, sourceLabel } from "../data/lookup";
 import { useFavorites } from "../hooks";
 import type { Question } from "../types";
 import { favorites } from "../utils/storage";
@@ -15,12 +15,12 @@ import { href } from "../utils/router";
 
 /** Ids that still exist in the library, as questions (a saved id from an older library is dropped). */
 function favoriteQuestions(ids: readonly string[]): Question[] {
-  return ids.map(questionById).filter((q): q is Question => !!q);
+  return ids.map(findQuestion).filter((q): q is Question => !!q);
 }
 
 function EmptyState() {
   return (
-    <div className="mt-10 rounded-[2rem] border border-dashed border-plum-200 bg-white/70 p-8 text-center sm:p-12">
+    <div className="mt-10 rounded-[2rem] border border-dashed border-plum-200 bg-surface/70 p-8 text-center sm:p-12">
       <span aria-hidden className="mx-auto inline-flex size-16 items-center justify-center rounded-full bg-coral-100 text-coral-700">
         <Heart className="size-8" />
       </span>
@@ -72,13 +72,13 @@ export function Favorites() {
                         {category.name} <span className="text-base font-semibold text-muted">({items.length})</span>
                       </h2>
                     </div>
-                    <a href={href.playFavorites(category.id)} className="inline-flex min-h-11 items-center gap-2 rounded-full border-2 border-plum-200 bg-white px-4 text-sm font-bold text-plum-800 transition hover:border-plum-300 hover:bg-plum-50">
+                    <a href={href.playFavorites(category.id)} className="inline-flex min-h-11 items-center gap-2 rounded-full border-2 border-plum-200 bg-surface px-4 text-sm font-bold text-plum-800 transition hover:border-plum-300 hover:bg-plum-50">
                       <Play aria-hidden className="size-4" /> Play these
                     </a>
                   </div>
                   <ul className="mt-4 space-y-3">
                     {items.map((q) => (
-                      <li key={q.id} className="flex items-start justify-between gap-3 rounded-2xl border border-plum-100 bg-white p-4 pl-5 shadow-sm">
+                      <li key={q.id} className="flex items-start justify-between gap-3 rounded-2xl border border-plum-100 bg-surface p-4 pl-5 shadow-sm">
                         <div>
                           <p className="text-[17px] font-bold leading-snug">{q.text}</p>
                           <p className="mt-2 flex items-center gap-2 text-sm font-semibold text-muted">
@@ -92,6 +92,27 @@ export function Favorites() {
                 </section>
               );
             })}
+            {/* Hearts from seasonal packs and from the player's own questions. */}
+            {saved.some((q) => q.categoryId === "pack" || q.categoryId === "mine") && (
+              <section aria-labelledby="fav-other">
+                <h2 id="fav-other" className="text-xl font-extrabold">
+                  Packs and my questions <span className="text-base font-semibold text-muted">({saved.filter((q) => q.categoryId === "pack" || q.categoryId === "mine").length})</span>
+                </h2>
+                <ul className="mt-4 space-y-3">
+                  {saved.filter((q) => q.categoryId === "pack" || q.categoryId === "mine").map((q) => (
+                    <li key={q.id} className="flex items-start justify-between gap-3 rounded-2xl border border-plum-100 bg-surface p-4 pl-5 shadow-sm">
+                      <div>
+                        <p className="text-[17px] font-bold leading-snug">{q.text}</p>
+                        <p className="mt-2 flex items-center gap-2 text-sm font-semibold text-muted">
+                          <DepthMeter depth={q.depth} /> {levelsFor(q.categoryId)[q.depth].name} <span aria-hidden>·</span> {sourceLabel(q)}
+                        </p>
+                      </div>
+                      <FavoriteButton questionId={q.id} />
+                    </li>
+                  ))}
+                </ul>
+              </section>
+            )}
           </div>
         </>
       )}

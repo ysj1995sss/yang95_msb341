@@ -9,7 +9,7 @@ export interface KeyValueStore {
 
 const DAILY_REVEALED = "closer.daily.revealed";
 
-function browserStore(): KeyValueStore | null {
+export function browserStore(): KeyValueStore | null {
   try {
     return typeof window !== "undefined" ? window.localStorage : null;
   } catch {
@@ -17,7 +17,7 @@ function browserStore(): KeyValueStore | null {
   }
 }
 
-function read<T>(key: string, store: KeyValueStore | null): T | null {
+export function read<T>(key: string, store: KeyValueStore | null): T | null {
   try {
     const raw = store?.getItem(key);
     return raw ? (JSON.parse(raw) as T) : null;
@@ -26,7 +26,7 @@ function read<T>(key: string, store: KeyValueStore | null): T | null {
   }
 }
 
-function write(key: string, value: unknown, store: KeyValueStore | null): boolean {
+export function write(key: string, value: unknown, store: KeyValueStore | null): boolean {
   try {
     if (!store) return false;
     store.setItem(key, JSON.stringify(value));
@@ -86,24 +86,17 @@ export function createFavoritesStore(store: KeyValueStore | null = browserStore(
 export const favorites = createFavoritesStore();
 
 // ---- Session progress ------------------------------------------------------------------------
-// A category round survives a refresh while the tab stays open (sessionStorage).
+// A round survives a refresh and closing the app (localStorage), so "Continue where you left off"
+// works for an installed app too. Each set of questions has its own key.
 
-function sessionStore(): KeyValueStore | null {
-  try {
-    return typeof window !== "undefined" ? window.sessionStorage : null;
-  } catch {
-    return null;
-  }
-}
-
-export function loadSession(key: string, store: KeyValueStore | null = sessionStore()): unknown {
+export function loadSession(key: string, store: KeyValueStore | null = browserStore()): unknown {
   return read<unknown>(SESSION_PREFIX + key, store);
 }
 
-export function saveSession(key: string, state: unknown, store: KeyValueStore | null = sessionStore()): boolean {
+export function saveSession(key: string, state: unknown, store: KeyValueStore | null = browserStore()): boolean {
   return write(SESSION_PREFIX + key, state, store);
 }
 
-export function clearSession(key: string, store: KeyValueStore | null = sessionStore()): void {
+export function clearSession(key: string, store: KeyValueStore | null = browserStore()): void {
   write(SESSION_PREFIX + key, null, store);
 }

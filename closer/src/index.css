@@ -23,10 +23,16 @@
   --color-coral-600: #dc4f3f;
   --color-coral-700: #b23a2d;
 
+  /* Cream is the light text that sits on the dark plum cards; the page background is "page". */
   --color-cream: #fff8ef;
+  --color-page: #fff8ef;
+  --color-surface: #ffffff;
   --color-sand: #f4ebe0;
   --color-ink: #2b2140;
   --color-muted: #625a75;
+  /* Light plum text for dark backgrounds (the footer, the dark cards, selected pills). Never changes with the theme. */
+  --color-onplum: #ebe5ff;
+  --color-onplum-soft: #d8cdff;
 
   --animate-fade-up: fade-up 0.45s cubic-bezier(0.22, 1, 0.36, 1) both;
   --animate-float: float 6s ease-in-out infinite;
@@ -47,13 +53,42 @@
   }
 }
 
+/* Dark mode: set on <html data-theme="dark"> (the device's choice, or the person's). The colors are
+   remapped here, so almost no component needs to know about it. Plum 600 and up, coral 400 to 600 and
+   the white/cream text on dark cards stay as they are; only the light tints, the text and the surfaces flip. */
+@custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --color-page: #14102a;
+  --color-surface: #1f1938;
+  --color-ink: #f2eeff;
+  --color-muted: #b9b0d4;
+  --color-sand: #2b2347;
+
+  --color-plum-50: #261f45;
+  --color-plum-100: #30275a;
+  --color-plum-200: #43387a;
+  --color-plum-300: #5d4fb0;
+  --color-plum-800: #e4dcff;
+
+  --color-coral-50: #3a1f2a;
+  --color-coral-100: #4b2531;
+  --color-coral-200: #63303d;
+  --color-coral-700: #ffb4a5;
+
+  --color-emerald-50: #123a2e;
+  --color-emerald-700: #6ee7b7;
+  --color-emerald-900: #a7f3d0;
+}
+
 @layer base {
   html {
     scroll-behavior: smooth;
     -webkit-text-size-adjust: 100%;
   }
   body {
-    @apply bg-cream font-sans text-ink antialiased;
+    @apply bg-page font-sans text-ink antialiased;
   }
   h1, h2, h3 {
     text-wrap: balance;

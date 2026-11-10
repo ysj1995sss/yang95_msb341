@@ -2,8 +2,19 @@ import { ArrowRight, Check, SkipForward, X } from "lucide-react";
 import { useId, useState, type ReactNode } from "react";
 import type { OpenQuestion, TriviaQuestion } from "../types";
 import { FavoriteButton } from "./FavoriteButton";
+import { SpeakButton } from "./SpeakButton";
 import { QuestionCard } from "./QuestionCard";
 import { primary, quiet } from "./ui";
+
+/** The buttons at the top right of a question card: read aloud, and the favorite heart. */
+function CardActions({ id, speak }: { id: string; speak: string }) {
+  return (
+    <div className="flex shrink-0 items-center">
+      <SpeakButton text={speak} />
+      <FavoriteButton questionId={id} />
+    </div>
+  );
+}
 
 /** A conversation question: read it out, talk it over, then move on or skip. Nothing to type. */
 export function OpenStep({ question, eyebrow, isLast, onSkip, onNext }: {
@@ -14,7 +25,8 @@ export function OpenStep({ question, eyebrow, isLast, onSkip, onNext }: {
   onNext: () => void;
 }) {
   return (
-    <QuestionCard eyebrow={eyebrow} text={question.text} action={<FavoriteButton questionId={question.id} />}>
+    <QuestionCard eyebrow={eyebrow} text={question.text}
+      action={<CardActions id={question.id} speak={question.text} />}>
       {question.depth === 4 ? (
         <p className="mt-4 rounded-2xl bg-coral-50 px-4 py-2.5 text-sm font-semibold text-coral-700">
           Bold questions are always optional. Skip this one any time you like.
@@ -54,8 +66,10 @@ export function TriviaStep({ question, eyebrow, isLast, onSubmitted, onSkip, onN
     onSubmitted(choice === question.answer);
   }
 
+  const spoken = `${question.text} ${question.options.map((option, i) => `${"ABCD"[i]}. ${option}.`).join(" ")}`;
+
   return (
-    <QuestionCard eyebrow={eyebrow} text={question.text} action={<FavoriteButton questionId={question.id} />}>
+    <QuestionCard eyebrow={eyebrow} text={question.text} action={<CardActions id={question.id} speak={spoken} />}>
       <fieldset className="mt-6" disabled={submitted}>
         <legend className="sr-only">Choose an answer</legend>
         <div className="grid gap-3 sm:grid-cols-2">
@@ -63,8 +77,8 @@ export function TriviaStep({ question, eyebrow, isLast, onSubmitted, onSkip, onN
             const isAnswer = i === question.answer;
             const isChosen = i === choice;
             const state = !submitted
-              ? isChosen ? "border-plum-500 bg-plum-50 ring-2 ring-plum-200" : "border-plum-100 bg-white hover:border-plum-300"
-              : isAnswer ? "border-emerald-500 bg-emerald-50" : isChosen ? "border-coral-500 bg-coral-50" : "border-plum-100 bg-white opacity-60";
+              ? isChosen ? "border-plum-500 bg-plum-50 ring-2 ring-plum-200" : "border-plum-100 bg-surface hover:border-plum-300"
+              : isAnswer ? "border-emerald-500 bg-emerald-50" : isChosen ? "border-coral-500 bg-coral-50" : "border-plum-100 bg-surface opacity-60";
             return (
               <label key={option} className={`flex min-h-14 cursor-pointer items-center gap-3 rounded-2xl border-2 p-4 font-semibold transition has-[:focus-visible]:outline-3 has-[:focus-visible]:outline-plum-500 ${state}`}>
                 <input type="radio" name={groupName} value={i} checked={isChosen} onChange={() => setChoice(i)} className="sr-only" />

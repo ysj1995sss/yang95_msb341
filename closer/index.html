@@ -15,6 +15,16 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
     <title>Closer · Every connection starts with a question</title>
+    <!-- Sets light or dark before the page paints, so a dark device doesn't flash white. -->
+    <script>
+      try {
+        var saved = localStorage.getItem("closer.theme");
+        var choice = saved ? JSON.parse(saved) : "system";
+        var dark = choice === "dark" || (choice !== "light" && window.matchMedia("(prefers-color-scheme: dark)").matches);
+        document.documentElement.dataset.theme = dark ? "dark" : "light";
+        if (dark) document.querySelector('meta[name="theme-color"]').setAttribute("content", "#14102a");
+      } catch (e) {}
+    </script>
   </head>
   <body>
     <div id="root"></div>

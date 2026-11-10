@@ -273,9 +273,15 @@ describe("favorites", () => {
 describe("Guess My Answer", () => {
   const themed = guessQuestions.filter((q) => q.themeId === "party");
   const start = () => game.startGame(["Ana", "Ben"], themed, 4, seeded(2));
-  /** One whole round: the answerer locks `secret`, the guesser submits `guess`. */
+  /** One whole two-player round: the answerer locks `secret`, the guesser submits `guess`. */
   const round = (s: game.GuessState, secret: number, guess: number) =>
     game.submitGuess(game.beginGuessing(game.lockAnswer(game.beginAnswering(s), secret)), guess);
+  /** One whole round for any number of players; `guesses` are in the order the guessers take the device. */
+  const fullRound = (s: game.GuessState, secret: number, guesses: number[]) => {
+    let t = game.lockAnswer(game.beginAnswering(s), secret);
+    for (const g of guesses) t = game.submitGuess(game.beginGuessing(t), g);
+    return t;
+  };
 
   it("picks the requested number of different questions", () => {
     const s = start();
@@ -284,13 +290,19 @@ describe("Guess My Answer", () => {
     expect(s.phase).toBe("handoff-answer");
   });
 
+  it("needs between two and six players", () => {
+    expect(() => game.startGame(["Solo"], themed, 4)).toThrow();
+    expect(() => game.startGame(["A", "B", "C", "D", "E", "F", "G"], themed, 4)).toThrow();
+    expect(game.startGame(["A", "B", "C", "D", "E", "F"], themed, 6).players).toHaveLength(6);
+  });
+
   it("walks through the phases in order and keeps the secret until the reveal", () => {
     let s = game.lockAnswer(start(), 1); // too early: nobody is answering yet
     expect(s.secret).toBeNull();
     s = game.lockAnswer(game.beginAnswering(s), 1);
     expect(s.phase).toBe("handoff-guess");
     s = game.submitGuess(s, 1); // can't guess before the guesser takes the device
-    expect(s.guess).toBeNull();
+    expect(s.guesses[1]).toBeNull();
     s = game.submitGuess(game.beginGuessing(s), 1);
     expect(s.phase).toBe("reveal");
     expect(s.secret).toBe(1);
@@ -307,9 +319,9 @@ describe("Guess My Answer", () => {
     expect(round(start(), 0, 3).scores).toEqual([0, 0]);
   });
 
-  it("alternates roles every round", () => {
-    expect([0, 1, 2, 3].map(game.answererOf)).toEqual([0, 1, 0, 1]);
-    expect([0, 1, 2, 3].map(game.guesserOf)).toEqual([1, 0, 1, 0]);
+  it("alternates roles every round with two players", () => {
+    expect([0, 1, 2, 3].map((r) => game.answererOf(r, 2))).toEqual([0, 1, 0, 1]);
+    expect([0, 1, 2, 3].map((r) => game.guessersOf(r, 2))).toEqual([[1], [0], [1], [0]]);
     let s = game.nextRound(round(start(), 1, 1));
     expect(s.round).toBe(1);
     s = round(s, 0, 0);
@@ -321,12 +333,12 @@ describe("Guess My Answer", () => {
     for (let r = 0; r < 4; r++) s = game.nextRound(round(s, 0, r < 3 ? 0 : 1));
     expect(s.phase).toBe("final");
     expect(s.scores).toEqual([1, 2]); // Ben guesses rounds 1 and 3, Ana rounds 2 and 4; the last guess missed
-    expect(game.winner(s)).toBe(1);
+    expect(game.winners(s)).toEqual([1]);
     const again = game.replay(s, themed, seeded(8));
     expect(again.scores).toEqual([0, 0]);
     expect(again.phase).toBe("handoff-answer");
     expect(again.questions).toHaveLength(4);
-    expect(game.winner({ ...s, scores: [2, 2] })).toBe("tie");
+    expect(game.winners({ ...s, scores: [2, 2] })).toEqual([0, 1]);
   });
 
   it("ignores impossible option numbers", () => {
@@ -335,6 +347,63 @@ describe("Guess My Answer", () => {
     expect(game.lockAnswer(s, -1).phase).toBe("answering");
     s = game.beginGuessing(game.lockAnswer(s, 0));
     expect(game.submitGuess(s, 9).phase).toBe("guessing");
+  });
+
+  describe("with three or more players", () => {
+    const three = () => game.startGame(["Ana", "Ben", "Cy"], themed, 6, seeded(3));
+
+    it("rotates who answers, and everyone else guesses in seat order", () => {
+      expect([0, 1, 2, 3, 4, 5].map((r) => game.answererOf(r, 3))).toEqual([0, 1, 2, 0, 1, 2]);
+      expect(game.guessersOf(0, 3)).toEqual([1, 2]);
+      expect(game.guessersOf(1, 3)).toEqual([2, 0]);
+      expect(game.guessersOf(2, 3)).toEqual([0, 1]);
+      expect(game.guessersOf(0, 5)).toEqual([1, 2, 3, 4]);
+    });
+
+    it("hands the device to each guesser in turn, and keeps every guess hidden until the end", () => {
+      let s = game.lockAnswer(game.beginAnswering(three()), 2);
+      expect(game.currentGuesser(s)).toBe(1);
+      s = game.submitGuess(game.beginGuessing(s), 2);
+      expect(s.phase).toBe("handoff-guess"); // Cy still to guess
+      expect(game.currentGuesser(s)).toBe(2);
+      expect(s.scores).toEqual([0, 0, 0]); // nothing is scored until everyone has guessed
+      s = game.submitGuess(game.beginGuessing(s), 0);
+      expect(s.phase).toBe("reveal");
+      expect(s.guesses).toEqual([null, 2, 0]);
+    });
+
+    it("gives a point to each guesser who matched, and none to the answerer", () => {
+      const s = fullRound(three(), 1, [1, 1]);
+      expect(s.scores).toEqual([0, 1, 1]);
+      expect(fullRound(three(), 1, [1, 3]).scores).toEqual([0, 1, 0]);
+      expect(fullRound(three(), 1, [0, 3]).scores).toEqual([0, 0, 0]);
+    });
+
+    it("keeps the answerer's turn rotating through the whole game, then names every winner", () => {
+      let s = three();
+      for (let r = 0; r < 6; r++) {
+        expect(game.answererOf(s.round, 3)).toBe(r % 3);
+        s = game.nextRound(fullRound(s, 0, [0, 0])); // everyone always guesses option 0, and the secret is 0
+      }
+      expect(s.phase).toBe("final");
+      // Each player guessed in four rounds and every guess matched.
+      expect(s.scores).toEqual([4, 4, 4]);
+      expect(game.winners(s)).toEqual([0, 1, 2]);
+      expect(game.winners({ ...s, scores: [1, 3, 3] })).toEqual([1, 2]);
+      expect(game.winners({ ...s, scores: [1, 3, 2] })).toEqual([1]);
+    });
+
+    it("plays six players through a round", () => {
+      const six = game.startGame(["A", "B", "C", "D", "E", "F"], themed, 6, seeded(5));
+      const s = fullRound(six, 3, [3, 0, 3, 1, 3]);
+      expect(s.phase).toBe("reveal");
+      expect(s.scores).toEqual([0, 1, 0, 1, 0, 1]);
+    });
+
+    it("turns 'rounds each' into a total", () => {
+      expect(game.totalRounds(2, 3)).toBe(6);
+      expect(game.totalRounds(4, 2)).toBe(8);
+    });
   });
 });
 
@@ -364,6 +433,12 @@ describe("page addresses", () => {
     expect(parseRoute("#/favorites/play")).toEqual({ page: "favorites-play", categoryId: null });
     expect(parseRoute("#/favorites/play/love")).toEqual({ page: "favorites-play", categoryId: "love" });
     expect(parseRoute("#/guess")).toEqual({ page: "guess" });
+    expect(parseRoute("#/surprise")).toEqual({ page: "surprise" });
+    expect(parseRoute("#/debate")).toEqual({ page: "debate" });
+    expect(parseRoute("#/packs")).toEqual({ page: "packs" });
+    expect(parseRoute("#/packs/winter-holidays")).toEqual({ page: "pack", packId: "winter-holidays" });
+    expect(parseRoute("#/mine")).toEqual({ page: "mine" });
+    expect(parseRoute("#/mine/play")).toEqual({ page: "mine-play" });
     expect(parseRoute("#/nowhere")).toEqual({ page: "not-found" });
   });
 });

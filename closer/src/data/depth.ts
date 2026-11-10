@@ -23,5 +23,5 @@ export const quizLevels: Record<Depth, LevelInfo> = {
   4: { name: "Expert", hint: "For trivia champions" },
 };
 
-export const levelsFor = (categoryId: CategoryId): Record<Depth, LevelInfo> =>
+export const levelsFor = (categoryId: CategoryId | string): Record<Depth, LevelInfo> =>
   categoryId === "trivia" ? quizLevels : conversationLevels;

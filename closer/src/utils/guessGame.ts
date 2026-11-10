@@ -1,34 +1,68 @@
 import type { GuessQuestion } from "../types";
 import { shuffle } from "./shuffle";
 
-// Guess My Answer: two people share one device. Each round one person (the answerer) secretly
-// picks the option that fits them best, the other (the guesser) guesses it, and a matching guess
-// scores a point. Roles swap every round. The secret is only readable in the "reveal" phase.
+// Guess My Answer: two to six people share one device. Each round one person (the answerer) secretly
+// picks the option that fits them best. Then everyone else takes the device in turn and guesses it,
+// without seeing each other's guesses. Each right guess scores a point. The answerer rotates every
+// round. With two players that is simply "one answers, the other guesses, then swap". The secret
+// is only readable in the "reveal" phase.
 
 export type Phase = "handoff-answer" | "answering" | "handoff-guess" | "guessing" | "reveal" | "final";
 
+export const MIN_PLAYERS = 2;
+export const MAX_PLAYERS = 6;
+
 export interface GuessState {
-  players: [string, string];
+  players: string[];
   questions: GuessQuestion[];
   round: number;
   phase: Phase;
   secret: number | null;
-  guess: number | null;
-  scores: [number, number];
+  /** Which of this round's guessers has the device (an index into `guessersOf(round, players.length)`). */
+  turn: number;
+  /** This round's guesses, by player (null for the answerer, and for anyone yet to guess). */
+  guesses: (number | null)[];
+  scores: number[];
 }
 
-export const answererOf = (round: number): 0 | 1 => (round % 2 === 0 ? 0 : 1);
-export const guesserOf = (round: number): 0 | 1 => (round % 2 === 0 ? 1 : 0);
+/** Who answers in a round: the players take turns in seat order. */
+export const answererOf = (round: number, players: number): number => round % players;
+
+/** Who guesses in a round, in the order they take the device: everyone but the answerer, starting after them. */
+export function guessersOf(round: number, players: number): number[] {
+  const answerer = answererOf(round, players);
+  return Array.from({ length: players - 1 }, (_, i) => (answerer + 1 + i) % players);
+}
+
+/** A game where everyone answers `each` times. */
+export const totalRounds = (players: number, each: number): number => players * each;
+
+const blankGuesses = (players: number): (number | null)[] => Array.from({ length: players }, () => null);
 
 export function startGame(
-  players: [string, string],
+  players: string[],
   pool: readonly GuessQuestion[],
   rounds: number,
   random?: () => number,
 ): GuessState {
+  if (players.length < MIN_PLAYERS || players.length > MAX_PLAYERS) {
+    throw new Error(`Guess My Answer needs ${MIN_PLAYERS} to ${MAX_PLAYERS} players.`);
+  }
   const questions = shuffle(pool, random).slice(0, Math.min(rounds, pool.length));
-  return { players, questions, round: 0, phase: "handoff-answer", secret: null, guess: null, scores: [0, 0] };
+  return {
+    players,
+    questions,
+    round: 0,
+    phase: "handoff-answer",
+    secret: null,
+    turn: 0,
+    guesses: blankGuesses(players.length),
+    scores: players.map(() => 0),
+  };
 }
+
+/** The guesser whose turn it is. */
+export const currentGuesser = (s: GuessState): number => guessersOf(s.round, s.players.length)[s.turn];
 
 /** The answerer has the device and is ready. */
 export function beginAnswering(s: GuessState): GuessState {
@@ -38,37 +72,45 @@ export function beginAnswering(s: GuessState): GuessState {
 /** Locks in the secret answer and hides it behind the hand-off screen. */
 export function lockAnswer(s: GuessState, option: number): GuessState {
   if (s.phase !== "answering" || !isOption(s, option)) return s;
-  return { ...s, secret: option, phase: "handoff-guess" };
+  return { ...s, secret: option, turn: 0, phase: "handoff-guess" };
 }
 
-/** The guesser has the device and is ready. */
+/** The next guesser has the device and is ready. */
 export function beginGuessing(s: GuessState): GuessState {
   return s.phase === "handoff-guess" ? { ...s, phase: "guessing" } : s;
 }
 
-/** Submits the guess and reveals. Only the first submit in a round scores. */
+/** Takes the current guesser's guess. The next guesser gets the device; after the last guess the
+ *  round is revealed and every right guess scores. Nothing is scored before the reveal. */
 export function submitGuess(s: GuessState, option: number): GuessState {
   if (s.phase !== "guessing" || s.secret === null || !isOption(s, option)) return s;
-  const scores: [number, number] = [...s.scores];
-  if (option === s.secret) scores[guesserOf(s.round)] += 1;
-  return { ...s, guess: option, scores, phase: "reveal" };
+  const guessers = guessersOf(s.round, s.players.length);
+  const guesses = [...s.guesses];
+  guesses[guessers[s.turn]] = option;
+  if (s.turn + 1 < guessers.length) return { ...s, guesses, turn: s.turn + 1, phase: "handoff-guess" };
+  const scores = [...s.scores];
+  for (const g of guessers) if (guesses[g] === s.secret) scores[g] += 1;
+  return { ...s, guesses, scores, phase: "reveal" };
 }
 
 /** After the reveal: the next round, or the final scores. */
 export function nextRound(s: GuessState): GuessState {
   if (s.phase !== "reveal") return s;
   const round = s.round + 1;
-  if (round >= s.questions.length) return { ...s, round, phase: "final", secret: null, guess: null };
-  return { ...s, round, phase: "handoff-answer", secret: null, guess: null };
+  const fresh = { secret: null, turn: 0, guesses: blankGuesses(s.players.length) };
+  if (round >= s.questions.length) return { ...s, ...fresh, round, phase: "final" };
+  return { ...s, ...fresh, round, phase: "handoff-answer" };
 }
 
-/** Same players and theme, fresh shuffle and zeroed scores. */
+/** Same players and settings, fresh shuffle and zeroed scores. */
 export function replay(s: GuessState, pool: readonly GuessQuestion[], random?: () => number): GuessState {
   return startGame(s.players, pool, s.questions.length, random);
 }
 
-export function winner(s: GuessState): 0 | 1 | "tie" {
-  return s.scores[0] === s.scores[1] ? "tie" : s.scores[0] > s.scores[1] ? 0 : 1;
+/** Everyone with the top score: one winner, or several in a tie. */
+export function winners(s: GuessState): number[] {
+  const best = Math.max(...s.scores);
+  return s.scores.flatMap((score, i) => (score === best ? [i] : []));
 }
 
 function isOption(s: GuessState, option: number): boolean {
