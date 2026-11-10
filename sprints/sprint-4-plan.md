@@ -12,4 +12,4 @@
 
 **Why it differed:** I got input from friends, which made the process easier.
 
-**Retro:** Yes, I hit the goal.
+**Retro:** Yes, I hit the goal. Next sprint I am going to get more input, and I might add more functions.
