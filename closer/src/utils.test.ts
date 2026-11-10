@@ -1,7 +1,18 @@
 import { describe, expect, it } from "vitest";
+import { guessQuestions } from "./data/guessQuestions";
+import type { Depth } from "./types";
 import { dailyFor, localDateKey } from "./utils/daily";
-import { sessionOrder } from "./utils/session";
-import { loadAnswers, loadDailyAnswer, saveAnswer, saveDailyAnswer, type KeyValueStore } from "./utils/storage";
+import * as game from "./utils/guessGame";
+import { parseRoute } from "./utils/router";
+import {
+  advance, changeLevel, discuss, progress, recordOutcome, remainingByLevel, restoreSession, startSession, summarize, resultTitle,
+  type PoolItem, type SessionState,
+} from "./utils/session";
+import { shuffle } from "./utils/shuffle";
+import {
+  createFavoritesStore, loadDailyRevealed, loadSession, saveDailyRevealed, saveSession,
+  type KeyValueStore,
+} from "./utils/storage";
 
 const list = [{ id: "a", text: "A?" }, { id: "b", text: "B?" }, { id: "c", text: "C?" }];
 
@@ -9,6 +20,15 @@ function memoryStore(): KeyValueStore {
   const data = new Map<string, string>();
   return { getItem: (k) => data.get(k) ?? null, setItem: (k, v) => void data.set(k, v) };
 }
+
+function seeded(seed = 1) {
+  return () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+}
+
+const blocked: KeyValueStore = {
+  getItem: () => { throw new Error("blocked"); },
+  setItem: () => { throw new Error("blocked"); },
+};
 
 describe("daily question", () => {
   it("uses the local calendar date", () => {
@@ -31,49 +51,376 @@ describe("daily question", () => {
   });
 });
 
-describe("a play session", () => {
-  const ids = Array.from({ length: 12 }, (_, i) => `q${i}`);
+describe("Fisher-Yates shuffle", () => {
+  const items = Array.from({ length: 20 }, (_, i) => i);
 
-  it("picks the requested number of questions, none twice", () => {
-    const order = sessionOrder(ids, 10);
-    expect(order).toHaveLength(10);
-    expect(new Set(order).size).toBe(10);
-    expect(order.every((id) => ids.includes(id))).toBe(true);
+  it("keeps every item exactly once and leaves the input alone", () => {
+    const copy = [...items];
+    const out = shuffle(items, seeded());
+    expect([...out].sort((a, b) => a - b)).toEqual(items);
+    expect(items).toEqual(copy);
   });
 
-  it("is shuffled by the random source it's given", () => {
-    let seed = 1;
-    const random = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
-    const first = sessionOrder(ids, 10, random);
-    seed = 1;
-    expect(sessionOrder(ids, 10, random)).toEqual(first);
-    expect(first).not.toEqual(ids.slice(0, 10));
+  it("is driven by the random source it is given", () => {
+    expect(shuffle(items, seeded(7))).toEqual(shuffle(items, seeded(7)));
+    expect(shuffle(items, seeded(7))).not.toEqual(items);
   });
 
-  it("uses every question when there are fewer than asked for", () => {
-    expect(sessionOrder(["x", "y"], 10).sort()).toEqual(["x", "y"]);
+  it("gives every item a fair chance at every position", () => {
+    const counts = Array.from({ length: 4 }, () => Array<number>(4).fill(0));
+    const random = seeded(3);
+    for (let n = 0; n < 8000; n++) shuffle([0, 1, 2, 3], random).forEach((v, pos) => counts[v][pos]++);
+    for (const row of counts) for (const c of row) expect(c).toBeGreaterThan(1700); // expected 2000
   });
 });
 
-describe("saved answers", () => {
-  it("keeps question answers and the day's answer", () => {
+// 12 questions: three at each depth level.
+const pool: PoolItem[] = Array.from({ length: 12 }, (_, i) => ({ id: `q${i}`, depth: ((i % 4) + 1) as Depth }));
+const depthOf = (id: string | null) => pool.find((q) => q.id === id)?.depth;
+
+/** Skips through everything left, returning the ids in the order they were shown. */
+function playAll(state: SessionState): { shown: string[]; end: SessionState } {
+  const shown: string[] = [];
+  let s = state;
+  while (s.currentId) {
+    shown.push(s.currentId);
+    s = advance(s, pool);
+  }
+  return { shown, end: s };
+}
+
+describe("a play session", () => {
+  it("shows every question once, in a shuffled order, then finishes", () => {
+    const { shown, end } = playAll(startSession("love", pool, { random: seeded() }));
+    expect(shown).toHaveLength(12);
+    expect(new Set(shown).size).toBe(12);
+    expect(shown).not.toEqual(pool.map((q) => q.id));
+    expect(end.done).toBe(true);
+  });
+
+  it("counts a skipped question as seen and never asks it again", () => {
+    let s = startSession("love", pool, { random: seeded() });
+    const first = s.currentId!;
+    s = advance(s, pool);
+    expect(s.outcomes[first]).toBe("skipped");
+    expect(s.seen).toContain(first);
+    expect(playAll(s).shown).not.toContain(first);
+  });
+
+  it("finishes with a completion state and restarts with a fresh shuffle", () => {
+    const { end } = playAll(startSession("love", pool, { random: seeded(1) }));
+    expect(end.currentId).toBeNull();
+    expect(progress(end, pool)).toEqual({ done: 12, total: 12 });
+    const again = startSession("love", pool, { random: seeded(99) });
+    expect(again.done).toBe(false);
+    expect(again.seen).toHaveLength(1);
+    expect(again.order).not.toEqual(end.order);
+  });
+
+  it("only asks questions of the chosen depth", () => {
+    const { shown } = playAll(startSession("love", pool, { level: 3, random: seeded() }));
+    expect(shown).toHaveLength(3);
+    expect(shown.every((id) => depthOf(id) === 3)).toBe(true);
+  });
+
+  it("never repeats a question when depth changes mid-session", () => {
+    let s = startSession("love", pool, { random: seeded(5) });
+    const shown: string[] = [s.currentId!];
+    for (const level of [2, 4, "mix", 1, 3, "mix", 2, 4, "mix"] as const) {
+      s = changeLevel(s, pool, level);
+      if (s.currentId && !shown.includes(s.currentId)) shown.push(s.currentId);
+      s = advance(s, pool);
+      if (s.currentId) shown.push(s.currentId);
+    }
+    expect(new Set(shown).size).toBe(shown.length);
+    expect(new Set(s.seen).size).toBe(s.seen.length);
+  });
+
+  it("keeps the question on screen when it fits the new depth, and swaps it when it doesn't", () => {
+    let s = startSession("love", pool, { level: 2, random: seeded() });
+    const current = s.currentId!;
+    expect(changeLevel(s, pool, "mix").currentId).toBe(current);
+    s = changeLevel(s, pool, 4);
+    expect(s.currentId).not.toBe(current);
+    expect(s.outcomes[current]).toBe("moved");
+    expect(depthOf(s.currentId)).toBe(4);
+  });
+
+  it("does not count a question left behind by a depth change as skipped", () => {
+    let s = startSession("love", pool, { level: 2, random: seeded() });
+    s = changeLevel(s, pool, 4);
+    expect(summarize(s)).toMatchObject({ skipped: 0, answered: 0 });
+  });
+
+  it("reports completion when a depth has nothing left, and resumes at another depth", () => {
+    let { end: s } = playAll(startSession("love", pool, { level: 1, random: seeded() }));
+    expect(s.done).toBe(true);
+    expect(remainingByLevel(s, pool)).toEqual({ 1: 0, 2: 3, 3: 3, 4: 3 });
+    s = changeLevel(s, pool, 2);
+    expect(s.done).toBe(false);
+    expect(depthOf(s.currentId)).toBe(2);
+  });
+
+  it("reports progress against the chosen depth", () => {
+    let s = startSession("love", pool, { random: seeded() });
+    expect(progress(s, pool)).toEqual({ done: 1, total: 12 });
+    s = advance(s, pool);
+    expect(progress(s, pool)).toEqual({ done: 2, total: 12 });
+    s = changeLevel(s, pool, 2);
+    expect(progress(s, pool).total).toBe(3);
+  });
+
+  it("limits a quiz to its length", () => {
+    const s = startSession("trivia", pool, { limit: 5, random: seeded() });
+    expect(progress(s, pool)).toEqual({ done: 1, total: 5 });
+    const { shown, end } = playAll(s);
+    expect(shown).toHaveLength(5);
+    expect(end.done).toBe(true);
+  });
+
+  it("scores a question only once", () => {
+    let s = startSession("trivia", pool, { limit: 5, random: seeded() });
+    const first = s.currentId!;
+    s = recordOutcome(s, "correct");
+    s = recordOutcome(s, "incorrect");
+    s = recordOutcome(s, "skipped");
+    expect(summarize(s)).toMatchObject({ answered: 1, correct: 1, incorrect: 0, skipped: 0, percent: 100 });
+    s = advance(s, pool);
+    expect(s.outcomes[first]).toBe("correct");
+  });
+
+  it("summarizes answered, correct, incorrect, skipped and percentage", () => {
+    let s = startSession("trivia", pool, { limit: 4, random: seeded() });
+    s = advance(recordOutcome(s, "correct"), pool);
+    s = advance(recordOutcome(s, "incorrect"), pool);
+    s = advance(recordOutcome(s, "correct"), pool);
+    s = advance(s, pool); // skipped
+    expect(summarize(s)).toEqual({ answered: 3, skipped: 1, correct: 2, incorrect: 1, percent: 67 });
+    expect(s.done).toBe(true);
+  });
+
+  it("counts a conversation question as talked through when the group moves on, and as skipped when passed", () => {
+    let s = startSession("love", pool, { random: seeded() });
+    const first = s.currentId!;
+    s = discuss(s, pool);
+    expect(s.outcomes[first]).toBe("answered");
+    const second = s.currentId!;
+    s = advance(s, pool);
+    expect(s.outcomes[second]).toBe("skipped");
+    expect(summarize(s)).toMatchObject({ answered: 1, skipped: 1 });
+    expect(playAll(s).shown).not.toContain(first);
+  });
+
+  it("titles a finished quiz by the questions answered, the same base as its score", () => {
+    expect(resultTitle({ answered: 8, skipped: 2, correct: 4, incorrect: 4, percent: 50 })).toBe("You got 4 of 8 right");
+    expect(resultTitle({ answered: 0, skipped: 10, correct: 0, incorrect: 0, percent: 0 })).toBe("You skipped every question");
+  });
+
+  it("restores a saved session only when it still matches the pool", () => {
     const store = memoryStore();
-    saveAnswer("love-1", "Walks by the lake", store);
-    expect(loadAnswers(store)["love-1"].text).toBe("Walks by the lake");
-    saveDailyAnswer("2026-10-25", "daily-3", "My sister", store);
-    expect(loadDailyAnswer("2026-10-25", store)).toEqual({ questionId: "daily-3", text: "My sister" });
-    expect(loadDailyAnswer("2026-10-26", store)).toBeNull();
+    const s = advance(startSession("love", pool, { random: seeded() }), pool);
+    saveSession("play:love", s, store);
+    const saved = loadSession("play:love", store);
+    expect(restoreSession(saved, "love", pool, null)).toEqual(s);
+    expect(restoreSession(saved, "party", pool, null)).toBeNull();
+    expect(restoreSession(saved, "love", pool.slice(1), null)).toBeNull();
+    expect(restoreSession(saved, "love", pool, 10)).toBeNull();
+    expect(restoreSession({ junk: true }, "love", pool, null)).toBeNull();
+    expect(restoreSession(null, "love", pool, null)).toBeNull();
+  });
+});
+
+describe("favorites", () => {
+  it("toggles, never duplicates, and remembers across visits", () => {
+    const store = memoryStore();
+    const first = createFavoritesStore(store);
+    expect(first.toggle("love-1")).toBe(true);
+    expect(first.toggle("deep-2")).toBe(true);
+    expect(first.get()).toEqual(["love-1", "deep-2"]);
+    expect(first.toggle("love-1")).toBe(false);
+    expect(first.has("love-1")).toBe(false);
+    expect(createFavoritesStore(store).get()).toEqual(["deep-2"]);
+  });
+
+  it("ignores duplicates and junk in what was saved", () => {
+    const store = memoryStore();
+    store.setItem("closer.favorites", JSON.stringify(["a", "a", 3, null, "b"]));
+    expect(createFavoritesStore(store).get()).toEqual(["a", "b"]);
+    store.setItem("closer.favorites", "not json");
+    expect(createFavoritesStore(store).get()).toEqual([]);
+  });
+
+  it("notifies listeners and stops once unsubscribed", () => {
+    const favs = createFavoritesStore(memoryStore());
+    let calls = 0;
+    const off = favs.subscribe(() => calls++);
+    favs.toggle("x");
+    off();
+    favs.toggle("y");
+    expect(calls).toBe(1);
+  });
+
+  it("keeps working in memory when the browser blocks storage", () => {
+    const favs = createFavoritesStore(blocked);
+    expect(favs.toggle("love-1")).toBe(true);
+    expect(favs.has("love-1")).toBe(true);
+    const none = createFavoritesStore(null);
+    expect(none.toggle("a")).toBe(true);
+    expect(none.get()).toEqual(["a"]);
+  });
+});
+
+describe("Guess My Answer", () => {
+  const themed = guessQuestions.filter((q) => q.themeId === "party");
+  const start = () => game.startGame(["Ana", "Ben"], themed, 4, seeded(2));
+  /** One whole two-player round: the answerer locks `secret`, the guesser submits `guess`. */
+  const round = (s: game.GuessState, secret: number, guess: number) =>
+    game.submitGuess(game.beginGuessing(game.lockAnswer(game.beginAnswering(s), secret)), guess);
+  /** One whole round for any number of players; `guesses` are in the order the guessers take the device. */
+  const fullRound = (s: game.GuessState, secret: number, guesses: number[]) => {
+    let t = game.lockAnswer(game.beginAnswering(s), secret);
+    for (const g of guesses) t = game.submitGuess(game.beginGuessing(t), g);
+    return t;
+  };
+
+  it("picks the requested number of different questions", () => {
+    const s = start();
+    expect(s.questions).toHaveLength(4);
+    expect(new Set(s.questions.map((q) => q.id)).size).toBe(4);
+    expect(s.phase).toBe("handoff-answer");
+  });
+
+  it("needs between two and six players", () => {
+    expect(() => game.startGame(["Solo"], themed, 4)).toThrow();
+    expect(() => game.startGame(["A", "B", "C", "D", "E", "F", "G"], themed, 4)).toThrow();
+    expect(game.startGame(["A", "B", "C", "D", "E", "F"], themed, 6).players).toHaveLength(6);
+  });
+
+  it("walks through the phases in order and keeps the secret until the reveal", () => {
+    let s = game.lockAnswer(start(), 1); // too early: nobody is answering yet
+    expect(s.secret).toBeNull();
+    s = game.lockAnswer(game.beginAnswering(s), 1);
+    expect(s.phase).toBe("handoff-guess");
+    s = game.submitGuess(s, 1); // can't guess before the guesser takes the device
+    expect(s.guesses[1]).toBeNull();
+    s = game.submitGuess(game.beginGuessing(s), 1);
+    expect(s.phase).toBe("reveal");
+    expect(s.secret).toBe(1);
+  });
+
+  it("scores the guesser only when the guess matches, and only once", () => {
+    let s = round(start(), 2, 2);
+    expect(s.scores).toEqual([0, 1]); // round 0: Ana answers, Ben guesses
+    s = game.submitGuess(game.submitGuess(s, 2), 2);
+    expect(s.scores).toEqual([0, 1]);
+  });
+
+  it("gives no point for a wrong guess", () => {
+    expect(round(start(), 0, 3).scores).toEqual([0, 0]);
+  });
+
+  it("alternates roles every round with two players", () => {
+    expect([0, 1, 2, 3].map((r) => game.answererOf(r, 2))).toEqual([0, 1, 0, 1]);
+    expect([0, 1, 2, 3].map((r) => game.guessersOf(r, 2))).toEqual([[1], [0], [1], [0]]);
+    let s = game.nextRound(round(start(), 1, 1));
+    expect(s.round).toBe(1);
+    s = round(s, 0, 0);
+    expect(s.scores).toEqual([1, 1]); // round 1: Ben answers, Ana guesses
+  });
+
+  it("ends with the final score, names the winner, and replays from zero", () => {
+    let s = start();
+    for (let r = 0; r < 4; r++) s = game.nextRound(round(s, 0, r < 3 ? 0 : 1));
+    expect(s.phase).toBe("final");
+    expect(s.scores).toEqual([1, 2]); // Ben guesses rounds 1 and 3, Ana rounds 2 and 4; the last guess missed
+    expect(game.winners(s)).toEqual([1]);
+    const again = game.replay(s, themed, seeded(8));
+    expect(again.scores).toEqual([0, 0]);
+    expect(again.phase).toBe("handoff-answer");
+    expect(again.questions).toHaveLength(4);
+    expect(game.winners({ ...s, scores: [2, 2] })).toEqual([0, 1]);
+  });
+
+  it("ignores impossible option numbers", () => {
+    let s = game.beginAnswering(start());
+    expect(game.lockAnswer(s, 4).phase).toBe("answering");
+    expect(game.lockAnswer(s, -1).phase).toBe("answering");
+    s = game.beginGuessing(game.lockAnswer(s, 0));
+    expect(game.submitGuess(s, 9).phase).toBe("guessing");
+  });
+
+  describe("with three or more players", () => {
+    const three = () => game.startGame(["Ana", "Ben", "Cy"], themed, 6, seeded(3));
+
+    it("rotates who answers, and everyone else guesses in seat order", () => {
+      expect([0, 1, 2, 3, 4, 5].map((r) => game.answererOf(r, 3))).toEqual([0, 1, 2, 0, 1, 2]);
+      expect(game.guessersOf(0, 3)).toEqual([1, 2]);
+      expect(game.guessersOf(1, 3)).toEqual([2, 0]);
+      expect(game.guessersOf(2, 3)).toEqual([0, 1]);
+      expect(game.guessersOf(0, 5)).toEqual([1, 2, 3, 4]);
+    });
+
+    it("hands the device to each guesser in turn, and keeps every guess hidden until the end", () => {
+      let s = game.lockAnswer(game.beginAnswering(three()), 2);
+      expect(game.currentGuesser(s)).toBe(1);
+      s = game.submitGuess(game.beginGuessing(s), 2);
+      expect(s.phase).toBe("handoff-guess"); // Cy still to guess
+      expect(game.currentGuesser(s)).toBe(2);
+      expect(s.scores).toEqual([0, 0, 0]); // nothing is scored until everyone has guessed
+      s = game.submitGuess(game.beginGuessing(s), 0);
+      expect(s.phase).toBe("reveal");
+      expect(s.guesses).toEqual([null, 2, 0]);
+    });
+
+    it("gives a point to each guesser who matched, and none to the answerer", () => {
+      const s = fullRound(three(), 1, [1, 1]);
+      expect(s.scores).toEqual([0, 1, 1]);
+      expect(fullRound(three(), 1, [1, 3]).scores).toEqual([0, 1, 0]);
+      expect(fullRound(three(), 1, [0, 3]).scores).toEqual([0, 0, 0]);
+    });
+
+    it("keeps the answerer's turn rotating through the whole game, then names every winner", () => {
+      let s = three();
+      for (let r = 0; r < 6; r++) {
+        expect(game.answererOf(s.round, 3)).toBe(r % 3);
+        s = game.nextRound(fullRound(s, 0, [0, 0])); // everyone always guesses option 0, and the secret is 0
+      }
+      expect(s.phase).toBe("final");
+      // Each player guessed in four rounds and every guess matched.
+      expect(s.scores).toEqual([4, 4, 4]);
+      expect(game.winners(s)).toEqual([0, 1, 2]);
+      expect(game.winners({ ...s, scores: [1, 3, 3] })).toEqual([1, 2]);
+      expect(game.winners({ ...s, scores: [1, 3, 2] })).toEqual([1]);
+    });
+
+    it("plays six players through a round", () => {
+      const six = game.startGame(["A", "B", "C", "D", "E", "F"], themed, 6, seeded(5));
+      const s = fullRound(six, 3, [3, 0, 3, 1, 3]);
+      expect(s.phase).toBe("reveal");
+      expect(s.scores).toEqual([0, 1, 0, 1, 0, 1]);
+    });
+
+    it("turns 'rounds each' into a total", () => {
+      expect(game.totalRounds(2, 3)).toBe(6);
+      expect(game.totalRounds(4, 2)).toBe(8);
+    });
+  });
+});
+
+describe("question of the day", () => {
+  it("remembers that today's question was revealed, for that day only", () => {
+    const store = memoryStore();
+    expect(loadDailyRevealed("2026-10-25", store)).toBe(false);
+    saveDailyRevealed("2026-10-25", store);
+    expect(loadDailyRevealed("2026-10-25", store)).toBe(true);
+    expect(loadDailyRevealed("2026-10-26", store)).toBe(false);
   });
 
   it("never breaks the page when the browser blocks storage", () => {
-    const broken: KeyValueStore = { getItem: () => { throw new Error("blocked"); }, setItem: () => { throw new Error("blocked"); } };
-    expect(() => saveAnswer("x", "y", broken)).not.toThrow();
-    expect(loadAnswers(broken)).toEqual({});
-    expect(loadDailyAnswer("2026-10-25", broken)).toBeNull();
+    expect(() => saveDailyRevealed("2026-10-25", blocked)).not.toThrow();
+    expect(loadDailyRevealed("2026-10-25", blocked)).toBe(false);
   });
 });
-
-import { parseRoute } from "./utils/router";
 
 describe("page addresses", () => {
   it("map to pages", () => {
@@ -82,6 +429,16 @@ describe("page addresses", () => {
     expect(parseRoute("#/explore")).toEqual({ page: "explore" });
     expect(parseRoute("#/about/")).toEqual({ page: "about" });
     expect(parseRoute("#/play/would-you-rather")).toEqual({ page: "play", categoryId: "would-you-rather" });
+    expect(parseRoute("#/favorites")).toEqual({ page: "favorites" });
+    expect(parseRoute("#/favorites/play")).toEqual({ page: "favorites-play", categoryId: null });
+    expect(parseRoute("#/favorites/play/love")).toEqual({ page: "favorites-play", categoryId: "love" });
+    expect(parseRoute("#/guess")).toEqual({ page: "guess" });
+    expect(parseRoute("#/surprise")).toEqual({ page: "surprise" });
+    expect(parseRoute("#/debate")).toEqual({ page: "debate" });
+    expect(parseRoute("#/packs")).toEqual({ page: "packs" });
+    expect(parseRoute("#/packs/winter-holidays")).toEqual({ page: "pack", packId: "winter-holidays" });
+    expect(parseRoute("#/mine")).toEqual({ page: "mine" });
+    expect(parseRoute("#/mine/play")).toEqual({ page: "mine-play" });
     expect(parseRoute("#/nowhere")).toEqual({ page: "not-found" });
   });
 });

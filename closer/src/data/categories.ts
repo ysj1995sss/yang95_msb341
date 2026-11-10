@@ -45,7 +45,7 @@ export const categories: Category[] = [
   },
   {
     id: "would-you-rather",
-    name: "Would You Rather",
+    name: "Would You Rather & Dilemmas",
     description: "Dilemmas and trade-offs. There's no right answer, only your answer.",
     icon: "Split",
     gradient: "from-coral-500 to-amber-400",
@@ -53,7 +53,7 @@ export const categories: Category[] = [
   {
     id: "trivia",
     name: "Trivia & Brain Battles",
-    description: "Multiple-choice questions on geography, history, science and film.",
+    description: "Multiple-choice quizzes on geography, history, science, entertainment and logic.",
     icon: "Brain",
     gradient: "from-plum-700 to-sky-400",
   },
