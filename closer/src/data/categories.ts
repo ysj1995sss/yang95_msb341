@@ -1,5 +1,7 @@
-import type { Category } from "../types";
+import type { Category, CategoryId } from "../types";
 
+/** The experiences people pick from: seven of them. Some hold more than one library group (see `sources`),
+ *  because the questions overlapped. The merged ones keep one of the old ids, so saved links still work. */
 export const categories: Category[] = [
   {
     id: "love",
@@ -7,6 +9,8 @@ export const categories: Category[] = [
     description: "Romance, dating, intimacy and the little things that bring you closer.",
     icon: "Heart",
     gradient: "from-coral-500 to-plum-500",
+    tint: "rose",
+    sources: ["love"],
   },
   {
     id: "deep",
@@ -14,20 +18,26 @@ export const categories: Category[] = [
     description: "Values, feelings and growth: the conversations that stay with you.",
     icon: "Waves",
     gradient: "from-plum-600 to-plum-400",
+    tint: "lavender",
+    sources: ["deep"],
   },
   {
     id: "party",
-    name: "Party & Games",
-    description: "Funny questions, truth or dare, and challenges for a loud room.",
+    name: "Icebreakers & Party Games",
+    description: "Easy openers, funny questions and truth or dare, for new friends, teams and a loud room.",
     icon: "PartyPopper",
     gradient: "from-coral-400 to-amber-400",
+    tint: "yellow",
+    sources: ["party", "icebreakers"],
   },
   {
-    id: "debate",
-    name: "Debate & Opinions",
-    description: "Hot takes and friendly arguments. Pick a side and defend it.",
-    icon: "Scale",
-    gradient: "from-plum-500 to-coral-400",
+    id: "would-you-rather",
+    name: "Would You Rather & Debates",
+    description: "Dilemmas, trade-offs and hot takes. Pick a side and defend it.",
+    icon: "Split",
+    gradient: "from-coral-500 to-amber-400",
+    tint: "peach",
+    sources: ["would-you-rather", "debate"],
   },
   {
     id: "family",
@@ -35,20 +45,17 @@ export const categories: Category[] = [
     description: "Childhood, traditions and the stories worth passing down.",
     icon: "Camera",
     gradient: "from-amber-400 to-coral-500",
+    tint: "mint",
+    sources: ["family"],
   },
   {
-    id: "icebreakers",
-    name: "Icebreakers & Team Building",
-    description: "Easy openers for new friends, new teams and first meetings.",
-    icon: "Snowflake",
-    gradient: "from-sky-400 to-plum-500",
-  },
-  {
-    id: "would-you-rather",
-    name: "Would You Rather & Dilemmas",
-    description: "Dilemmas and trade-offs. There's no right answer, only your answer.",
-    icon: "Split",
-    gradient: "from-coral-500 to-amber-400",
+    id: "imagination",
+    name: "Imagination & Storytelling",
+    description: "Invent, dream and design worlds that don't exist yet, then tell the stories behind your own.",
+    icon: "Sparkles",
+    gradient: "from-plum-400 to-coral-400",
+    tint: "sky",
+    sources: ["imagination", "storytelling"],
   },
   {
     id: "trivia",
@@ -56,21 +63,33 @@ export const categories: Category[] = [
     description: "Multiple-choice quizzes on geography, history, science, entertainment and logic.",
     icon: "Brain",
     gradient: "from-plum-700 to-sky-400",
-  },
-  {
-    id: "imagination",
-    name: "Imagination & Creativity",
-    description: "Invent, dream and design worlds that don't exist yet.",
-    icon: "Sparkles",
-    gradient: "from-plum-400 to-coral-400",
-  },
-  {
-    id: "storytelling",
-    name: "Storytelling Challenges",
-    description: "Adventures, mishaps and life lessons, told your way.",
-    icon: "BookOpen",
-    gradient: "from-coral-400 to-plum-600",
+    tint: "yellow",
+    sources: ["trivia"],
   },
 ];
 
-export const categoryById = (id: string): Category | undefined => categories.find((c) => c.id === id);
+/** The original ten groups the questions are written in. A question's id and its audience tags come from these. */
+export const libraryNames: Record<CategoryId, string> = {
+  love: "Love & Relationships",
+  deep: "Deep Connections",
+  party: "Party & Games",
+  debate: "Debate & Opinions",
+  family: "Family & Memories",
+  icebreakers: "Icebreakers & Team Building",
+  "would-you-rather": "Would You Rather & Dilemmas",
+  imagination: "Imagination & Creativity",
+  storytelling: "Storytelling Challenges",
+  trivia: "Trivia & Brain Battles",
+};
+export const libraryIds = Object.keys(libraryNames) as CategoryId[];
+
+/** Addresses from before the merge (#/play/storytelling) lead to the experience that absorbed them. */
+const merged: Record<string, string> = { storytelling: "imagination", debate: "would-you-rather", icebreakers: "party" };
+
+export const categoryById = (id: string): Category | undefined => {
+  const canonical = merged[id] ?? id;
+  return categories.find((c) => c.id === canonical);
+};
+
+/** The experience a question lives in, from the library group it was written in. */
+export const categoryOf = (libraryId: string): Category | undefined => categories.find((c) => (c.sources as string[]).includes(libraryId));

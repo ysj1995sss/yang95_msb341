@@ -1,6 +1,6 @@
 import type { Question } from "../types";
 import { customQuestions, toOpenQuestion } from "../utils/custom";
-import { categoryById } from "./categories";
+import { libraryNames } from "./categories";
 import { packs, packQuestions } from "./packs";
 import { questionById } from "./questions";
 
@@ -24,5 +24,5 @@ export function findQuestion(id: string): Question | undefined {
 export function sourceLabel(q: Question): string | undefined {
   if (q.categoryId === "pack") return packIndex.get(q.id)?.packName;
   if (q.categoryId === "mine") return "My question";
-  return categoryById(q.categoryId)?.name;
+  return libraryNames[q.categoryId as keyof typeof libraryNames];
 }

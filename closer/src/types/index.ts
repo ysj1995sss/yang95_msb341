@@ -15,6 +15,9 @@ export type IconName =
   | "Heart" | "Waves" | "PartyPopper" | "Scale" | "Camera"
   | "Snowflake" | "Split" | "Brain" | "Sparkles" | "BookOpen";
 
+/** The pastel background colors a category card can take (defined in index.css). */
+export type CategoryTint = "rose" | "lavender" | "yellow" | "peach" | "mint" | "sky";
+
 export interface Category {
   id: CategoryId;
   name: string;
@@ -23,6 +26,10 @@ export interface Category {
   icon: IconName;
   /** Tailwind gradient classes for the icon tile, e.g. "from-plum-500 to-coral-400". */
   gradient: string;
+  /** The pastel color of the category's card on Home and Explore. */
+  tint: CategoryTint;
+  /** The library groups whose questions this experience plays (always including its own id). */
+  sources: CategoryId[];
 }
 
 /**

@@ -16,7 +16,7 @@ export function QuestionExperience({ categoryId }: { categoryId: string }) {
     return (
       <div className="mx-auto max-w-3xl px-4 pt-16 sm:px-6">
         <h1 tabIndex={-1} className="text-3xl font-extrabold">We couldn't find that experience</h1>
-        <p className="mt-3 text-muted">It may have moved. Pick one of the ten experiences instead.</p>
+        <p className="mt-3 text-muted">It may have moved. Pick one of the experiences instead.</p>
         <a href={href.explore} className={`${primary} mt-6`}>See all experiences</a>
       </div>
     );

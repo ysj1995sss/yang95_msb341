@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { categories } from "./data/categories";
+import { categories, categoryById, categoryOf, libraryIds, libraryNames } from "./data/categories";
 import { dailyQuestions } from "./data/dailyQuestions";
 import { guessQuestions, guessThemes } from "./data/guessQuestions";
 import { questionById, questions, questionsFor } from "./data/questions";
@@ -24,15 +24,30 @@ function similarity(a: string, b: string): number {
 }
 
 describe("the library", () => {
-  it("has the ten experiences, each with a unique id", () => {
-    expect(categories).toHaveLength(10);
-    expect(new Set(categories.map((c) => c.id)).size).toBe(10);
+  it("has seven experiences, each with a unique id, built from the ten groups the questions are written in", () => {
+    expect(categories).toHaveLength(7);
+    expect(new Set(categories.map((c) => c.id)).size).toBe(7);
+    // Every group belongs to exactly one experience, and an experience always includes its own id.
+    const grouped = categories.flatMap((c) => c.sources);
+    expect([...grouped].sort()).toEqual([...libraryIds].sort());
+    for (const c of categories) expect(c.sources, c.name).toContain(c.id);
+    for (const q of questions) expect(categoryOf(q.categoryId), q.id).toBeDefined();
   });
 
-  it("holds exactly 500 questions, exactly 50 in each category", () => {
+  it("sends addresses from before the merge to the experience that absorbed them", () => {
+    expect(categoryById("storytelling")?.id).toBe("imagination");
+    expect(categoryById("debate")?.id).toBe("would-you-rather");
+    expect(categoryById("icebreakers")?.id).toBe("party");
+    expect(categoryById("love")?.id).toBe("love");
+    expect(categoryById("nowhere")).toBeUndefined();
+  });
+
+  it("holds exactly 500 questions, exactly 50 in each group, so 50 or 100 in each experience", () => {
     expect(questions).toHaveLength(500);
+    for (const id of libraryIds) expect(questionsFor(id), id).toHaveLength(50);
     for (const category of categories) {
-      expect(questionsFor(category.id), category.name).toHaveLength(50);
+      const n = category.sources.flatMap((s) => questionsFor(s)).length;
+      expect(n, category.name).toBe(category.sources.length * 50);
     }
   });
 
@@ -101,18 +116,18 @@ describe("the library", () => {
     expect(alike).toEqual([]);
   });
 
-  it("doesn't lean on one sentence shape: no opening of two words starts more than a third of a category", () => {
-    for (const category of categories) {
-      if (category.id === "trivia") continue;
+  it("doesn't lean on one sentence shape: no opening of two words starts more than a third of a group", () => {
+    for (const id of libraryIds) {
+      if (id === "trivia") continue;
       const counts = new Map<string, number>();
-      for (const q of questionsFor(category.id)) {
+      for (const q of questionsFor(id)) {
         const opening = norm(q.text).split(" ").slice(0, 2).join(" ");
         counts.set(opening, (counts.get(opening) ?? 0) + 1);
       }
       const [top, n] = [...counts.entries()].sort((a, b) => b[1] - a[1])[0];
       // "Would you" is the point of the Would You Rather category, which mixes in dilemmas instead.
-      const limit = category.id === "would-you-rather" ? 32 : 17;
-      expect(n, `${category.name}: "${top}"`).toBeLessThanOrEqual(limit);
+      const limit = id === "would-you-rather" ? 32 : 17;
+      expect(n, `${libraryNames[id]}: "${top}"`).toBeLessThanOrEqual(limit);
     }
     const dilemmas = questionsFor("would-you-rather").filter((q) => !/^would you rather/i.test(q.text));
     expect(dilemmas.length).toBeGreaterThanOrEqual(15);
@@ -120,12 +135,23 @@ describe("the library", () => {
 });
 
 describe("depth levels", () => {
-  it("spreads each category across all four levels, about evenly", () => {
-    for (const category of categories) {
+  it("spreads each group across all four levels, about evenly", () => {
+    for (const id of libraryIds) {
       for (const depth of [1, 2, 3, 4]) {
-        const n = questionsFor(category.id).filter((q) => q.depth === depth).length;
-        expect(n, `${category.name} level ${depth}`).toBeGreaterThanOrEqual(11);
-        expect(n, `${category.name} level ${depth}`).toBeLessThanOrEqual(14);
+        const n = questionsFor(id).filter((q) => q.depth === depth).length;
+        expect(n, `${libraryNames[id]} level ${depth}`).toBeGreaterThanOrEqual(11);
+        expect(n, `${libraryNames[id]} level ${depth}`).toBeLessThanOrEqual(14);
+      }
+    }
+  });
+
+  it("keeps every experience's levels about even too, so a level never runs dry", () => {
+    for (const category of categories) {
+      const pool = category.sources.flatMap((source) => questionsFor(source));
+      for (const depth of [1, 2, 3, 4]) {
+        const n = pool.filter((q) => q.depth === depth).length;
+        expect(n, `${category.name} level ${depth}`).toBeGreaterThanOrEqual(11 * category.sources.length);
+        expect(n, `${category.name} level ${depth}`).toBeLessThanOrEqual(14 * category.sources.length);
       }
     }
   });

@@ -43,7 +43,7 @@ export function categorySet(categoryId: string, audience: AudienceChoice = "ever
   if (!category) return null;
   const quiz = category.id === "trivia";
   const group = quiz && topic !== "all" ? topicGroupById(topic) : undefined;
-  const pool = questionsFor(category.id).filter((q) => (quiz ? inTopicGroup(q, group ? topic : "all") : matchesAudience(q, audience)));
+  const pool = category.sources.flatMap((source) => questionsFor(source)).filter((q) => (quiz ? inTopicGroup(q, group ? topic : "all") : matchesAudience(q, audience)));
   const forGroup = !quiz && isAudience(audience) ? ` Showing the questions that suit ${audienceLabel(audience)}.` : "";
   return {
     key: categoryKey(category.id, audience, group ? topic : "all"),
@@ -53,7 +53,7 @@ export function categorySet(categoryId: string, audience: AudienceChoice = "ever
     category,
     pool,
     limit: quiz && pool.length > 0 ? Math.min(QUIZ_LENGTH, pool.length) : null,
-    timer: category.id === "party" || category.id === "debate",
+    timer: category.id === "party" || category.id === "would-you-rather",
   };
 }
 

@@ -6,6 +6,7 @@ import { About } from "./pages/About";
 import { DebateNight } from "./pages/DebateNight";
 import { Explore } from "./pages/Explore";
 import { Favorites, FavoritesPlay } from "./pages/Favorites";
+import { Games } from "./pages/Games";
 import { GuessMyAnswer } from "./pages/GuessMyAnswer";
 import { Home } from "./pages/Home";
 import { MinePlay, MyQuestions } from "./pages/MyQuestions";
@@ -53,6 +54,7 @@ export default function App() {
         {route.page === "play" && <QuestionExperience key={route.categoryId} categoryId={route.categoryId} />}
         {route.page === "favorites" && <Favorites />}
         {route.page === "favorites-play" && <FavoritesPlay key={route.categoryId ?? "all"} categoryId={route.categoryId} />}
+        {route.page === "games" && <Games />}
         {route.page === "guess" && <GuessMyAnswer />}
         {route.page === "debate" && <DebateNight />}
         {route.page === "surprise" && <Surprise />}

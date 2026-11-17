@@ -19,6 +19,7 @@ import { OpenStep, TriviaStep } from "./QuestionSteps";
 import { ProgressBar } from "./ProgressBar";
 import { TableMode } from "./TableMode";
 import { TimerPanel } from "./TimerPanel";
+import { neutralTone, tintClass } from "./tint";
 import { primary, quiet, secondary } from "./ui";
 
 export interface SessionViewProps {
@@ -130,26 +131,27 @@ export function SessionView({ category, heading, description, pool, limit: limit
       {q.kind === "trivia" && <span className="text-muted">{q.topic}</span>}
     </>
   );
+  const tone = category ? `${tintClass[category.tint]}` : neutralTone;
   const position = state.done ? "Round complete" : `Question ${prog.done} of ${prog.total}`;
 
   return (
-    <div ref={root} tabIndex={-1} className="mx-auto max-w-3xl px-4 pb-4 pt-8 outline-none sm:px-6 sm:pt-12">
-      <a href={backHref} className={`${quiet} -ml-3`}>
+    <div ref={root} tabIndex={-1} className="mx-auto max-w-3xl px-4 pb-4 pt-4 outline-none sm:px-6 sm:pt-8">
+      <a href={backHref} className={`${quiet} -ml-3 min-h-11`}>
         <ArrowLeft aria-hidden className="size-5" /> {backLabel}
       </a>
-      <div className="mt-4 flex items-center gap-4">
+      <div className="mt-2 flex items-center gap-3 sm:gap-4">
         {category ? (
-          <CategoryIcon category={category} size="lg" />
+          <CategoryIcon category={category} />
         ) : (
           icon ?? (
-            <span aria-hidden className="inline-flex size-16 shrink-0 items-center justify-center rounded-3xl bg-gradient-to-br from-coral-500 to-plum-500 text-white shadow-md">
-              <Heart className="size-8" fill="currentColor" strokeWidth={0} />
+            <span aria-hidden className="inline-flex size-12 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-coral-500 to-plum-500 text-white shadow-md">
+              <Heart className="size-6" fill="currentColor" strokeWidth={0} />
             </span>
           )
         )}
-        <div>
-          <h1 tabIndex={-1} className="text-2xl font-extrabold tracking-tight sm:text-3xl">{heading}</h1>
-          <p className="mt-1 text-muted">{description}</p>
+        <div className="min-w-0">
+          <h1 tabIndex={-1} className="text-xl font-extrabold tracking-tight sm:text-3xl">{heading}</h1>
+          <p className="mt-0.5 hidden text-muted sm:block">{description}</p>
         </div>
       </div>
 
@@ -157,11 +159,11 @@ export function SessionView({ category, heading, description, pool, limit: limit
 
       <p role="status" className="sr-only">{announcement}</p>
 
-      <div className="mt-8">
+      <div className="mt-5">
         <DepthSelector categoryId={category?.id ?? (quiz ? "trivia" : "deep")} level={state.level} remaining={remaining} onChange={onLevel} />
       </div>
 
-      <div className="mt-6">
+      <div className="mt-4">
         <ProgressBar
           current={state.done ? Math.max(prog.done, 1) : prog.done}
           total={Math.max(prog.total, 1)}
@@ -169,8 +171,32 @@ export function SessionView({ category, heading, description, pool, limit: limit
         />
       </div>
 
+      {timer && isOpen && !state.done && (
+        <div className="mt-4">
+          <TimerPanel countdown={countdown} choice={timerChoice} onChoice={(s) => timerSetting.set(s)} />
+        </div>
+      )}
+
+      <div ref={stage} tabIndex={-1} {...swipe} className="mt-4 touch-pan-y rounded-[2rem] outline-none">
+        {state.done || !question ? (
+          quiz ? (
+            <QuizResults state={state} onRestart={restart} backHref={backHref} backLabel={backLabel} />
+          ) : (
+            <Completion state={state} remaining={remaining} names={names} onLevel={onLevel} onRestart={restart}
+              backHref={backHref} backLabel={backLabel} />
+          )
+        ) : question.kind === "trivia" ? (
+          <TriviaStep key={question.id} question={question} eyebrow={eyebrow(question)} tone={tone} isLast={prog.done >= prog.total}
+            onSubmitted={(correct) => setState((s) => recordOutcome(s, correct ? "correct" : "incorrect"))}
+            onSkip={next} onNext={next} />
+        ) : (
+          <OpenStep key={question.id} question={question} eyebrow={eyebrow(question)} tone={tone} isLast={prog.done >= prog.total}
+            onSkip={next} onNext={talked} />
+        )}
+      </div>
+
       {isOpen && !state.done && (
-        <div className="mt-5 flex flex-wrap items-center justify-between gap-3">
+        <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
           <button type="button" onClick={() => setTable(true)}
             className="inline-flex min-h-11 cursor-pointer items-center gap-2 rounded-full border-2 border-plum-200 bg-surface px-4 text-sm font-bold text-plum-800 transition hover:border-plum-300 hover:bg-plum-50">
             <Maximize2 aria-hidden className="size-4" /> Table mode
@@ -181,30 +207,6 @@ export function SessionView({ category, heading, description, pool, limit: limit
           <p className="text-sm text-muted sm:hidden">Swipe the card: left for next, right to skip.</p>
         </div>
       )}
-
-      {timer && isOpen && !state.done && (
-        <div className="mt-4">
-          <TimerPanel countdown={countdown} choice={timerChoice} onChoice={(s) => timerSetting.set(s)} />
-        </div>
-      )}
-
-      <div ref={stage} tabIndex={-1} {...swipe} className="mt-6 touch-pan-y rounded-[2rem] outline-none">
-        {state.done || !question ? (
-          quiz ? (
-            <QuizResults state={state} onRestart={restart} backHref={backHref} backLabel={backLabel} />
-          ) : (
-            <Completion state={state} remaining={remaining} names={names} onLevel={onLevel} onRestart={restart}
-              backHref={backHref} backLabel={backLabel} />
-          )
-        ) : question.kind === "trivia" ? (
-          <TriviaStep key={question.id} question={question} eyebrow={eyebrow(question)} isLast={prog.done >= prog.total}
-            onSubmitted={(correct) => setState((s) => recordOutcome(s, correct ? "correct" : "incorrect"))}
-            onSkip={next} onNext={next} />
-        ) : (
-          <OpenStep key={question.id} question={question} eyebrow={eyebrow(question)} isLast={prog.done >= prog.total}
-            onSkip={next} onNext={talked} />
-        )}
-      </div>
 
       {table && question?.kind === "open" && (
         <TableMode question={question} label={levelName(question)} position={position} countdown={countdown}

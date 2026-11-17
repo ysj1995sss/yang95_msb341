@@ -60,7 +60,7 @@ export function Favorites() {
           </div>
           <div className="mt-10 space-y-10">
             {categories.map((category) => {
-              const items = saved.filter((q) => q.categoryId === category.id);
+              const items = saved.filter((q) => (category.sources as string[]).includes(q.categoryId));
               if (items.length === 0) return null;
               const names = levelsFor(category.id);
               return (
@@ -124,7 +124,7 @@ export function Favorites() {
 export function FavoritesPlay({ categoryId }: { categoryId: string | null }) {
   // Fixed when the page opens, so un-hearting a card mid-game doesn't reshuffle the set.
   const [pool] = useState(() =>
-    favoriteQuestions(favorites.get()).filter((q) => categoryId === null || q.categoryId === categoryId),
+    favoriteQuestions(favorites.get()).filter((q) => categoryId === null || (categoryById(categoryId)?.sources as string[] | undefined)?.includes(q.categoryId)),
   );
   const category = categoryId ? categoryById(categoryId) ?? null : null;
 

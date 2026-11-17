@@ -10,6 +10,7 @@ export type Route =
   | { page: "play"; categoryId: string }
   | { page: "favorites" }
   | { page: "favorites-play"; categoryId: string | null }
+  | { page: "games" }
   | { page: "guess" }
   | { page: "debate" }
   | { page: "surprise" }
@@ -25,6 +26,7 @@ export function parseRoute(hash: string): Route {
   if (path === "/explore") return { page: "explore" };
   if (path === "/about") return { page: "about" };
   if (path === "/favorites") return { page: "favorites" };
+  if (path === "/games") return { page: "games" };
   if (path === "/guess") return { page: "guess" };
   if (path === "/debate") return { page: "debate" };
   if (path === "/surprise") return { page: "surprise" };
@@ -56,6 +58,7 @@ export const href = {
   explore: "#/explore",
   about: "#/about",
   favorites: "#/favorites",
+  games: "#/games",
   guess: "#/guess",
   debate: "#/debate",
   surprise: "#/surprise",

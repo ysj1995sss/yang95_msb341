@@ -10,8 +10,8 @@ import { storytelling } from "./library/storytelling";
 import { trivia } from "./library/trivia";
 import { wouldYouRather } from "./library/wouldYouRather";
 
-/** The library: 10 categories of 50 questions. A question's id is its category and its place in that
- *  category's file ("love-7"), so ids stay the same as long as nothing is inserted above them. */
+/** The library: ten groups of 50 questions (the app shows them as seven experiences, see categories.ts).
+ *  A question's id is its group and its place in that group's file ("love-7"), so ids stay the same as long as nothing is inserted above them. */
 const open: Record<Exclude<CategoryId, "trivia">, OpenEntry[]> = {
   love,
   deep,

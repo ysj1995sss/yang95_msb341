@@ -34,6 +34,21 @@
   --color-onplum: #ebe5ff;
   --color-onplum-soft: #d8cdff;
 
+  /* Pastel card tints, one per category family. "-line" is the matching border. The dark theme
+     swaps all of them for deep, quiet versions below. */
+  --color-tint-rose: #fde0ec;
+  --color-tint-rose-line: #f6c3d8;
+  --color-tint-lavender: #e6e0f5;
+  --color-tint-lavender-line: #d0c6ea;
+  --color-tint-yellow: #fef3c4;
+  --color-tint-yellow-line: #f3e29a;
+  --color-tint-peach: #ffe8d4;
+  --color-tint-peach-line: #f8cfae;
+  --color-tint-mint: #d9f3e1;
+  --color-tint-mint-line: #b5e3c4;
+  --color-tint-sky: #dcecfa;
+  --color-tint-sky-line: #b9d8f1;
+
   --animate-fade-up: fade-up 0.45s cubic-bezier(0.22, 1, 0.36, 1) both;
   --animate-float: float 6s ease-in-out infinite;
   --animate-reveal: reveal 0.6s cubic-bezier(0.22, 1, 0.36, 1) both;
@@ -76,6 +91,19 @@
   --color-coral-100: #4b2531;
   --color-coral-200: #63303d;
   --color-coral-700: #ffb4a5;
+
+  --color-tint-rose: #3a2132;
+  --color-tint-rose-line: #55304a;
+  --color-tint-lavender: #2d2650;
+  --color-tint-lavender-line: #453b78;
+  --color-tint-yellow: #38321d;
+  --color-tint-yellow-line: #54492a;
+  --color-tint-peach: #3a2a22;
+  --color-tint-peach-line: #573f33;
+  --color-tint-mint: #1d3a30;
+  --color-tint-mint-line: #2c5646;
+  --color-tint-sky: #1e3248;
+  --color-tint-sky-line: #2c4a69;
 
   --color-emerald-50: #123a2e;
   --color-emerald-700: #6ee7b7;

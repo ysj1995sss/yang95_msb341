@@ -38,7 +38,7 @@ export function DepthSelector({ categoryId, level, remaining, onChange }: {
           return (
             <label
               key={option}
-              className={`flex min-h-14 cursor-pointer flex-col items-center justify-center gap-1 rounded-2xl border-2 px-1 py-1.5 text-center text-[13px] font-bold leading-tight transition has-[:focus-visible]:outline-3 has-[:focus-visible]:outline-plum-500 sm:text-sm ${
+              className={`flex min-h-12 cursor-pointer flex-col items-center justify-center gap-1 rounded-2xl border-2 px-1 py-1.5 text-center text-[13px] font-bold leading-tight transition has-[:focus-visible]:outline-3 has-[:focus-visible]:outline-plum-500 sm:text-sm ${
                 checked ? "border-plum-600 bg-plum-600 text-white shadow-md" : "border-plum-100 bg-surface text-plum-800 hover:border-plum-300"
               }`}
             >
@@ -58,7 +58,7 @@ export function DepthSelector({ categoryId, level, remaining, onChange }: {
           );
         })}
       </div>
-      <p role="status" className="mt-2 text-center text-sm text-muted">
+      <p role="status" className="mt-1.5 text-center text-xs text-muted sm:text-sm">
         {active ? (
           <><span className="font-bold text-plum-800">{active.name}:</span> {active.hint}</>
         ) : (

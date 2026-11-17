@@ -17,15 +17,16 @@ function CardActions({ id, speak }: { id: string; speak: string }) {
 }
 
 /** A conversation question: read it out, talk it over, then move on or skip. Nothing to type. */
-export function OpenStep({ question, eyebrow, isLast, onSkip, onNext }: {
+export function OpenStep({ question, eyebrow, tone, isLast, onSkip, onNext }: {
   question: OpenQuestion;
   eyebrow: ReactNode;
+  tone?: string;
   isLast: boolean;
   onSkip: () => void;
   onNext: () => void;
 }) {
   return (
-    <QuestionCard eyebrow={eyebrow} text={question.text}
+    <QuestionCard eyebrow={eyebrow} text={question.text} tone={tone}
       action={<CardActions id={question.id} speak={question.text} />}>
       {question.depth === 4 ? (
         <p className="mt-4 rounded-2xl bg-coral-50 px-4 py-2.5 text-sm font-semibold text-coral-700">
@@ -47,9 +48,10 @@ export function OpenStep({ question, eyebrow, isLast, onSkip, onNext }: {
 }
 
 /** A trivia question: pick, submit once, see the right answer and why. */
-export function TriviaStep({ question, eyebrow, isLast, onSubmitted, onSkip, onNext }: {
+export function TriviaStep({ question, eyebrow, tone, isLast, onSubmitted, onSkip, onNext }: {
   question: TriviaQuestion;
   eyebrow: ReactNode;
+  tone?: string;
   isLast: boolean;
   onSubmitted: (correct: boolean) => void;
   onSkip: () => void;
@@ -69,7 +71,7 @@ export function TriviaStep({ question, eyebrow, isLast, onSubmitted, onSkip, onN
   const spoken = `${question.text} ${question.options.map((option, i) => `${"ABCD"[i]}. ${option}.`).join(" ")}`;
 
   return (
-    <QuestionCard eyebrow={eyebrow} text={question.text} action={<CardActions id={question.id} speak={spoken} />}>
+    <QuestionCard eyebrow={eyebrow} text={question.text} tone={tone} action={<CardActions id={question.id} speak={spoken} />}>
       <fieldset className="mt-6" disabled={submitted}>
         <legend className="sr-only">Choose an answer</legend>
         <div className="grid gap-3 sm:grid-cols-2">

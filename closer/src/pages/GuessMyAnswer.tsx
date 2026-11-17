@@ -42,8 +42,8 @@ export function GuessMyAnswer() {
 
   return (
     <div className="mx-auto max-w-3xl px-4 pb-4 pt-8 sm:px-6 sm:pt-12">
-      <a href={href.explore} className={`${quiet} -ml-3`}>
-        <ArrowLeft aria-hidden className="size-5" /> Back to categories
+      <a href={href.games} className={`${quiet} -ml-3`}>
+        <ArrowLeft aria-hidden className="size-5" /> Back to games
       </a>
       <div className="mt-4 flex items-center gap-4">
         <span aria-hidden className="inline-flex size-16 shrink-0 items-center justify-center rounded-3xl bg-gradient-to-br from-plum-600 to-coral-500 text-white shadow-md">

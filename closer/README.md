@@ -3,11 +3,29 @@
 **Every connection starts with a question.**
 
 Closer is a free app of questions and games for couples, friends, families and teams: pick one of
-ten experiences, choose how deep to go, then read each question out loud, talk it over, skip it or
+seven experiences, choose how deep to go, then read each question out loud, talk it over, skip it or
 move on. There is nothing to type while you play. It has no backend, no accounts and no paid
 services: all questions live in the code, and the only things kept are a person's favorites, their
 own questions, their play progress and a few settings, in their own browser (localStorage). It can
 be installed to a phone or computer and opens without a connection once it has been visited.
+
+## Redesign (after Sprint 5)
+
+- **Seven experiences, not ten:** the ones that overlapped were merged. Imagination & Creativity and
+  Storytelling Challenges became **Imagination & Storytelling**; Would You Rather & Dilemmas and Debate &
+  Opinions became **Would You Rather & Debates**; Icebreakers & Team Building and Party & Games became
+  **Icebreakers & Party Games** (100 questions each). Every question keeps its id, so saved favorites
+  are untouched, and old addresses like `#/play/storytelling` open the merged experience. The questions
+  are still written in ten groups of 50 (that is what `love-7`-style ids and the audience tags use).
+  An unfinished round in a merged experience starts over, because its set of questions changed.
+- **Question first:** on a question screen the card is the star, tinted in its category's pastel, with
+  the level picker above it and table mode and shortcuts below it.
+- **Pastel category cards:** each of the seven experiences has its own tint, light and dark. On a phone
+  they are compact two-column tiles.
+- **Calmer home page:** one plain line about what Closer is, a quiet Question of the Day panel, and a
+  light footer.
+- **One Games page** (`#/games`): Guess My Answer, Debate Night and Surprise me live together under a
+  single "Games" link in the menu. The old addresses still work.
 
 ## What's new (Sprint 5)
 
@@ -31,7 +49,7 @@ Seventeen additions, all working without a server:
 - **Read aloud:** the device's own voice reads the question (and a trivia question's options).
 - **My questions** (`#/mine`): write your own questions, choose their depth, delete them and play
   them like any other set. Up to 100, kept only on this device.
-- **Timer mode:** an optional countdown (30 sec to 2 min) on Party & Games and Debate & Opinions,
+- **Timer mode:** an optional countdown (30 sec to 2 min) on Icebreakers & Party Games and Would You Rather & Debates,
   also shown in table mode. It resets on every question and says "Time's up!".
 - **More Guess My Answer themes:** ten themes now (Travel & Adventure, Food & Drink, Childhood &
   Nostalgia and Everyday Life are new), 100 questions.
@@ -90,7 +108,7 @@ Seventeen additions, all working without a server:
   saying what Closer is; Home and Explore point to Guess My Answer; the header has a Favorites
   link with a count.
 - **Pages:** `#/`, `#/explore`, `#/about`, `#/play/<category>`, `#/favorites`,
-  `#/favorites/play[/<category>]`, `#/guess`, `#/debate`, `#/surprise`, `#/packs`,
+  `#/favorites/play[/<category>]`, `#/games`, `#/guess`, `#/debate`, `#/surprise`, `#/packs`,
   `#/packs/<pack>`, `#/mine`, `#/mine/play`. Pages live after the "#", so links, refresh and the
   Back button work on any static host with no server setup.
 
@@ -114,12 +132,13 @@ On this project's own computer, npm isn't on PATH. It lives in `D:\Yang\Software
 npm test
 ```
 
-This runs 104 automated checks:
+This runs 109 automated checks:
 
-- **Content (`src/data.test.ts`):** ten categories; exactly 500 questions and 50 per category;
+- **Content (`src/data.test.ts`):** seven experiences built from the ten question groups; exactly 500
+  questions and 50 per group; old addresses for the merged groups still resolve;
   unique, stable ids and preserved Sprint 3 ids and wording; clean writing; no exact duplicates
   and no near-duplicates; varied sentence shapes; 11 to 14 questions per depth level in every
-  category; every trivia question has four distinct options, a valid answer, an explanation and a
+  group (and in every experience); every trivia question has four distinct options, a valid answer, an explanation and a
   balanced answer position; Guess My Answer questions are complete.
 - **Logic (`src/utils.test.ts`):** the shuffle is a fair Fisher–Yates; a session never repeats a
   question, counts skips as seen, keeps its place when depth changes, reports progress, finishes

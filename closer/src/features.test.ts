@@ -342,6 +342,34 @@ describe("play sets", () => {
   });
 });
 
+describe("merged experiences", () => {
+  it("plays every question from each group an experience holds", () => {
+    expect(categorySet("imagination", "everyone")!.pool).toHaveLength(100);
+    expect(categorySet("would-you-rather", "everyone")!.pool).toHaveLength(100);
+    expect(categorySet("party", "everyone")!.pool).toHaveLength(100);
+    expect(categorySet("love", "everyone")!.pool).toHaveLength(50);
+    const ids = new Set(categorySet("imagination", "everyone")!.pool.map((q) => q.id));
+    expect(ids.has("imagination-1")).toBe(true);
+    expect(ids.has("storytelling-1")).toBe(true);
+    expect(ids.has("love-1")).toBe(false);
+  });
+
+  it("opens an address from before the merge as the experience that absorbed it", () => {
+    const old = categorySet("storytelling", "everyone")!;
+    expect(old.category?.id).toBe("imagination");
+    expect(old.key).toBe(categoryKey("imagination", "everyone"));
+    expect(setFromKey("play:debate:everyone")?.category?.id).toBe("would-you-rather");
+    expect(setFromKey("play:icebreakers")?.category?.id).toBe("party");
+  });
+
+  it("offers the countdown on the party and debate experiences only", () => {
+    expect(categorySet("party", "everyone")!.timer).toBe(true);
+    expect(categorySet("would-you-rather", "everyone")!.timer).toBe(true);
+    expect(categorySet("love", "everyone")!.timer).toBe(false);
+    expect(categorySet("imagination", "everyone")!.timer).toBe(false);
+  });
+});
+
 describe("continue where you left off", () => {
   it("reports how far through a round someone is", () => {
     const store = memoryStore();
