@@ -1,13 +1,10 @@
 import { ArrowRight, Shuffle } from "lucide-react";
-import { CategoryCard } from "../components/CategoryCard";
 import { DailyQuestion } from "../components/DailyQuestion";
 import { ContinueCard } from "../components/ContinueCard";
 import { InstallButton } from "../components/InstallButton";
-import { ModeCards } from "../components/ModeCards";
-import { categories } from "../data/categories";
+import { useInstallCardShown } from "../hooks";
 import { questions } from "../data/questions";
 import { href } from "../utils/router";
-import { numberWord } from "../utils/words";
 
 const sampleCards = [
   { text: "When do you feel most loved?", tone: "bg-tint-rose border-tint-rose-line", turn: "-rotate-6", pos: "left-0 top-6" },
@@ -16,6 +13,8 @@ const sampleCards = [
 ];
 
 export function Home() {
+  // On a phone the "Install Closer" card above the page already offers this (the card is phone-only).
+  const installCard = useInstallCardShown();
   return (
     <>
       <section className="relative overflow-hidden">
@@ -38,7 +37,7 @@ export function Home() {
                 className="inline-flex min-h-12 items-center gap-2 rounded-full border-2 border-plum-200 bg-surface/70 px-7 font-bold text-plum-800 transition hover:border-plum-300 hover:bg-surface">
                 <Shuffle aria-hidden className="size-5" /> Surprise me
               </a>
-              <InstallButton className="inline-flex min-h-12 cursor-pointer items-center gap-2 rounded-full px-4 font-bold text-plum-700 transition hover:bg-sand dark:text-onplum-soft" />
+              <InstallButton className={`inline-flex min-h-12 cursor-pointer items-center gap-2 rounded-full px-4 font-bold text-plum-700 transition hover:bg-sand dark:text-onplum-soft ${installCard ? "max-sm:hidden" : ""}`} />
             </div>
           </div>
           <div aria-hidden className="relative mx-auto hidden h-96 w-full max-w-sm sm:block">
@@ -56,26 +55,6 @@ export function Home() {
         <ContinueCard />
 
         <DailyQuestion />
-
-        <section aria-labelledby="explore-heading">
-          <div className="flex flex-wrap items-end justify-between gap-3">
-            <div>
-              <h2 id="explore-heading" className="text-2xl font-extrabold tracking-tight sm:text-4xl">Explore experiences</h2>
-              <p className="mt-2 text-muted">{numberWord(categories.length)} ways to start a conversation, {questions.length} questions in all. Pick one and dive in.</p>
-            </div>
-          </div>
-          <div className="mt-6 grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-3">
-            {categories.map((category, i) => <CategoryCard key={category.id} category={category} index={i} />)}
-          </div>
-        </section>
-
-        <section aria-labelledby="modes-heading">
-          <h2 id="modes-heading" className="text-2xl font-extrabold tracking-tight sm:text-4xl">More ways to play</h2>
-          <p className="mt-2 text-muted">Games for a group, a seasonal pack, or questions you write yourself.</p>
-          <div className="mt-6">
-            <ModeCards />
-          </div>
-        </section>
       </div>
     </>
   );

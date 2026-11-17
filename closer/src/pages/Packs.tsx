@@ -1,4 +1,5 @@
 import { ArrowRight } from "lucide-react";
+import { BackToLibrary } from "../components/BackToLibrary";
 import { PackIcon } from "../components/PackIcon";
 import { ProgressRing } from "../components/ProgressRing";
 import { primary } from "../components/ui";
@@ -13,7 +14,8 @@ export function Packs() {
   const today = new Date();
   const list = orderedPacks(today);
   return (
-    <div className="mx-auto max-w-6xl px-4 pt-12 sm:px-6">
+    <div className="mx-auto max-w-6xl px-4 pt-8 sm:px-6 sm:pt-12">
+      <BackToLibrary />
       <h1 tabIndex={-1} className="text-4xl font-extrabold tracking-tight sm:text-5xl">Seasonal packs</h1>
       <p className="mt-3 max-w-2xl text-lg text-muted">
         Ten questions for a holiday, a season or a celebration. The pack that suits this time of year comes first.

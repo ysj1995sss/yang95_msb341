@@ -1,5 +1,6 @@
 import { PenLine, Play, Plus, Trash2 } from "lucide-react";
 import { useId, useMemo, useState } from "react";
+import { BackToLibrary } from "../components/BackToLibrary";
 import { DepthMeter } from "../components/DepthSelector";
 import { primary, secondary } from "../components/ui";
 import { conversationLevels, DEPTHS } from "../data/depth";
@@ -34,7 +35,8 @@ export function MyQuestions() {
 
   const field = "mt-2 w-full rounded-2xl border border-plum-100 bg-page/60 p-3.5 text-[16px] placeholder:text-muted/80 focus-visible:border-plum-400";
   return (
-    <div className="mx-auto max-w-3xl px-4 pt-12 sm:px-6">
+    <div className="mx-auto max-w-3xl px-4 pt-8 sm:px-6 sm:pt-12">
+      <BackToLibrary />
       <div className="flex items-center gap-4">
         <span aria-hidden className="inline-flex size-16 shrink-0 items-center justify-center rounded-3xl bg-gradient-to-br from-sky-400 to-plum-600 text-white shadow-md">
           <PenLine className="size-8" />

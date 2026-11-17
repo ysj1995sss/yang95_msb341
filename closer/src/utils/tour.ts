@@ -1,4 +1,4 @@
-import { createSetting } from "./settings";
+import { createSetting, isBoolean } from "./settings";
 
 // The first-launch tour: three short screens saying what Closer is, how to play, and how to make it
 // yours. It shows once, on the home page, and can be replayed from the About page.
@@ -26,7 +26,6 @@ export const tourSteps: readonly TourStep[] = [
   },
 ];
 
-const isBoolean = (v: unknown): v is boolean => typeof v === "boolean";
 
 /** True once the tour has been finished or skipped. */
 export const tourSeen = createSetting<boolean>("closer.tour", false, isBoolean);

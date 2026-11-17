@@ -1,14 +1,10 @@
 import { AudienceFilter } from "../components/AudienceFilter";
-import { CategoryCard } from "../components/CategoryCard";
-import { ModeCards } from "../components/ModeCards";
-import { audienceSetting } from "../data/audience";
+import { CategoryGrid } from "../components/CategoryGrid";
 import { categories } from "../data/categories";
-import { numberWord } from "../utils/words";
 import { questions } from "../data/questions";
-import { useSetting } from "../hooks";
+import { numberWord } from "../utils/words";
 
 export function Explore() {
-  const audience = useSetting(audienceSetting);
   return (
     <div className="mx-auto max-w-6xl px-4 pt-12 sm:px-6">
       <h1 tabIndex={-1} className="text-4xl font-extrabold tracking-tight sm:text-5xl">Explore experiences</h1>
@@ -18,13 +14,8 @@ export function Explore() {
 
       <AudienceFilter />
 
-      <div className="mt-6 grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-3" aria-live="polite" data-audience={audience}>
-        {categories.map((category, i) => <CategoryCard key={category.id} category={category} index={i} />)}
-      </div>
-
-      <h2 className="mt-14 text-2xl font-extrabold tracking-tight sm:text-3xl">More ways to play</h2>
       <div className="mt-6">
-        <ModeCards />
+        <CategoryGrid />
       </div>
     </div>
   );

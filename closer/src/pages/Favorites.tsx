@@ -1,5 +1,6 @@
 import { ArrowRight, Heart, Play } from "lucide-react";
 import { useState } from "react";
+import { BackToLibrary } from "../components/BackToLibrary";
 import { CategoryIcon } from "../components/CategoryIcon";
 import { DepthMeter } from "../components/DepthSelector";
 import { FavoriteButton } from "../components/FavoriteButton";
@@ -39,7 +40,8 @@ export function Favorites() {
   const saved = favoriteQuestions(ids);
 
   return (
-    <div className="mx-auto max-w-3xl px-4 pt-12 sm:px-6">
+    <div className="mx-auto max-w-3xl px-4 pt-8 sm:px-6 sm:pt-12">
+      <BackToLibrary />
       <h1 tabIndex={-1} className="text-4xl font-extrabold tracking-tight sm:text-5xl">My Favorites</h1>
       <p className="mt-3 max-w-2xl text-lg text-muted">
         {saved.length

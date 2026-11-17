@@ -27,6 +27,30 @@ be installed to a phone or computer and opens without a connection once it has b
 - **One Games page** (`#/games`): Guess My Answer, Debate Night and Surprise me live together under a
   single "Games" link in the menu. The old addresses still work.
 
+## Phone app pass (Sprint 5)
+
+Built to the decisions in `docs/improvements-spec.md`; the words used are defined in `CONTEXT.md`.
+
+- **Tab bar on phones:** Home, Explore, Games and Library fixed to the bottom of the screen, clear of
+  the iPhone home indicator. It is hidden while a round or a game is being played. On a phone the
+  header is just the logo and the dark-mode switch; from tablet width up the header carries the
+  links (and the Favorites heart) and there is no tab bar.
+- **Library** (`#/library`): Favorites, My questions and Seasonal packs on one page, each with a
+  count. Those pages keep their addresses and gain a "Back to library" link.
+- **Install card:** once someone has started a round, phones that can install Closer see a small
+  "Install Closer" card on the main pages, with the iPhone steps (Share, then Add to Home Screen) or a
+  one-tap install. Closing it is remembered; it never shows in the installed app.
+- **Feels like an app when installed:** the page uses the whole screen (`viewport-fit=cover`) with
+  safe-area padding, no bounce or pull-to-refresh, no grey tap flash, and buttons don't get selected
+  by a long press.
+- **"New version available":** when the installed app comes back into view and a newer version has
+  been deployed, a bar offers "Tap to refresh". (A fresh load already gets the newest files.)
+- **Home and Explore no longer overlap:** Home is the welcome, "Continue where you left off" and the
+  Question of the Day. The experience cards live on Explore, which drops "More ways to play" because
+  Games and Library are in the navigation.
+- **Full card grid:** cards are sized so no row has a gap, for any number left by the "Who's
+  playing?" filter. With all seven on a wide screen, Love and Trivia are double width.
+
 ## What's new (Sprint 5)
 
 Seventeen additions, all working without a server:
@@ -107,7 +131,7 @@ Seventeen additions, all working without a server:
 - **Question of the Day**, **Home**, **Explore**, **About**: the home page opens with a plain line
   saying what Closer is; Home and Explore point to Guess My Answer; the header has a Favorites
   link with a count.
-- **Pages:** `#/`, `#/explore`, `#/about`, `#/play/<category>`, `#/favorites`,
+- **Pages:** `#/`, `#/explore`, `#/about`, `#/play/<category>`, `#/library`, `#/favorites`,
   `#/favorites/play[/<category>]`, `#/games`, `#/guess`, `#/debate`, `#/surprise`, `#/packs`,
   `#/packs/<pack>`, `#/mine`, `#/mine/play`. Pages live after the "#", so links, refresh and the
   Back button work on any static host with no server setup.
@@ -132,7 +156,7 @@ On this project's own computer, npm isn't on PATH. It lives in `D:\Yang\Software
 npm test
 ```
 
-This runs 109 automated checks:
+This runs 125 automated checks:
 
 - **Content (`src/data.test.ts`):** seven experiences built from the ten question groups; exactly 500
   questions and 50 per group; old addresses for the merged groups still resolve;
@@ -153,7 +177,12 @@ This runs 109 automated checks:
   which are in season (including across New Year); Debate Night's sides, speeches, vote, scoring and
   swap; trivia topics; relationship-type tags (every question tagged; teams never get partner
   questions; party dares stay with friends and couples); play sets and their saved keys; "continue".
-- **Installable app (`src/pwa.test.ts`):** the manifest, icons, page links and service worker.
+- **Installable app (`src/pwa.test.ts`):** the manifest, icons, page links, full-screen viewport and
+  service worker.
+- **Phone app (`src/phone.test.ts`):** the Library address; which pages show the tab bar and which
+  tab is lit; card sizes that leave no gap for any number of cards; when and where the install card
+  appears and that closing it is remembered; when "New version available" shows (a different build on the
+  server) and when it stays quiet (same build, offline).
 
 ```bash
 npm run build
@@ -217,8 +246,6 @@ in a subfolder. The existing deployment setup is unchanged.
 - **Real testers:** watch 3–5 people use it and note where they hesitate.
 - **More questions:** extend each experience beyond 50, and add more packs and themes.
 - **Share a question:** a link to one question, using the phone's share sheet.
-- **Install prompt timing:** offer "Install app" after someone has played a few questions, not on
-  the first screen.
 - **Self-host the font:** the page's typeface still comes from Google Fonts. Bundling it removes
   a third-party request and makes the very first offline visit match.
 - **Journal mode:** only if testers ask for it. It would need accounts and a backend.

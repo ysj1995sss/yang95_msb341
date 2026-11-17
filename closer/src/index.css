@@ -68,6 +68,11 @@
   }
 }
 
+/* The phone tab bar's height: the bar, the page padding under it and the update notice use it. */
+:root {
+  --tab-bar-height: 4rem;
+}
+
 /* Dark mode: set on <html data-theme="dark"> (the device's choice, or the person's). The colors are
    remapped here, so almost no component needs to know about it. Plum 600 and up, coral 400 to 600 and
    the white/cream text on dark cards stay as they are; only the light tints, the text and the surfaces flip. */
@@ -117,6 +122,13 @@
   }
   body {
     @apply bg-page font-sans text-ink antialiased;
+    -webkit-tap-highlight-color: transparent;
+  }
+  /* Buttons and links are for tapping, not selecting; long text (questions) stays selectable. */
+  button, a, nav {
+    -webkit-user-select: none;
+    user-select: none;
+    -webkit-touch-callout: none;
   }
   h1, h2, h3 {
     text-wrap: balance;
@@ -130,6 +142,11 @@
     outline-offset: 3px;
     border-radius: 12px;
   }
+}
+
+/* Installed app: no bounce or pull-to-refresh at the edges, so it feels like an app, not a page. */
+@media (display-mode: standalone) {
+  html, body { overscroll-behavior-y: none; }
 }
 
 @media (prefers-reduced-motion: reduce) {

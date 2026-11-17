@@ -8,6 +8,9 @@ export interface Setting<T> {
   subscribe(listener: () => void): () => void;
 }
 
+/** For on/off settings. */
+export const isBoolean = (v: unknown): v is boolean => typeof v === "boolean";
+
 export function createSetting<T>(
   key: string,
   fallback: T,

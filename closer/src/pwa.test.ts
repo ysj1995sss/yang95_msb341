@@ -49,6 +49,10 @@ describe("installable app", () => {
     expect(serviceWorker).toContain("index.html");
   });
 
+  it("lets the page use the whole screen, so the tab bar can sit above the home indicator", () => {
+    expect(indexHtml).toContain("viewport-fit=cover");
+  });
+
   it("also keeps the Google Fonts files, so the offline app looks the same", () => {
     expect(serviceWorker).toContain("fonts.googleapis.com");
     expect(serviceWorker).toContain("fonts.gstatic.com");

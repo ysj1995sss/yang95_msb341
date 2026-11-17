@@ -11,8 +11,8 @@ import { topicSetting } from "./TopicPicker";
 
 /** The whole card is one link into the category's questions. Shows how far through you are, and
  *  counts only the questions that suit the group chosen on the Explore page. On a phone it is a
- *  compact tile (icon, name, count) so ten of them fit in a short scroll. */
-export function CategoryCard({ category, index = 0 }: { category: Category; index?: number }) {
+ *  compact tile (icon, name, count) so the cards fit in a short scroll. */
+export function CategoryCard({ category, index = 0, className = "" }: { category: Category; index?: number; className?: string }) {
   const audience = useSetting(audienceSetting);
   const topic = useSetting(topicSetting);
   const set = categorySet(category.id, audience, topic);
@@ -25,7 +25,7 @@ export function CategoryCard({ category, index = 0 }: { category: Category; inde
     <a
       href={set.href}
       style={{ animationDelay: `${Math.min(index, 9) * 40}ms` }}
-      className={`group flex animate-fade-up flex-col gap-3 rounded-3xl border p-4 shadow-sm transition duration-200 hover:-translate-y-1 hover:shadow-lg focus-visible:-translate-y-1 sm:gap-4 sm:p-5 ${tintClass[category.tint]}`}
+      className={`group flex animate-fade-up flex-col gap-3 rounded-3xl border p-4 shadow-sm transition duration-200 hover:-translate-y-1 hover:shadow-lg focus-visible:-translate-y-1 sm:gap-4 sm:p-5 ${tintClass[category.tint]} ${className}`}
     >
       <div className="flex items-start justify-between gap-3">
         <CategoryIcon category={category} />

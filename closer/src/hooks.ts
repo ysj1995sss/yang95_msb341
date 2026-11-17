@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore, type RefObject } from "react";
 import { customQuestions, type CustomQuestion } from "./utils/custom";
 import { currentInstallMode, promptInstall, subscribeInstall, type InstallMode } from "./utils/install";
+import { installCardDismissed, shouldOfferInstallCard } from "./utils/installCard";
+import { loadLastPlayed } from "./utils/resume";
 import type { Setting } from "./utils/settings";
 import { shortcutFor, swipeOf, type Shortcut } from "./utils/gestures";
 import { favorites } from "./utils/storage";
@@ -26,6 +28,13 @@ export function useCustomQuestions(): readonly CustomQuestion[] {
 export function useInstall(): { mode: InstallMode; install: () => Promise<"accepted" | "dismissed" | "unavailable"> } {
   const mode = useSyncExternalStore(subscribeInstall, currentInstallMode, () => "none" as InstallMode);
   return { mode, install: promptInstall };
+}
+
+/** Whether the "Install Closer" card is showing (so other install buttons can step aside). */
+export function useInstallCardShown(): boolean {
+  const { mode } = useInstall();
+  const dismissed = useSetting(installCardDismissed);
+  return shouldOfferInstallCard({ mode, started: loadLastPlayed() !== null, dismissed });
 }
 
 const systemDarkQuery = () => (typeof window === "undefined" ? null : window.matchMedia?.("(prefers-color-scheme: dark)") ?? null);

@@ -1,7 +1,10 @@
 import { useEffect, useRef } from "react";
 import { Footer } from "./components/Footer";
 import { Header } from "./components/Header";
+import { InstallCard } from "./components/InstallCard";
+import { TabBar } from "./components/TabBar";
 import { Tour } from "./components/Tour";
+import { UpdateNotice } from "./components/UpdateNotice";
 import { About } from "./pages/About";
 import { DebateNight } from "./pages/DebateNight";
 import { Explore } from "./pages/Explore";
@@ -9,11 +12,14 @@ import { Favorites, FavoritesPlay } from "./pages/Favorites";
 import { Games } from "./pages/Games";
 import { GuessMyAnswer } from "./pages/GuessMyAnswer";
 import { Home } from "./pages/Home";
+import { Library } from "./pages/Library";
 import { MinePlay, MyQuestions } from "./pages/MyQuestions";
 import { PackPlay, Packs } from "./pages/Packs";
 import { QuestionExperience } from "./pages/QuestionExperience";
 import { Surprise } from "./pages/Surprise";
 import { href, useRoute, type Route } from "./utils/router";
+import { installCardFitsPage } from "./utils/installCard";
+import { showsTabBar } from "./utils/tabbar";
 
 /** What identifies a page for "scroll to top and focus the heading": a new key is a new page. */
 function pageKey(route: Route): string {
@@ -28,6 +34,7 @@ function pageKey(route: Route): string {
 export default function App() {
   const route = useRoute();
   const key = pageKey(route);
+  const tabBar = showsTabBar(route);
 
   // A new page starts at the top, with focus on its heading for keyboard and screen-reader users.
   // Not on the first visit: there the browser already starts at the top of the page.
@@ -41,13 +48,14 @@ export default function App() {
   }, [key]);
 
   return (
-    <div className="flex min-h-dvh flex-col">
+    <div className={`flex min-h-dvh flex-col ${tabBar ? "pb-[calc(var(--tab-bar-height)+env(safe-area-inset-bottom))] sm:pb-[env(safe-area-inset-bottom)]" : "pb-[env(safe-area-inset-bottom)]"}`}>
       <a href="#main" onClick={(e) => { e.preventDefault(); document.getElementById("main")?.focus(); }}
         className="sr-only z-50 rounded-full bg-plum-700 px-4 py-2 font-bold text-white focus:not-sr-only focus:fixed focus:left-4 focus:top-3">
         Skip to content
       </a>
       <Header route={route} />
       <main id="main" tabIndex={-1} className="flex-1 outline-none">
+        {installCardFitsPage(route) && <InstallCard />}
         {route.page === "home" && <Home />}
         {route.page === "explore" && <Explore />}
         {route.page === "about" && <About />}
@@ -55,6 +63,7 @@ export default function App() {
         {route.page === "favorites" && <Favorites />}
         {route.page === "favorites-play" && <FavoritesPlay key={route.categoryId ?? "all"} categoryId={route.categoryId} />}
         {route.page === "games" && <Games />}
+        {route.page === "library" && <Library />}
         {route.page === "guess" && <GuessMyAnswer />}
         {route.page === "debate" && <DebateNight />}
         {route.page === "surprise" && <Surprise />}
@@ -71,6 +80,8 @@ export default function App() {
         )}
       </main>
       <Footer />
+      <TabBar route={route} />
+      <UpdateNotice aboveTabBar={tabBar} />
       <Tour onHome={route.page === "home"} />
     </div>
   );

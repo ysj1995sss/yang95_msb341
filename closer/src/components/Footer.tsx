@@ -4,9 +4,7 @@ import { Logo } from "./Logo";
 const links = [
   { label: "Explore", to: href.explore },
   { label: "Games", to: href.games },
-  { label: "Seasonal packs", to: href.packs },
-  { label: "My questions", to: href.mine },
-  { label: "My Favorites", to: href.favorites },
+  { label: "Library", to: href.library },
   { label: "About", to: href.about },
 ];
 

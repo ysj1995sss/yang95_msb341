@@ -434,6 +434,8 @@ describe("page addresses", () => {
     expect(parseRoute("#/favorites/play/love")).toEqual({ page: "favorites-play", categoryId: "love" });
     expect(parseRoute("#/games")).toEqual({ page: "games" });
     expect(parseRoute("#/games/")).toEqual({ page: "games" });
+    expect(parseRoute("#/library")).toEqual({ page: "library" });
+    expect(parseRoute("#/library/")).toEqual({ page: "library" });
     expect(parseRoute("#/guess")).toEqual({ page: "guess" });
     expect(parseRoute("#/surprise")).toEqual({ page: "surprise" });
     expect(parseRoute("#/debate")).toEqual({ page: "debate" });
