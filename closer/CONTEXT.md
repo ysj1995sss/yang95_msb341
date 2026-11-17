@@ -27,7 +27,7 @@ One shuffled run through an Experience's questions. A round can be left and cont
 _Avoid_: Session, game (a Game is something else)
 
 **Game**:
-A way to play together that is not a plain round of questions: Guess My Answer, Debate Night, Surprise me.
+A way to play together that is not a plain round of questions: Guess My Answer, Debate Night, Surprise me, and the sixteen on the Games page (Truth or Dare, Pass the Bomb, Trivia Duel and so on). Players are named for the length of a game only and are never saved.
 _Avoid_: Mode, activity
 
 ## What people keep

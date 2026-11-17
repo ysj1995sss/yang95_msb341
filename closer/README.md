@@ -24,8 +24,45 @@ be installed to a phone or computer and opens without a connection once it has b
   they are compact two-column tiles.
 - **Calmer home page:** one plain line about what Closer is, a quiet Question of the Day panel, and a
   light footer.
-- **One Games page** (`#/games`): Guess My Answer, Debate Night and Surprise me live together under a
-  single "Games" link in the menu. The old addresses still work.
+- **One Games page** (`#/games`): every game lives together under a single "Games" link in the menu
+  (see "Sixteen more games" below). The old addresses still work.
+
+## Sixteen more games (`#/games/<id>`)
+
+The Games page is now grouped into sections. Every game runs on one phone, passed around or laid flat
+between players, with no account. Player names live in memory only and are never saved.
+
+| Group | Games |
+|---|---|
+| Party starters | Truth or Dare, Never Have I Ever, Pass the Bomb, Most Likely To, Last Word, Rapid Fire |
+| Know each other | How Well Do You Know Me?, Two Truths and a Lie, Match Game (reveal as you go, or a compatibility percentage at the end) |
+| For two | Memory Lane, Date Night Roulette |
+| Make something up | Story Chain, Caption This, Invent a Product |
+| Brain games | Trivia Duel, Brain Quiz (Fact or Fiction, Higher or Lower and Guess the Price, one kind or a mix) |
+
+- **Built the same way:** the rules are small pure modules in `src/utils/games/` (deck, roster,
+  scores, matching, fuse timing, duel, higher or lower), tested in `src/games.test.ts`; the words and
+  numbers are in `src/data/games/`, checked by `src/gameContent.test.ts`; the screens are in
+  `src/pages/gameplay/` and share one kit (`src/components/games/kit.tsx`). The list of games, their
+  groups and their blurbs is `src/data/games.ts`.
+- **Borrowing from the library:** Truth and Pass the Bomb ask real questions from the library (the
+  debate and would-you-rather groups are left out), with a "how bold" setting by question depth. Trivia
+  Duel uses the library's trivia (no Expert questions).
+- **Decisions to know about:** Caption This uses a written scene and emoji, not photos, so the app stays
+  small and offline. Guess the Price uses rounded typical US prices. Fact or Fiction and Higher or Lower
+  use well-known facts and round numbers, with a short reason shown after each answer. Compatibility
+  is a game: every result is a kind one. The fuse in Pass the Bomb is picked at random when it is lit.
+- **Card pools:** every hand-written pool is about three times its first size, so a long night does not
+  repeat: 183 dares, 209 Never Have I Ever, 204 Most Likely To, 147 Last Word topics, 186 Rapid Fire,
+  126 this-or-that, 89 Match Game, 72 compatibility questions, 152 Memory Lane, 144 date ideas,
+  91 story starters, 91 caption scenes, 124 product problems, 60 twists, 154 Fact or Fiction claims,
+  18 Higher or Lower groups, 76 prices and 126 duel questions. The extra cards live in the `*More.ts`
+  files beside each pool and are joined by `mergeUnique`, which drops any card that repeats another.
+- **Loading:** the game screens and their cards load when a game is first opened (five small files), so the
+  first visit is about a third smaller (main script 437 kB, 136 kB gzip). The build writes
+  `asset-manifest.json` and the service worker keeps every file on it, so any game still opens offline.
+- **Phone behaviour:** a game page has no tab bar, so nothing crowds the buttons; the top bar still
+  marks Games. In Trivia Duel the top half is turned upside down for the player sitting opposite.
 
 ## Phone app pass (Sprint 5)
 
@@ -132,7 +169,7 @@ Seventeen additions, all working without a server:
   saying what Closer is; Home and Explore point to Guess My Answer; the header has a Favorites
   link with a count.
 - **Pages:** `#/`, `#/explore`, `#/about`, `#/play/<category>`, `#/library`, `#/favorites`,
-  `#/favorites/play[/<category>]`, `#/games`, `#/guess`, `#/debate`, `#/surprise`, `#/packs`,
+  `#/favorites/play[/<category>]`, `#/games`, `#/games/<game>`, `#/guess`, `#/debate`, `#/surprise`, `#/packs`,
   `#/packs/<pack>`, `#/mine`, `#/mine/play`. Pages live after the "#", so links, refresh and the
   Back button work on any static host with no server setup.
 

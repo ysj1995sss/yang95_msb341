@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import indexHtml from "../index.html?raw";
 import manifestText from "../public/manifest.webmanifest?raw";
 import serviceWorker from "../public/sw.js?raw";
+import viteConfig from "../vite.config.ts?raw";
 
 // The installable-app files are plain files in public/, so they're checked as files: a broken
 // manifest or a missing icon silently turns the "Install" option off.
@@ -47,6 +48,11 @@ describe("installable app", () => {
     expect(serviceWorker).toContain("caches.delete");
     expect(serviceWorker).toContain('addEventListener("fetch"');
     expect(serviceWorker).toContain("index.html");
+  });
+
+  it("keeps every file the build made, so a game that loads on demand opens offline too", () => {
+    expect(serviceWorker).toContain("asset-manifest.json");
+    expect(viteConfig).toContain('manifest: "asset-manifest.json"');
   });
 
   it("lets the page use the whole screen, so the tab bar can sit above the home indicator", () => {

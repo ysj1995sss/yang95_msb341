@@ -25,7 +25,7 @@ describe("tab bar", () => {
   });
 
   it("hides while a round or a game is being played", () => {
-    for (const hash of ["#/play/love", "#/guess", "#/debate", "#/surprise", "#/packs/winter-holidays", "#/favorites/play", "#/favorites/play/love", "#/mine/play", "#/nowhere"]) {
+    for (const hash of ["#/play/love", "#/guess", "#/debate", "#/surprise", "#/packs/winter-holidays", "#/favorites/play", "#/favorites/play/love", "#/mine/play", "#/games/truth-or-dare", "#/nowhere"]) {
       expect(showsTabBar(parseRoute(hash)), hash).toBe(false);
     }
   });
@@ -34,6 +34,7 @@ describe("tab bar", () => {
     expect(tabFor(parseRoute("#/"))).toBe("home");
     expect(tabFor(parseRoute("#/explore"))).toBe("explore");
     expect(tabFor(parseRoute("#/games"))).toBe("games");
+    expect(tabFor(parseRoute("#/games/truth-or-dare"))).toBe("games");
     for (const hash of ["#/library", "#/favorites", "#/mine", "#/packs"]) expect(tabFor(parseRoute(hash)), hash).toBe("library");
     expect(tabFor(parseRoute("#/about"))).toBeNull();
   });

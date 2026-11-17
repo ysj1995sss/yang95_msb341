@@ -6,6 +6,8 @@ import { defineConfig } from "vitest/config";
 // GitHub Pages project page (https://user.github.io/repo/).
 export default defineConfig({
   base: "./",
+  // The service worker reads this list to keep every file, including the game screens that load on demand.
+  build: { manifest: "asset-manifest.json" },
   plugins: [react(), tailwindcss()],
   test: { environment: "node" },
 });

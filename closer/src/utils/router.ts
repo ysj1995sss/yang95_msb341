@@ -11,6 +11,7 @@ export type Route =
   | { page: "favorites" }
   | { page: "favorites-play"; categoryId: string | null }
   | { page: "games" }
+  | { page: "game"; gameId: string }
   | { page: "library" }
   | { page: "guess" }
   | { page: "debate" }
@@ -35,6 +36,8 @@ export function parseRoute(hash: string): Route {
   if (path === "/packs") return { page: "packs" };
   if (path === "/mine") return { page: "mine" };
   if (path === "/mine/play") return { page: "mine-play" };
+  const game = path.match(/^\/games\/([a-z0-9-]+)$/);
+  if (game) return { page: "game", gameId: game[1] };
   const pack = path.match(/^\/packs\/([a-z0-9-]+)$/);
   if (pack) return { page: "pack", packId: pack[1] };
   if (path === "/favorites/play") return { page: "favorites-play", categoryId: null };
@@ -61,6 +64,7 @@ export const href = {
   about: "#/about",
   favorites: "#/favorites",
   games: "#/games",
+  game: (gameId: string) => `#/games/${gameId}`,
   library: "#/library",
   guess: "#/guess",
   debate: "#/debate",

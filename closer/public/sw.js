@@ -15,8 +15,18 @@ self.addEventListener("install", (event) => {
       // The built page names its hashed script and stylesheet files; keep those too so the very
       // first visit can already be reopened offline.
       const html = await (await fetch("./index.html", { cache: "no-store" })).text();
-      const assets = [...html.matchAll(/(?:src|href)="(\.\/assets\/[^"]+)"/g)].map((m) => m[1]);
-      await Promise.all(assets.map((url) => cache.add(url).catch(() => undefined)));
+      const assets = new Set([...html.matchAll(/(?:src|href)="(\.\/assets\/[^"]+)"/g)].map((m) => m[1]));
+      // Games load on demand, so the build also lists every file it made (asset-manifest.json);
+      // keep those too, or a game not opened before going offline would not open.
+      try {
+        const manifest = await (await fetch("./asset-manifest.json", { cache: "no-store" })).json();
+        for (const entry of Object.values(manifest)) {
+          for (const file of [entry.file, ...(entry.css ?? [])]) if (file) assets.add(`./${file}`);
+        }
+      } catch {
+        // No list (for example in a plain dev server): the files named by the page are enough.
+      }
+      await Promise.all([...assets].map((url) => cache.add(url).catch(() => undefined)));
       await self.skipWaiting();
     })(),
   );

@@ -18,11 +18,12 @@ export function tabFor(route: Route): TabId | null {
   switch (route.page) {
     case "home": return "home";
     case "explore": return "explore";
-    case "games": return "games";
+    case "games": case "game": return "games";
     case "library": case "favorites": case "mine": case "packs": return "library";
     default: return null;
   }
 }
 
 /** The tab bar shows on every page that sits under a tab, and on About. */
-export const showsTabBar = (route: Route): boolean => tabFor(route) !== null || route.page === "about";
+// A game page sits under Games (so the top bar marks it) but is a play screen, so it has no tab bar.
+export const showsTabBar = (route: Route): boolean => route.page !== "game" && (tabFor(route) !== null || route.page === "about");

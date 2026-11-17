@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { Suspense, useEffect, useRef } from "react";
 import { Footer } from "./components/Footer";
 import { Header } from "./components/Header";
 import { InstallCard } from "./components/InstallCard";
@@ -10,6 +10,7 @@ import { DebateNight } from "./pages/DebateNight";
 import { Explore } from "./pages/Explore";
 import { Favorites, FavoritesPlay } from "./pages/Favorites";
 import { Games } from "./pages/Games";
+import { gameScreens } from "./pages/gameplay";
 import { GuessMyAnswer } from "./pages/GuessMyAnswer";
 import { Home } from "./pages/Home";
 import { Library } from "./pages/Library";
@@ -27,8 +28,46 @@ function pageKey(route: Route): string {
     case "play": return `play-${route.categoryId}`;
     case "favorites-play": return `fav-${route.categoryId}`;
     case "pack": return `pack-${route.packId}`;
+    case "game": return `game-${route.gameId}`;
     default: return route.page;
   }
+}
+
+/** Focuses the page's heading. A game screen loads on demand, so if the heading is not there yet,
+ *  wait for it for a moment. Returns a function that stops waiting. */
+function focusHeadingWhenReady(): () => void {
+  const focus = () => {
+    const heading = document.querySelector<HTMLElement>("main h1");
+    heading?.focus({ preventScroll: true });
+    return heading !== null;
+  };
+  const main = document.getElementById("main");
+  if (focus() || !main) return () => undefined;
+  const watcher = new MutationObserver(() => { if (focus()) watcher.disconnect(); });
+  watcher.observe(main, { childList: true, subtree: true });
+  const giveUp = window.setTimeout(() => watcher.disconnect(), 5000);
+  return () => { watcher.disconnect(); window.clearTimeout(giveUp); };
+}
+
+function NotFound() {
+  return (
+    <div className="mx-auto max-w-3xl px-4 pt-16 sm:px-6">
+      <h1 tabIndex={-1} className="text-3xl font-extrabold">Page not found</h1>
+      <p className="mt-3 text-muted">This link doesn't lead anywhere in Closer.</p>
+      <a href={href.home} className="mt-6 inline-flex min-h-12 items-center rounded-full bg-plum-600 px-6 font-bold text-white">Go to Home</a>
+    </div>
+  );
+}
+
+/** One game's screen, keyed so moving from one game to another starts fresh. */
+function GameScreen({ gameId }: { gameId: string }) {
+  const Screen = gameScreens[gameId];
+  if (!Screen) return <NotFound />;
+  return (
+    <Suspense fallback={<p role="status" className="mx-auto max-w-3xl px-4 pt-16 text-muted sm:px-6">Loading the game…</p>}>
+      <Screen key={gameId} />
+    </Suspense>
+  );
 }
 
 export default function App() {
@@ -44,7 +83,7 @@ export default function App() {
     // A dialog (the first-launch tour) that is open keeps focus.
     if (document.querySelector('[role="dialog"][aria-modal="true"]')) return;
     window.scrollTo({ top: 0 });
-    document.querySelector<HTMLElement>("main h1")?.focus({ preventScroll: true });
+    return focusHeadingWhenReady();
   }, [key]);
 
   return (
@@ -63,6 +102,7 @@ export default function App() {
         {route.page === "favorites" && <Favorites />}
         {route.page === "favorites-play" && <FavoritesPlay key={route.categoryId ?? "all"} categoryId={route.categoryId} />}
         {route.page === "games" && <Games />}
+        {route.page === "game" && <GameScreen gameId={route.gameId} />}
         {route.page === "library" && <Library />}
         {route.page === "guess" && <GuessMyAnswer />}
         {route.page === "debate" && <DebateNight />}
@@ -71,13 +111,7 @@ export default function App() {
         {route.page === "pack" && <PackPlay key={route.packId} packId={route.packId} />}
         {route.page === "mine" && <MyQuestions />}
         {route.page === "mine-play" && <MinePlay />}
-        {route.page === "not-found" && (
-          <div className="mx-auto max-w-3xl px-4 pt-16 sm:px-6">
-            <h1 tabIndex={-1} className="text-3xl font-extrabold">Page not found</h1>
-            <p className="mt-3 text-muted">This link doesn't lead anywhere in Closer.</p>
-            <a href={href.home} className="mt-6 inline-flex min-h-12 items-center rounded-full bg-plum-600 px-6 font-bold text-white">Go to Home</a>
-          </div>
-        )}
+        {route.page === "not-found" && <NotFound />}
       </main>
       <Footer />
       <TabBar route={route} />

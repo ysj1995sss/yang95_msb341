@@ -18,7 +18,7 @@ export function Header({ route }: { route: Route }) {
   return (
     <header className="sticky top-0 z-20 border-b border-plum-100/70 bg-page/85 pt-[env(safe-area-inset-top)] backdrop-blur">
       <div className="mx-auto flex h-16 max-w-6xl items-center justify-between gap-4 px-4 sm:px-6">
-        <a href={href.home} aria-label="Closer home" className="rounded-2xl">
+        <a href={href.home} aria-label="Closer home" className="inline-flex min-h-11 items-center rounded-2xl">
           <Logo />
         </a>
         <div className="flex items-center gap-1">
