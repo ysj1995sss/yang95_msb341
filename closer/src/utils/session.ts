@@ -32,6 +32,8 @@ export interface SessionState {
 export interface StartOptions {
   level?: Level;
   limit?: number | null;
+  /** The exact questions to ask, in order (a planned trivia round). Left out, the whole pool is shuffled. */
+  order?: string[];
   random?: () => number;
 }
 
@@ -71,7 +73,7 @@ export function startSession(categoryId: string, pool: PoolItem[], options: Star
   const base: SessionState = {
     categoryId,
     level: options.level ?? "mix",
-    order: shuffle(pool.map((q) => q.id), options.random),
+    order: options.order ?? shuffle(pool.map((q) => q.id), options.random),
     seen: [],
     outcomes: {},
     currentId: null,
@@ -101,6 +103,16 @@ export function discuss(state: SessionState, pool: PoolItem[]): SessionState {
 }
 
 export const skip = advance;
+
+/** Steps back to the question shown just before, undoing what was recorded for it. The one on screen is next again. */
+export function previous(state: SessionState): SessionState {
+  if (state.done || state.seen.length < 2) return state;
+  const seen = state.seen.slice(0, -1);
+  const id = seen[seen.length - 1]!;
+  const outcomes = { ...state.outcomes };
+  delete outcomes[id];
+  return { ...state, seen, outcomes, currentId: id };
+}
 
 /** Switches depth. The question on screen stays if it fits the new level; otherwise it is marked
  *  "moved" (seen, never scored or counted as skipped) and the next unseen question at the new level is shown. */
@@ -156,7 +168,9 @@ export function restoreSession(saved: unknown, categoryId: string, pool: PoolIte
   if (!Array.isArray(s.order) || !Array.isArray(s.seen) || typeof s.outcomes !== "object" || s.outcomes === null) return null;
   const ids = new Set(pool.map((q) => q.id));
   const order = s.order as string[];
-  if (order.length !== ids.size || !order.every((id) => ids.has(id)) || new Set(order).size !== order.length) return null;
+  // A planned quiz round holds only its own questions; anything else must still hold the whole pool.
+  const wrongSize = limit === null ? order.length !== ids.size : order.length === 0;
+  if (wrongSize || !order.every((id) => ids.has(id)) || new Set(order).size !== order.length) return null;
   if (!(s.seen as string[]).every((id) => ids.has(id))) return null;
   if (s.level !== "mix" && ![1, 2, 3, 4].includes(s.level as number)) return null;
   if (s.currentId !== null && s.currentId !== undefined && !ids.has(s.currentId)) return null;

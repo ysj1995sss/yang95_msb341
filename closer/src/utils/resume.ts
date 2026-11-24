@@ -19,7 +19,7 @@ export function roundProgress(saved: unknown, set: PlaySet): RoundProgress | nul
   if (set.pool.length === 0) return null;
   const state = restoreSession(saved, scopeOf(set), set.pool, set.limit);
   if (!state) return null;
-  const total = set.limit ?? set.pool.length;
+  const total = set.limit === null ? set.pool.length : Math.min(set.limit, state.order.length);
   return { done: Math.min(state.seen.length, total), total, finished: state.done };
 }
 

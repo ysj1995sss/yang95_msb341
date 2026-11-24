@@ -1,31 +1,39 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { QuestionCard } from "../../components/QuestionCard";
 import { ChoiceGrid, FinalScreen, GameShell, PlayerSetup, Scoreboard, Select, Stage, Verdict, panel } from "../../components/games/kit";
 import { primary, quiet } from "../../components/ui";
 import { gameById } from "../../data/games";
 import { claims, factGroups, priceItems } from "../../data/games/brain";
 import { duelQuestions } from "../../data/games/pools";
+import { inTopicGroup, topicGroups } from "../../data/triviaTopics";
 import { pickMany } from "../../utils/games/deck";
 import { resolveTap, type Seat } from "../../utils/games/duel";
 import { formatValue, isRight, pickPair } from "../../utils/games/higherLower";
 import { award } from "../../utils/games/scores";
+import { triviaSeen } from "../../utils/seen";
 import { shuffle } from "../../utils/shuffle";
+import { planRound } from "../../utils/triviaRound";
 
 // ---------------------------------------------------------------- Trivia Duel
 
 const duelRoundChoices = [{ value: 5, label: "5 questions" }, { value: 10, label: "10 questions" }, { value: 15, label: "15 questions" }];
 /** Easy to hard, but no Expert questions: a race is no fun when nobody knows the answer. */
 const duelPool = duelQuestions.filter((q) => q.depth <= 3);
+const duelTopics = [{ value: "all", label: "All topics" }, ...topicGroups.map((g) => ({ value: g.id, label: g.label }))];
+/** The questions for one duel: new ones first, starting easy. */
+const planDuel = (topic: string, rounds: number) =>
+  planRound(duelPool.filter((q) => inTopicGroup(q, topic)), { length: rounds, seen: triviaSeen.all() });
 
 export function TriviaDuel() {
-  const [play, setPlay] = useState<{ names: string[]; rounds: number } | null>(null);
+  const [play, setPlay] = useState<{ names: string[]; rounds: number; topic: string } | null>(null);
   const [rounds, setRounds] = useState(10);
+  const [topic, setTopic] = useState("all");
   return (
     <GameShell game={gameById("trivia-duel")!} focusKey={play ? "play" : "setup"}>
       {play ? <DuelPlay {...play} onSetup={() => setPlay(null)} /> : (
-        <PlayerSetup min={2} max={2} onStart={(names) => setPlay({ names, rounds })} button="Start the duel"
+        <PlayerSetup min={2} max={2} onStart={(names) => setPlay({ names, rounds, topic })} button="Start the duel"
           rules={["Lay the phone flat between you. Each player has their own four buttons.", "Tap your answer first. A right answer scores a point.", "Tap a wrong one and the point goes to the other player."]}
-          extra={<Select label="Length" value={rounds} options={duelRoundChoices} onChange={setRounds} />} />
+          extra={<><Select label="Topic" value={topic} options={duelTopics} onChange={setTopic} /><Select label="Length" value={rounds} options={duelRoundChoices} onChange={setRounds} /></>} />
       )}
     </GameShell>
   );
@@ -57,13 +65,14 @@ function Pad({ name, question, tap, seat, onTap, flipped }: {
   );
 }
 
-function DuelPlay({ names, rounds, onSetup }: { names: string[]; rounds: number; onSetup: () => void }) {
-  const [questions, setQuestions] = useState(() => pickMany(duelPool, rounds));
+function DuelPlay({ names, rounds, topic, onSetup }: { names: string[]; rounds: number; topic: string; onSetup: () => void }) {
+  const [questions, setQuestions] = useState(() => planDuel(topic, rounds));
   const [i, setI] = useState(0);
   const [tap, setTap] = useState<{ seat: Seat; choice: number } | null>(null);
   const [scores, setScores] = useState([0, 0]);
   const [done, setDone] = useState(false);
   const q = questions[i]!;
+  useEffect(() => triviaSeen.add(q.id), [q.id]);
   const result = tap ? resolveTap(tap.seat, tap.choice === q.answer) : null;
 
   const press = (seat: Seat) => (choice: number) => {
@@ -71,7 +80,7 @@ function DuelPlay({ names, rounds, onSetup }: { names: string[]; rounds: number;
     setTap({ seat, choice });
     setScores((s) => award(s, resolveTap(seat, choice === q.answer).winner));
   };
-  const replay = () => { setQuestions(pickMany(duelPool, rounds)); setI(0); setTap(null); setScores([0, 0]); setDone(false); };
+  const replay = () => { setQuestions(planDuel(topic, rounds)); setI(0); setTap(null); setScores([0, 0]); setDone(false); };
   if (done) return <FinalScreen names={names} scores={scores} unit={`out of ${questions.length} questions`} onReplay={replay} onSetup={onSetup} />;
 
   return (

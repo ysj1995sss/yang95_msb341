@@ -1,7 +1,5 @@
 import { questions } from "../questions";
 import type { Depth, TriviaQuestion } from "../../types";
-import { moreDuelQuestions } from "./brainMore";
-import { mergeUnique } from "./merge";
 
 // Which library questions the party games borrow. Truth and Pass the Bomb want questions that are
 // about the person, so the two groups that are about opinions to argue over are left out.
@@ -23,9 +21,5 @@ export function truthPool(spice: Spice): string[] {
   return questions.flatMap((q) => (q.kind === "open" && !skipped.has(q.categoryId) && q.depth <= deepest[spice] ? [q.text] : []));
 }
 
-/** Trivia from the library, for the Trivia Duel. */
-const libraryTrivia = questions.flatMap((q) => (q.kind === "trivia" ? [q] : []));
-const extraTrivia: TriviaQuestion[] = moreDuelQuestions.map(({ difficulty, ...rest }, i) => ({
-  ...rest, id: `duel-${i + 1}`, categoryId: "trivia", kind: "trivia", depth: difficulty,
-}));
-export const duelQuestions: TriviaQuestion[] = mergeUnique((q) => q.text, libraryTrivia, extraTrivia);
+/** The whole trivia bank, for the Trivia Duel. */
+export const duelQuestions: TriviaQuestion[] = questions.flatMap((q) => (q.kind === "trivia" ? [q] : []));

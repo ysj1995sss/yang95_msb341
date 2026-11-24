@@ -1,17 +1,22 @@
 import { useMemo } from "react";
 import { AudienceNote } from "../components/AudienceNote";
-import { TopicPicker, topicSetting } from "../components/TopicPicker";
 import { primary } from "../components/ui";
 import { AUDIENCES, audienceSetting } from "../data/audience";
+import { categoryById } from "../data/categories";
 import { categorySet } from "../data/playSets";
 import { useSetting } from "../hooks";
 import { href } from "../utils/router";
+import { ChoicesExperience } from "./ChoicesExperience";
 import { SetPlay } from "./SetPlay";
+import { TriviaExperience } from "./TriviaExperience";
 
 export function QuestionExperience({ categoryId }: { categoryId: string }) {
+  return categoryId === "trivia" ? <TriviaExperience /> : categoryById(categoryId)?.id === "would-you-rather" ? <ChoicesExperience /> : <Conversation categoryId={categoryId} />;
+}
+
+function Conversation({ categoryId }: { categoryId: string }) {
   const audience = useSetting(audienceSetting);
-  const topic = useSetting(topicSetting);
-  const set = useMemo(() => categorySet(categoryId, audience, topic), [categoryId, audience, topic]);
+  const set = useMemo(() => categorySet(categoryId, audience), [categoryId, audience]);
 
   if (!set) {
     return (
@@ -42,9 +47,8 @@ export function QuestionExperience({ categoryId }: { categoryId: string }) {
     );
   }
 
-  const isTrivia = categoryId === "trivia";
   return (
     <SetPlay set={set} backHref={href.explore} backLabel="Back to categories"
-      beforeDepth={isTrivia ? <TopicPicker /> : <AudienceNote />} />
+      beforeDepth={<AudienceNote />} />
   );
 }

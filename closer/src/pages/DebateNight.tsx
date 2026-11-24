@@ -3,10 +3,16 @@ import { useEffect, useId, useRef, useState } from "react";
 import { ProgressBar } from "../components/ProgressBar";
 import { QuestionCard } from "../components/QuestionCard";
 import { primary, quiet, secondary } from "../components/ui";
-import { debateMotions } from "../data/debateMotions";
-import { useCountdown } from "../hooks";
+import { AUDIENCES, audienceSetting, matchesAudience } from "../data/audience";
+import { choiceTopics } from "../data/choices/bank";
+import { debateMotions, isMotion } from "../data/debateMotions";
+import { questionsFor } from "../data/questions";
+import { useCountdown, useSetting } from "../hooks";
+import { defaultCeiling, type TopicChoice } from "../utils/choices";
 import * as debate from "../utils/debateGame";
 import { href } from "../utils/router";
+import { choicesSeen } from "../utils/seen";
+import type { AudienceChoice } from "../types";
 import { formatClock, timerLabel } from "../utils/timer";
 
 const ROUND_CHOICES = [3, 5, 7];
@@ -16,16 +22,35 @@ interface Setup {
   names: [string, string];
   rounds: number;
   seconds: number;
+  topic: TopicChoice;
+}
+
+/** The statements for a topic and the group chosen on Explore, unseen ones first. Nothing Bold: this is played in front of a room. */
+function motionPool(topic: TopicChoice, audience: AudienceChoice): string[] {
+  const fits = questionsFor("debate").filter((q) => q.kind === "open" && q.depth <= defaultCeiling(audience) && matchesAudience(q, audience)
+    && (topic === "all" || q.topic === topic) && isMotion(q.text));
+  const seen = new Set(choicesSeen.all());
+  const fresh = fits.filter((q) => !seen.has(q.id));
+  // Keep enough to choose from; once most have been used, all of them come back.
+  const texts = (fresh.length >= 10 ? fresh : fits).map((q) => q.text);
+  return topic === "all" ? [...new Set([...texts, ...debateMotions])] : texts;
 }
 
 /** Two people, one device, a statement to argue about. Each speaks against the clock, then the room votes. */
 export function DebateNight() {
-  const [setup, setSetup] = useState<Setup>({ names: ["", ""], rounds: 5, seconds: 60 });
+  const [setup, setSetup] = useState<Setup>({ names: ["", ""], rounds: 5, seconds: 60, topic: "all" });
+  const audience = useSetting(audienceSetting);
   const [state, setState] = useState<debate.DebateState | null>(null);
 
   const names = (s: Setup): [string, string] => [s.names[0].trim() || "Player 1", s.names[1].trim() || "Player 2"];
-  const start = () => setState(debate.startDebate(names(setup), debateMotions, setup.rounds, setup.seconds));
+  const start = () => setState(debate.startDebate(names(setup), motionPool(setup.topic, audience), setup.rounds, setup.seconds));
   const update = (fn: (s: debate.DebateState) => debate.DebateState) => setState((s) => (s ? fn(s) : s));
+
+  const motion = state && state.phase !== "final" ? state.motions[state.round] : undefined;
+  useEffect(() => {
+    const q = motion && questionsFor("debate").find((x) => x.text === motion);
+    if (q) choicesSeen.add(q.id);
+  }, [motion]);
 
   // Each new screen takes focus so keyboard and screen-reader users land on it.
   const stage = useRef<HTMLDivElement>(null);
@@ -55,7 +80,7 @@ export function DebateNight() {
           <SetupForm setup={setup} onChange={setSetup} onStart={start} />
         ) : (
           <Round state={state} update={update}
-            onReplay={() => update((s) => debate.replay(s, debateMotions))}
+            onReplay={() => update((s) => debate.replay(s, motionPool(setup.topic, audience)))}
             onSetup={() => setState(null)} />
         )}
       </div>
@@ -65,13 +90,15 @@ export function DebateNight() {
 
 function SetupForm({ setup, onChange, onStart }: { setup: Setup; onChange: (s: Setup) => void; onStart: () => void }) {
   const id = useId();
+  const audience = useSetting(audienceSetting);
+  const group = AUDIENCES.find((a) => a.id === audience);
   const field = "mt-2 w-full rounded-2xl border border-plum-100 bg-page/60 p-3.5 text-[16px] placeholder:text-muted/80 focus-visible:border-plum-400";
   return (
     <form className="animate-fade-up rounded-[2rem] border border-plum-100 bg-surface p-6 shadow-lg sm:p-10"
       onSubmit={(e) => { e.preventDefault(); onStart(); }}>
       <h2 className="text-2xl font-extrabold">Set up the debate</h2>
       <ol className="mt-3 list-decimal space-y-1 pl-5 text-muted">
-        <li>Each round has a statement. One of you argues for it, the other against.</li>
+        <li>Each round has a statement or a yes-or-no question. One of you argues for it (or yes), the other against (or no).</li>
         <li>You each get the same time on the clock.</li>
         <li>Everyone else votes on who argued better. Sides swap every round.</li>
       </ol>
@@ -87,7 +114,14 @@ function SetupForm({ setup, onChange, onStart }: { setup: Setup; onChange: (s: S
         ))}
       </div>
 
-      <div className="mt-4 grid gap-4 sm:grid-cols-2">
+      <div className="mt-4 grid gap-4 sm:grid-cols-3">
+        <div>
+          <label htmlFor={`${id}-topic`} className="text-sm font-semibold text-muted">Topic</label>
+          <select id={`${id}-topic`} value={setup.topic} onChange={(e) => onChange({ ...setup, topic: e.target.value as TopicChoice })} className={field}>
+            <option value="all">All topics</option>
+            {choiceTopics.map((t) => <option key={t.id} value={t.id}>{t.label}</option>)}
+          </select>
+        </div>
         <div>
           <label htmlFor={`${id}-rounds`} className="text-sm font-semibold text-muted">Rounds</label>
           <select id={`${id}-rounds`} value={setup.rounds} onChange={(e) => onChange({ ...setup, rounds: Number(e.target.value) })} className={field}>
@@ -102,6 +136,8 @@ function SetupForm({ setup, onChange, onStart }: { setup: Setup; onChange: (s: S
         </div>
       </div>
 
+      {group && <p className="mt-4 text-sm text-muted">Statements that suit {group.label.toLowerCase()}. <a href={href.explore} className="font-bold underline underline-offset-4">Change</a></p>}
+      <p className="mt-4 text-sm text-muted">Just want to talk debates through, with no clock? <a href={href.play("would-you-rather")} className="font-bold underline underline-offset-4">Browse debates</a></p>
       <button type="submit" className={`${primary} mt-6 w-full sm:w-auto`}>Start the debate</button>
     </form>
   );
@@ -130,7 +166,7 @@ function Round({ state, update, onReplay, onSetup }: {
       <Scoreboard players={players} scores={scores} highlight={speaker} />
 
       {phase === "brief" && (
-        <QuestionCard eyebrow="The statement" text={motion}>
+        <QuestionCard eyebrow={motion?.endsWith("?") ? "The question" : "The statement"} text={motion}>
           <div className="mt-5 grid gap-3 sm:grid-cols-2">
             <Side label="For" name={players[forIdx]} tone="border-emerald-500 bg-emerald-50" />
             <Side label="Against" name={players[againstIdx]} tone="border-coral-500 bg-coral-50" />

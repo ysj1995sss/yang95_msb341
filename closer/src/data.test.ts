@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { categories, categoryById, categoryOf, libraryIds, libraryNames } from "./data/categories";
 import { dailyQuestions } from "./data/dailyQuestions";
 import { guessQuestions, guessThemes } from "./data/guessQuestions";
-import { questionById, questions, questionsFor } from "./data/questions";
+import { inSurpriseMix, questionById, questions as everyQuestion, questionsFor as allFor } from "./data/questions";
 
 const norm = (text: string) => text.trim().toLowerCase().replace(/\s+/g, " ");
 
@@ -13,6 +13,9 @@ const FILLER = new Set(
     "would could should can will ever one thing something someone about if than then so as not no yes more most " +
     "rather dare truth never have has had get got you're you've you'd you'll it's that's there's").split(" "),
 );
+// The original library: ten groups of 50. The two banks added later are checked in banks.test.ts.
+const questions = everyQuestion.filter(inSurpriseMix);
+const questionsFor = (id: Parameters<typeof allFor>[0]) => allFor(id).filter(inSurpriseMix);
 const words = (text: string) =>
   new Set(norm(text).replace(/[^a-z0-9' ]/g, " ").split(" ").map((w) => w.replace(/'s$/, "")).filter((w) => w.length > 2 && !FILLER.has(w)));
 /** Shared meaningful words over all meaningful words in either question (1 = the same words). */
@@ -160,7 +163,7 @@ describe("depth levels", () => {
 describe("trivia", () => {
   const trivia = questionsFor("trivia");
 
-  it("gives every question four different options, one valid answer and an explanation", () => {
+  it("gives every original question four different options, one valid answer and an explanation", () => {
     for (const q of trivia) {
       if (q.kind !== "trivia") throw new Error(`${q.id} is not a trivia question`);
       expect(new Set(q.options.map(norm)).size, q.text).toBe(4);
@@ -170,13 +173,6 @@ describe("trivia", () => {
       expect(q.topic).toBeTruthy();
     }
     expect(questions.every((q) => (q.categoryId === "trivia") === (q.kind === "trivia"))).toBe(true);
-  });
-
-  it("covers geography, history, science, entertainment, culture, logic and general knowledge", () => {
-    const topics = new Set(trivia.map((q) => (q.kind === "trivia" ? q.topic : "")));
-    for (const topic of ["Geography", "History", "Science", "Entertainment", "Culture", "Logic", "General knowledge"]) {
-      expect(topics.has(topic as never), topic).toBe(true);
-    }
   });
 
   it("doesn't hide the right answer in one spot", () => {

@@ -4,7 +4,7 @@ import { href } from "../utils/router";
 import { isAudience, matchesAudience, AUDIENCES } from "./audience";
 import { categoryById } from "./categories";
 import { packById, packQuestions } from "./packs";
-import { questions, questionsFor } from "./questions";
+import { inSurpriseMix, questions, questionsFor } from "./questions";
 import { inTopicGroup, topicGroupById } from "./triviaTopics";
 
 // A "play set" is something you can play through: a category (for one group, or one trivia topic),
@@ -14,6 +14,8 @@ import { inTopicGroup, topicGroupById } from "./triviaTopics";
 
 
 export const QUIZ_LENGTH = 10;
+/** How many Would You Rather and debate prompts make one set. */
+export const CHOICES_LENGTH = 20;
 
 export interface PlaySet {
   key: string;
@@ -52,19 +54,19 @@ export function categorySet(categoryId: string, audience: AudienceChoice = "ever
     href: href.play(category.id),
     category,
     pool,
-    limit: quiz && pool.length > 0 ? Math.min(QUIZ_LENGTH, pool.length) : null,
+    limit: pool.length === 0 ? null : quiz ? Math.min(QUIZ_LENGTH, pool.length) : category.id === "would-you-rather" ? CHOICES_LENGTH : null,
     timer: category.id === "party" || category.id === "would-you-rather",
   };
 }
 
 export function surpriseSet(audience: AudienceChoice = "everyone"): PlaySet {
-  const pool = questions.filter((q) => matchesAudience(q, audience));
+  const pool = questions.filter((q) => inSurpriseMix(q) && matchesAudience(q, audience));
   return {
     key: isAudience(audience) ? `surprise:${audience}` : "surprise",
     title: "Surprise me",
     description: isAudience(audience)
       ? `A random mix of the ${pool.length} questions that suit ${audienceLabel(audience)}, across every category.`
-      : `A random mix from all ${pool.length} questions, across every category.`,
+      : `A random mix from ${pool.length} questions, across every category.`,
     href: href.surprise,
     category: null,
     pool,

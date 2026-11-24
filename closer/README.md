@@ -287,3 +287,10 @@ in a subfolder. The existing deployment setup is unchanged.
   a third-party request and makes the very first offline visit match.
 - **Journal mode:** only if testers ask for it. It would need accounts and a backend.
 - **App stores:** the installable web app can later be wrapped for the Apple and Google stores.
+
+## The two question banks
+
+- **Trivia** (`src/data/trivia/`, 1,014 questions with the 50 originals): one file per area, one question per line, each naming the Wikipedia article it was checked against. Every article was confirmed to exist, and the right answer (and the numbers and names in the question and explanation) was looked up in its text by script; that is not a full human fact-check. `src/utils/triviaRound.ts` plans a round (four Easy, three Medium, two Hard, one Expert), and `src/utils/seen.ts` remembers what was asked on this device.
+- **Would You Rather & Debates** (`src/data/choices/`, 1,101 prompts with the 100 originals): one file per topic. Debate Night uses the debates that work as a claim or a yes-or-no question.
+- Ids come from a line's place, so add lines at the end of a group and never reorder or delete them. `src/banks.test.ts` checks both banks.
+- The Surprise me mix stays at the original 500 questions.

@@ -7,7 +7,7 @@ import { savedProgress } from "../utils/resume";
 import { CategoryIcon } from "./CategoryIcon";
 import { ProgressRing } from "./ProgressRing";
 import { tintClass } from "./tint";
-import { topicSetting } from "./TopicPicker";
+import { topicSetting } from "../utils/triviaTopicSetting";
 
 /** The whole card is one link into the category's questions. Shows how far through you are, and
  *  counts only the questions that suit the group chosen on the Explore page. On a phone it is a

@@ -314,7 +314,7 @@ describe("play sets", () => {
     expect(logic.pool.length).toBeGreaterThanOrEqual(7);
     expect(logic.limit).toBe(Math.min(10, logic.pool.length));
     expect(logic.pool.every((q) => inTopicGroup(q, "logic"))).toBe(true);
-    expect(categorySet("trivia", "team")!.pool).toHaveLength(50);
+    expect(categorySet("trivia", "team")!.pool).toHaveLength(categorySet("trivia")!.pool.length);
   });
 
   it("builds the surprise, pack and my-questions sets", () => {
@@ -345,7 +345,7 @@ describe("play sets", () => {
 describe("merged experiences", () => {
   it("plays every question from each group an experience holds", () => {
     expect(categorySet("imagination", "everyone")!.pool).toHaveLength(100);
-    expect(categorySet("would-you-rather", "everyone")!.pool).toHaveLength(100);
+    expect(categorySet("would-you-rather", "everyone")!.pool.length).toBeGreaterThanOrEqual(1000);
     expect(categorySet("party", "everyone")!.pool).toHaveLength(100);
     expect(categorySet("love", "everyone")!.pool).toHaveLength(50);
     const ids = new Set(categorySet("imagination", "everyone")!.pool.map((q) => q.id));

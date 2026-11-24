@@ -26,7 +26,7 @@ export function Home() {
               Better questions. <span className="bg-gradient-to-r from-plum-600 to-coral-500 bg-clip-text text-transparent">Stronger connections.</span>
             </h1>
             <p className="mt-5 max-w-xl text-lg leading-relaxed text-muted sm:text-xl">
-              Closer is a free app of {questions.length} questions and games for couples, friends, families and teams. Pick an
+              Closer is a free app of {questions.length.toLocaleString("en-US")} questions and games for couples, friends, families and teams. Pick an
               experience, read a question out loud, and start talking.
             </p>
             <div className="mt-7 flex flex-wrap items-center gap-3">

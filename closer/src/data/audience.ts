@@ -74,8 +74,8 @@ export function audiencesOfEntry(categoryId: string, depth: Depth, text: string)
     // About work: a team (an icebreaker that is clearly about the workplace is only for teams);
     // elsewhere work is just one more topic.
     if (categoryId === "icebreakers" && workplace.test(text)) tags = new Set<Audience>(["team"]);
-    else add("team");
-  } else if (familyWords.test(text) && categoryId !== "party") {
+    else if (depth < 4) add("team"); // a Bold question is never a team question
+  } else if (familyWords.test(text) && categoryId !== "party" && !(depth === 4 && (categoryId === "debate" || categoryId === "would-you-rather"))) {
     add("family");
   }
 

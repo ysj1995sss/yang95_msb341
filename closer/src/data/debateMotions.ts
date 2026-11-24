@@ -32,3 +32,7 @@ export const debateMotions: readonly string[] = [
   "Everyone should have to learn a second language.",
   "Leftovers taste better the next day.",
 ];
+
+/** A prompt works as a timed debate when it is a claim, or a question one side can answer yes and the other no. */
+export const isMotion = (text: string): boolean =>
+  text.endsWith(".") || (/^(should|is|are|can|does|do|has|would|could)\b/i.test(text) && !/\bor\b|: which/i.test(text));

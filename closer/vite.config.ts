@@ -7,7 +7,11 @@ import { defineConfig } from "vitest/config";
 export default defineConfig({
   base: "./",
   // The service worker reads this list to keep every file, including the game screens that load on demand.
-  build: { manifest: "asset-manifest.json" },
+  build: {
+    manifest: "asset-manifest.json",
+    // The question banks are their own file, so a change to the app's code doesn't make people download them again.
+    rollupOptions: { output: { manualChunks: (id: string) => (/src[\/]data[\/](trivia|choices|library)[\/]/.test(id) ? "questions" : undefined) } },
+  },
   plugins: [react(), tailwindcss()],
   test: { environment: "node" },
 });

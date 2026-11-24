@@ -1,7 +1,7 @@
 import type { Question, TriviaTopic } from "../types";
 
-// The quiz has seven fine-grained topics, some with only a few questions. For the topic picker they
-// are grouped so every choice has enough questions for a real round.
+// The ten trivia areas a player can choose from. The ids are saved in the browser and in saved rounds,
+// so the older ones (geography, history, science, culture, logic) keep their names.
 export interface TopicGroup {
   id: string;
   label: string;
@@ -9,11 +9,16 @@ export interface TopicGroup {
 }
 
 export const topicGroups: readonly TopicGroup[] = [
-  { id: "geography", label: "Geography", topics: ["Geography"] },
+  { id: "geography", label: "Geography & places", topics: ["Geography"] },
   { id: "history", label: "History", topics: ["History"] },
-  { id: "science", label: "Science", topics: ["Science"] },
-  { id: "culture", label: "Entertainment & culture", topics: ["Entertainment", "Culture"] },
-  { id: "logic", label: "Logic & general knowledge", topics: ["Logic", "General knowledge"] },
+  { id: "science", label: "Science & nature", topics: ["Science"] },
+  { id: "screen", label: "Movies & TV", topics: ["Movies & TV"] },
+  { id: "music", label: "Music & entertainment", topics: ["Music & entertainment"] },
+  { id: "sports", label: "Sports & games", topics: ["Sports & games"] },
+  { id: "food", label: "Food & drink", topics: ["Food & drink"] },
+  { id: "culture", label: "Art, books & culture", topics: ["Art, books & culture"] },
+  { id: "tech", label: "Technology & inventions", topics: ["Technology"] },
+  { id: "logic", label: "General knowledge & logic", topics: ["General & logic"] },
 ];
 
 export const topicGroupById = (id: string): TopicGroup | undefined => topicGroups.find((g) => g.id === id);

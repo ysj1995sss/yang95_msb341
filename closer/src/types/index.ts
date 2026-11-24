@@ -42,10 +42,13 @@ export type Depth = 1 | 2 | 3 | 4;
 export type OpenEntry = readonly [Depth, string];
 
 export type TriviaTopic =
-  | "Geography" | "History" | "Science" | "Entertainment" | "Culture" | "Logic" | "General knowledge";
+  | "Geography" | "History" | "Science" | "Movies & TV" | "Music & entertainment" | "Sports & games"
+  | "Food & drink" | "Art, books & culture" | "Technology" | "General & logic";
 
 export interface TriviaEntry {
   topic: TriviaTopic;
+  /** The Wikipedia article the fact was checked against. */
+  source: string;
   difficulty: Depth;
   text: string;
   options: readonly [string, string, string, string];
@@ -63,11 +66,16 @@ export type AudienceChoice = Audience | "everyone";
 /** Where an open question comes from: one of the library's categories, a seasonal pack, or the player's own. */
 export type OpenSource = Exclude<CategoryId, "trivia"> | "pack" | "mine";
 
+/** What a Would You Rather or debate prompt is about (see data/choices/bank.ts). */
+export type ChoiceTopicId = "funny" | "food" | "travel" | "bonds" | "money" | "pop" | "future" | "ethics" | "society" | "powers";
+
 export interface OpenQuestion {
   id: string;
   categoryId: OpenSource;
   kind: "open";
   depth: Depth;
+  /** Only Would You Rather and debate prompts have one. */
+  topic?: ChoiceTopicId;
   text: string;
 }
 
@@ -78,6 +86,7 @@ export interface TriviaQuestion {
   /** The difficulty: 1 Easy to 4 Expert. */
   depth: Depth;
   topic: TriviaTopic;
+  source: string;
   text: string;
   options: readonly [string, string, string, string];
   answer: 0 | 1 | 2 | 3;

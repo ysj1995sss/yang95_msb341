@@ -50,9 +50,15 @@
   --color-tint-sky-line: #b9d8f1;
 
   --animate-fade-up: fade-up 0.45s cubic-bezier(0.22, 1, 0.36, 1) both;
+  --animate-pop: pop 0.35s ease-out both;
   --animate-float: float 6s ease-in-out infinite;
   --animate-reveal: reveal 0.6s cubic-bezier(0.22, 1, 0.36, 1) both;
 
+  @keyframes pop {
+    0% { transform: scale(0.94); }
+    60% { transform: scale(1.04); }
+    100% { transform: scale(1); }
+  }
   @keyframes fade-up {
     from { opacity: 0; transform: translateY(10px); }
     to { opacity: 1; transform: translateY(0); }

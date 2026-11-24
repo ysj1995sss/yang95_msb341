@@ -4,7 +4,7 @@ import { categorySet } from "../data/playSets";
 import { useSetting } from "../hooks";
 import { gridSpans } from "../utils/gridSpans";
 import { CategoryCard } from "./CategoryCard";
-import { topicSetting } from "./TopicPicker";
+import { topicSetting } from "../utils/triviaTopicSetting";
 
 // Written out in full so Tailwind sees every class.
 const baseSpan = { 1: "col-span-1", 2: "col-span-2" } as const;

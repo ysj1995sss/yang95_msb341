@@ -76,6 +76,6 @@ describe("Help, trivia label and Surprise me wording", () => {
 
   it("says when Surprise me is narrowed to one group", () => {
     expect(surpriseSet("team").description).toMatch(/suit teams/);
-    expect(surpriseSet("everyone").description).toMatch(/^A random mix from all \d+ questions/);
+    expect(surpriseSet("everyone").description).toMatch(/^A random mix from \d+ questions/);
   });
 });
