@@ -14,14 +14,18 @@ Fill this in during Sprint 1 and keep it current. Every sprint is read against i
 - **Who it is for:** Job seekers in the current job market who want to reduce time spent on repetitive job search and application tasks.
 - **Who uses my work:** Job seekers, starting with peers and others who hear about it through word of mouth and Slack during the testing phase. Future go-to-market will include online advertising platforms.
 
+**What changed:** from Sprint 3 on, I switched from Job Copilot to Closer (see "Where the work lives" below). The Job Copilot description above is kept as the record of Sprints 1 and 2.
+
 If your situation changes, revise this and note what changed. That is normal; a silent
 mismatch between this file and your work is not.
 
 ## Where the work lives
 
+- **Current product (Sprints 3 to 5): Closer**, a question and party-game app for couples, friends, families and teams. Code is in [`closer/`](closer/) (React, installable on a phone's home screen, works offline).
+- **Closer live:** https://yang95-msb341-nt7s.vercel.app/ (Vercel; redeploys from `main`). Sprint 5 work: phone app pass (tab bar, install card, update notice), 16 new games with a Games filter, and changes from four testers' feedback.
 - **Repos:** [ysj1995sss/yang95_msb341](https://github.com/ysj1995sss/yang95_msb341) (this repo, public, shared with sdmurff). All the work is here; there is no second repo.
-- **Live:** https://yang95msb341-epxbfpbdegytjwcajjthay.streamlit.app/ (Streamlit Community Cloud; redeploys from `main`). It runs in single-user demo mode, so please don't share the link as a product.
-- **Docs:** none outside this repo. Plans, reviews and results are in `sprints/`, specs in `specs/`, and decisions in `decisions/`.
+- **Earlier product (Sprints 1 and 2): Job Copilot**, live at https://yang95msb341-epxbfpbdegytjwcajjthay.streamlit.app/ (Streamlit Community Cloud; single-user demo mode, so please don't share the link as a product).
+- **Docs:** none outside this repo. Plans, reviews and results are in `sprints/`, specs in `specs/` and `closer/docs/`, and decisions in `decisions/`.
 - **Demo videos:** Loom links are submitted on Canvas.
 
 ## What is in this repo

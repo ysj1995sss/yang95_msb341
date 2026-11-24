@@ -38,3 +38,13 @@ Input from 4 people came in. Their feedback was forwarded on Nov 17, Nov 22 and 
 The sessions do not show that the 4 testers installed Closer to their home screens, which is the first part of "done looks like." The first tester's notes are about the website's pages, say they had not tried the games, and ask how an app runs outside the app store. The other feedback does not mention installing.
 
 The phone app work (tab bar, install card, update notice) was committed on Nov 17, before any tester feedback arrived, so it was not driven by what testers said. The largest block of time went to 16 new games, which the plan did not mention.
+
+## Retro
+
+**Actual difficulty:** 3 (predicted 3).
+
+**Why it differed:** It didn't. The hardest part was getting feedback from people, learning from it, and working out what to improve and fine-tune.
+
+**Did you hit the goal?** I believe I did: four different people gave feedback, and I made changes from it.
+
+**What changes next sprint:** Get feedback from testers who install it on their phones, and see what I can do to improve the native phone app experience.

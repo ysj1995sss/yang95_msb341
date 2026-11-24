@@ -8,6 +8,10 @@
 
 **Predicted difficulty:** 3
 
+**Changes during the sprint:**
+- Nov 16 to 17: scope grew. Besides the phone app pass (tab bar, install card, update notice), I redesigned the site and added 16 new games, which were not in the original plan.
+- Nov 23: made changes from the four testers' feedback (Games filter, Help page, Back keeps your place, a fresh shuffle each time the app opens, a compact depth menu on small phones). Some suggestions were held for later: the welcome tour, a gentler default for teams and families, export and import, and the name.
+
 **Actual difficulty:** 3
 
 **Why it differed:** It didn't. The hardest part was getting feedback from people, learning from it, and working out what to improve and fine-tune.
