@@ -30,7 +30,20 @@ export function DepthSelector({ categoryId, level, remaining, onChange }: {
   const active = level === "mix" ? null : levels[level];
   return (
     <section aria-label={quiz ? "Difficulty" : "Question depth"}>
-      <div role="radiogroup" data-depth-selector aria-label={quiz ? "Difficulty" : "Question depth"} className="grid grid-cols-5 gap-1.5 sm:gap-2">
+      {/* Very narrow phones (under 400px) get one compact menu: five labelled buttons don't fit side by side. */}
+      <label className="block min-[400px]:hidden">
+        <span className="sr-only">{quiz ? "Difficulty" : "Question depth"}</span>
+        <select data-depth-selector value={String(level)}
+          onChange={(e) => onChange(e.target.value === "mix" ? "mix" : (Number(e.target.value) as Depth))}
+          className="min-h-12 w-full cursor-pointer rounded-2xl border-2 border-plum-200 bg-surface px-4 text-[15px] font-bold text-plum-800 focus-visible:outline-3 focus-visible:outline-plum-500">
+          {ORDER.map((option) => (
+            <option key={option} value={String(option)}>
+              {option === "mix" ? "Mix: all levels" : `${levels[option].name} (${remaining[option]} left)`}
+            </option>
+          ))}
+        </select>
+      </label>
+      <div role="radiogroup" data-depth-selector aria-label={quiz ? "Difficulty" : "Question depth"} className="hidden grid-cols-5 gap-1.5 min-[400px]:grid sm:gap-2">
         {ORDER.map((option) => {
           const checked = option === level;
           const left = option === "mix" ? null : remaining[option];

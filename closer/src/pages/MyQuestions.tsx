@@ -43,7 +43,7 @@ export function MyQuestions() {
         </span>
         <div>
           <h1 tabIndex={-1} className="text-3xl font-extrabold tracking-tight sm:text-4xl">My questions</h1>
-          <p className="mt-1 text-muted">Write questions for your own group. They stay on this device.</p>
+          <p className="mt-1 text-muted">Write questions for your own group. They stay in this browser only, so clearing browser data or switching devices leaves them behind.</p>
         </div>
       </div>
 

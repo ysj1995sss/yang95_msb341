@@ -26,7 +26,7 @@ export function parseRoute(hash: string): Route {
   const path = hash.replace(/^#/, "").replace(/\/+$/, "") || "/";
   if (path === "/" || path === "") return { page: "home" };
   if (path === "/explore") return { page: "explore" };
-  if (path === "/about") return { page: "about" };
+  if (path === "/about" || path === "/help") return { page: "about" };
   if (path === "/favorites") return { page: "favorites" };
   if (path === "/games") return { page: "games" };
   if (path === "/library") return { page: "library" };
@@ -62,6 +62,7 @@ export const href = {
   home: "#/",
   explore: "#/explore",
   about: "#/about",
+  help: "#/help",
   favorites: "#/favorites",
   games: "#/games",
   game: (gameId: string) => `#/games/${gameId}`,

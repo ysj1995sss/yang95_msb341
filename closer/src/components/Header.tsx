@@ -14,7 +14,7 @@ export function Header({ route }: { route: Route }) {
   const count = useFavorites().length;
   const current: string = tabFor(route) ?? route.page;
   const look = (on: boolean) => (on ? "bg-plum-100 text-plum-800" : "text-muted hover:bg-sand hover:text-ink");
-  const links: { page: string; label: string; to: string }[] = [...tabs.map((t) => ({ page: t.id, label: t.label, to: t.to })), { page: "about", label: "About", to: href.about }];
+  const links: { page: string; label: string; to: string }[] = [...tabs.map((t) => ({ page: t.id, label: t.label, to: t.to })), { page: "about", label: "Help", to: href.help }];
   return (
     <header className="sticky top-0 z-20 border-b border-plum-100/70 bg-page/85 pt-[env(safe-area-inset-top)] backdrop-blur">
       <div className="mx-auto flex h-16 max-w-6xl items-center justify-between gap-4 px-4 sm:px-6">

@@ -20,7 +20,7 @@ export function CategoryCard({ category, index = 0, className = "" }: { category
 
   const progress = savedProgress(set);
   const inProgress = progress && !progress.finished && progress.done > 0;
-  const count = category.id === "trivia" ? "Quiz" : `${set.pool.length} questions`;
+  const count = category.id === "trivia" ? `${set.limit ?? set.pool.length} questions per quiz` : `${set.pool.length} questions`;
   return (
     <a
       href={set.href}

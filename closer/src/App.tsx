@@ -20,6 +20,7 @@ import { QuestionExperience } from "./pages/QuestionExperience";
 import { Surprise } from "./pages/Surprise";
 import { href, useRoute, type Route } from "./utils/router";
 import { installCardFitsPage } from "./utils/installCard";
+import { currentArrival, restoreScroll, stampEntry } from "./utils/navigation";
 import { showsTabBar } from "./utils/tabbar";
 
 /** What identifies a page for "scroll to top and focus the heading": a new key is a new page. */
@@ -75,15 +76,23 @@ export default function App() {
   const key = pageKey(route);
   const tabBar = showsTabBar(route);
 
-  // A new page starts at the top, with focus on its heading for keyboard and screen-reader users.
-  // Not on the first visit: there the browser already starts at the top of the page.
+  // A page opened fresh starts at the top; going back to one returns to where it was scrolled to.
+  // Either way focus goes to the heading for keyboard and screen-reader users.
+  // On the very first page the browser starts at the top, so only a reload needs its place restored.
   const firstPage = useRef(true);
   useEffect(() => {
-    if (firstPage.current) { firstPage.current = false; return; }
+    stampEntry();
+    const arrival = currentArrival();
+    const back = arrival.kind === "revisit";
+    if (firstPage.current) {
+      firstPage.current = false;
+      return back && arrival.scrollY > 0 ? restoreScroll(arrival.scrollY) : undefined;
+    }
     // A dialog (the first-launch tour) that is open keeps focus.
     if (document.querySelector('[role="dialog"][aria-modal="true"]')) return;
-    window.scrollTo({ top: 0 });
-    return focusHeadingWhenReady();
+    const stopScroll = back ? restoreScroll(arrival.scrollY) : (window.scrollTo({ top: 0, behavior: "instant" }), () => undefined);
+    const stopFocus = focusHeadingWhenReady();
+    return () => { stopScroll(); stopFocus(); };
   }, [key]);
 
   return (

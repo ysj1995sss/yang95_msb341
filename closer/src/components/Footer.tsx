@@ -5,6 +5,7 @@ const links = [
   { label: "Explore", to: href.explore },
   { label: "Games", to: href.games },
   { label: "Library", to: href.library },
+  { label: "Help", to: href.help },
   { label: "About", to: href.about },
 ];
 
@@ -27,7 +28,7 @@ export function Footer() {
             ))}
           </ul>
         </nav>
-        <p className="max-w-56 text-sm text-muted">Your favorites, questions and progress stay on this device.</p>
+        <p className="max-w-56 text-sm text-muted">Your favorites and questions stay in this browser. Clearing browser data removes them.</p>
       </div>
     </footer>
   );

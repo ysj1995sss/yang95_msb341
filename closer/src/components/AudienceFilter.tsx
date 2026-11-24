@@ -1,7 +1,6 @@
 import { Users } from "lucide-react";
 import { useId } from "react";
-import { AUDIENCES, audienceCounts, audienceSetting } from "../data/audience";
-import { questions } from "../data/questions";
+import { AUDIENCES, audienceSetting } from "../data/audience";
 import { useSetting } from "../hooks";
 import type { AudienceChoice } from "../types";
 
@@ -9,9 +8,9 @@ import type { AudienceChoice } from "../types";
 export function AudienceFilter() {
   const choice = useSetting(audienceSetting);
   const name = useId();
-  const options: { id: AudienceChoice; label: string; count: number; blurb: string }[] = [
-    { id: "everyone", label: "Everyone", count: questions.length, blurb: "All the questions" },
-    ...AUDIENCES.map((a) => ({ id: a.id as AudienceChoice, label: a.label, count: audienceCounts[a.id], blurb: a.blurb })),
+  const options: { id: AudienceChoice; label: string; blurb: string }[] = [
+    { id: "everyone", label: "Everyone", blurb: "All the questions" },
+    ...AUDIENCES.map((a) => ({ id: a.id as AudienceChoice, label: a.label, blurb: a.blurb })),
   ];
   return (
     <fieldset className="mt-8">
@@ -25,7 +24,6 @@ export function AudienceFilter() {
               choice === o.id ? "border-plum-600 bg-plum-600 text-white" : "border-plum-100 bg-surface text-plum-800 hover:border-plum-300"}`}>
             <input type="radio" name={name} value={o.id} checked={choice === o.id} onChange={() => audienceSetting.set(o.id)} className="sr-only" />
             {o.label}
-            <span className={`text-xs font-semibold ${choice === o.id ? "text-onplum" : "text-muted"}`}>{o.count}</span>
           </label>
         ))}
       </div>

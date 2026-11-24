@@ -7,9 +7,16 @@ export interface KeyValueStore {
   setItem(key: string, value: string): void;
 }
 
+/** A store that can also be emptied key by key (the browser's own storage can). */
+export interface RemovableStore extends KeyValueStore {
+  removeItem(key: string): void;
+  readonly length: number;
+  key(index: number): string | null;
+}
+
 const DAILY_REVEALED = "closer.daily.revealed";
 
-export function browserStore(): KeyValueStore | null {
+export function browserStore(): RemovableStore | null {
   try {
     return typeof window !== "undefined" ? window.localStorage : null;
   } catch {
@@ -50,7 +57,7 @@ export function saveDailyRevealed(dateKey: string, store: KeyValueStore | null =
 // work for the visit (held in memory) and simply aren't remembered.
 
 const FAVORITES = "closer.favorites";
-const SESSION_PREFIX = "closer.session.";
+export const SESSION_PREFIX = "closer.session.";
 
 export interface FavoritesStore {
   get(): readonly string[];

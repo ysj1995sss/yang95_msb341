@@ -33,9 +33,9 @@ export function OpenStep({ question, eyebrow, tone, isLast, onSkip, onNext }: {
           Bold questions are always optional. Skip this one any time you like.
         </p>
       ) : (
-        <p className="mt-4 text-[15px] text-muted">Read it out loud and talk it over. Move on when you're ready.</p>
+        <p className="mt-4 text-[15px] text-muted max-[399px]:hidden">Read it out loud and talk it over. Move on when you're ready.</p>
       )}
-      <div className="mt-6 flex flex-col-reverse gap-3 sm:flex-row sm:items-center sm:justify-between">
+      <div className="mt-6 flex flex-col-reverse gap-3 max-[399px]:mt-4 max-[399px]:gap-1 sm:flex-row sm:items-center sm:justify-between">
         <button type="button" onClick={onSkip} className={quiet}>
           <SkipForward aria-hidden className="size-5" /> Skip
         </button>

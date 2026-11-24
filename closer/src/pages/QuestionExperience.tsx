@@ -1,4 +1,5 @@
 import { useMemo } from "react";
+import { AudienceNote } from "../components/AudienceNote";
 import { TopicPicker, topicSetting } from "../components/TopicPicker";
 import { primary } from "../components/ui";
 import { AUDIENCES, audienceSetting } from "../data/audience";
@@ -44,10 +45,6 @@ export function QuestionExperience({ categoryId }: { categoryId: string }) {
   const isTrivia = categoryId === "trivia";
   return (
     <SetPlay set={set} backHref={href.explore} backLabel="Back to categories"
-      beforeDepth={isTrivia ? <TopicPicker /> : group ? (
-        <p className="mt-5 text-sm font-semibold text-muted">
-          Questions for {group.label.toLowerCase()}. <a href={href.explore} className="font-bold text-plum-700 underline decoration-plum-300 underline-offset-4 hover:decoration-plum-600 dark:text-onplum-soft">Change</a>
-        </p>
-      ) : undefined} />
+      beforeDepth={isTrivia ? <TopicPicker /> : <AudienceNote />} />
   );
 }

@@ -202,7 +202,7 @@ export function SessionView({ category, heading, description, pool, limit: limit
             <Maximize2 aria-hidden className="size-4" /> Table mode
           </button>
           <p className="hidden text-sm text-muted sm:block">
-            <kbd className={kbd}>←</kbd> skip <span aria-hidden>·</span> <kbd className={kbd}>→</kbd> next <span aria-hidden>·</span> <kbd className={kbd}>F</kbd> favorite <span aria-hidden>·</span> <kbd className={kbd}>T</kbd> table mode <span aria-hidden>·</span> <kbd className={kbd}>R</kbd> read aloud
+            <kbd className={kbd}>←</kbd> skip <span aria-hidden>·</span> <kbd className={kbd}>→</kbd> next <span aria-hidden>·</span> <kbd className={kbd}>F</kbd> favorite <span aria-hidden>·</span> <kbd className={kbd}>T</kbd> table mode <span aria-hidden>·</span> <kbd className={kbd}>R</kbd> read aloud <span aria-hidden>·</span> <a href={href.help} className="font-semibold text-plum-700 underline underline-offset-2 dark:text-onplum-soft">All shortcuts</a>
           </p>
           <p className="text-sm text-muted sm:hidden">Swipe the card: left for next, right to skip.</p>
         </div>

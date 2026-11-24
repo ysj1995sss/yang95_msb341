@@ -35,7 +35,7 @@ export function Library() {
   return (
     <div className="mx-auto max-w-5xl px-4 pt-10 sm:px-6 sm:pt-14">
       <h1 tabIndex={-1} className="text-4xl font-extrabold tracking-tight sm:text-5xl">Library</h1>
-      <p className="mt-3 max-w-2xl text-lg text-muted">Your favorites, your own questions and the seasonal packs. It all stays on this device.</p>
+      <p className="mt-3 max-w-2xl text-lg text-muted">Your favorites, your own questions and the seasonal packs. It all stays in this browser on this device, so clearing browser data removes it.</p>
       <HubGrid entries={entries} />
     </div>
   );

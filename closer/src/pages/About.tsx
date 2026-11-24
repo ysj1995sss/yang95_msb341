@@ -1,4 +1,4 @@
-import { ArrowRight, Keyboard, PlayCircle, Smartphone } from "lucide-react";
+import { ArrowRight, HardDrive, Info, Keyboard, PlayCircle, Smartphone } from "lucide-react";
 import { HowItWorks } from "../components/HowItWorks";
 import { InstallButton } from "../components/InstallButton";
 import { primary, secondary } from "../components/ui";
@@ -19,18 +19,18 @@ const shortcuts = [
   { keys: "R", does: "Read the question aloud" },
 ];
 
+const h2 = "flex items-center gap-3 text-3xl font-extrabold tracking-tight sm:text-4xl";
+const h2Icon = "size-8 shrink-0 text-plum-600 dark:text-onplum-soft";
+
+/** Help first (shortcuts, how it works, installing, where things are saved), then what Closer is.
+ *  Reached as #/help from the top bar and footer, and as #/about. */
 export function About() {
   return (
     <div className="mx-auto max-w-4xl space-y-16 px-4 pt-12 sm:px-6">
       <section>
-        <h1 tabIndex={-1} className="text-4xl font-extrabold tracking-tight sm:text-5xl">About Closer</h1>
+        <h1 tabIndex={-1} className="text-4xl font-extrabold tracking-tight sm:text-5xl">Help</h1>
         <p className="mt-5 text-lg leading-relaxed text-muted">
-          Closer is a question-based social experience. It helps couples, friends, families and teams talk about
-          things that matter, laugh more, and learn something new about each other and themselves.
-        </p>
-        <p className="mt-4 text-lg leading-relaxed text-muted">
-          This is an early prototype. There's no account and no sign-up: your favorites, your own questions and your
-          progress are saved only in this browser, on this device. Online multiplayer and personalized questions are on the way.
+          Keyboard shortcuts, how a round works, installing Closer as an app, and where your things are saved.
         </p>
         <div className="mt-8 flex flex-wrap gap-3">
           <a href={href.explore} className={primary}>
@@ -42,9 +42,28 @@ export function About() {
         </div>
       </section>
 
+      <section aria-labelledby="shortcuts-heading">
+        <h2 id="shortcuts-heading" className={h2}>
+          <Keyboard aria-hidden className={h2Icon} /> Shortcuts
+        </h2>
+        <p className="mt-3 text-lg leading-relaxed text-muted">
+          On any conversation question, once you've clicked on the card or pressed Tab to reach it. They never fire anywhere else on the page.
+        </p>
+        <dl className="mt-4 grid gap-3 sm:grid-cols-2">
+          {shortcuts.map((s) => (
+            <div key={s.keys} className="flex items-center gap-4 rounded-2xl bg-surface/80 p-4 ring-1 ring-plum-100">
+              <dt className="min-w-36 rounded-lg border border-plum-200 bg-surface px-3 py-1.5 text-center text-sm font-bold text-plum-800">{s.keys}</dt>
+              <dd className="text-[15px] text-muted">{s.does}</dd>
+            </div>
+          ))}
+        </dl>
+      </section>
+
+      <HowItWorks id="about-how" />
+
       <section aria-labelledby="install-heading">
-        <h2 id="install-heading" className="flex items-center gap-3 text-3xl font-extrabold tracking-tight sm:text-4xl">
-          <Smartphone aria-hidden className="size-8 text-plum-600 dark:text-onplum-soft" /> Install Closer
+        <h2 id="install-heading" className={h2}>
+          <Smartphone aria-hidden className={h2Icon} /> Install Closer
         </h2>
         <p className="mt-3 text-lg leading-relaxed text-muted">
           Closer works like an app. Add it to your home screen and it opens full screen, with no app store, and keeps
@@ -61,24 +80,29 @@ export function About() {
         </ul>
       </section>
 
-      <section aria-labelledby="shortcuts-heading">
-        <h2 id="shortcuts-heading" className="flex items-center gap-3 text-3xl font-extrabold tracking-tight sm:text-4xl">
-          <Keyboard aria-hidden className="size-8 text-plum-600 dark:text-onplum-soft" /> Shortcuts
+      <section aria-labelledby="storage-heading">
+        <h2 id="storage-heading" className={h2}>
+          <HardDrive aria-hidden className={h2Icon} /> Where your things are saved
         </h2>
         <p className="mt-3 text-lg leading-relaxed text-muted">
-          On any conversation question, once you've clicked on the card or pressed Tab to reach it. They never fire anywhere else on the page.
+          There's no account. Your favorites and your own questions are saved only in this browser, on this device.
+          Clearing your browsing data, using a private window, or switching to another browser or device starts you
+          with none of them. Rounds in progress are kept while you're using the app and start fresh the next time you open it.
         </p>
-        <dl className="mt-4 grid gap-3 sm:grid-cols-2">
-          {shortcuts.map((s) => (
-            <div key={s.keys} className="flex items-center gap-4 rounded-2xl bg-surface/80 p-4 ring-1 ring-plum-100">
-              <dt className="min-w-36 rounded-lg border border-plum-200 bg-surface px-3 py-1.5 text-center text-sm font-bold text-plum-800">{s.keys}</dt>
-              <dd className="text-[15px] text-muted">{s.does}</dd>
-            </div>
-          ))}
-        </dl>
       </section>
 
-      <HowItWorks id="about-how" />
+      <section aria-labelledby="about-heading">
+        <h2 id="about-heading" className={h2}>
+          <Info aria-hidden className={h2Icon} /> About Closer
+        </h2>
+        <p className="mt-3 text-lg leading-relaxed text-muted">
+          Closer is a question-based social experience. It helps couples, friends, families and teams talk about
+          things that matter, laugh more, and learn something new about each other and themselves.
+        </p>
+        <p className="mt-4 text-lg leading-relaxed text-muted">
+          This is an early prototype. Online multiplayer and personalized questions are on the way.
+        </p>
+      </section>
     </div>
   );
 }

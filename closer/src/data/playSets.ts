@@ -62,7 +62,9 @@ export function surpriseSet(audience: AudienceChoice = "everyone"): PlaySet {
   return {
     key: isAudience(audience) ? `surprise:${audience}` : "surprise",
     title: "Surprise me",
-    description: `A random mix from all ${pool.length} questions, across every category.`,
+    description: isAudience(audience)
+      ? `A random mix of the ${pool.length} questions that suit ${audienceLabel(audience)}, across every category.`
+      : `A random mix from all ${pool.length} questions, across every category.`,
     href: href.surprise,
     category: null,
     pool,
